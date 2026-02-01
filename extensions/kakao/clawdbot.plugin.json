@@ -1,0 +1,30 @@
+{
+  "id": "kakao",
+  "name": "KakaoTalk",
+  "description": "KakaoTalk channel plugin using Kakao Channel API",
+  "channels": ["kakao"],
+  "configSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {}
+  },
+  "uiHints": {
+    "channelId": {
+      "label": "Kakao Channel ID",
+      "help": "Your Kakao Channel ID from Kakao for Business"
+    },
+    "adminKey": {
+      "label": "Admin Key",
+      "sensitive": true,
+      "help": "REST API Admin Key from Kakao Developers"
+    },
+    "appKey": {
+      "label": "App Key",
+      "help": "JavaScript Key from Kakao Developers"
+    },
+    "botId": {
+      "label": "Bot ID",
+      "help": "Kakao Bot ID for channel messaging"
+    }
+  }
+}

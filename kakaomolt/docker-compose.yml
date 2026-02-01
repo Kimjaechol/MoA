@@ -1,0 +1,75 @@
+# Moltbot + KakaoTalk - Local Development & Testing
+# Usage: docker-compose up -d
+
+version: '3.8'
+
+services:
+  moltbot-kakao:
+    build:
+      context: ../..
+      dockerfile: extensions/kakao/Dockerfile
+    container_name: moltbot-kakao
+    restart: unless-stopped
+    ports:
+      - "8788:8788"
+    volumes:
+      - moltbot-data:/data/.moltbot
+    environment:
+      # LLM Provider (Claude recommended)
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+      # Optional: OpenAI fallback
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+
+      # Kakao API Credentials
+      - KAKAO_ADMIN_KEY=${KAKAO_ADMIN_KEY}
+      - KAKAO_APP_KEY=${KAKAO_APP_KEY:-}
+      - KAKAO_CHANNEL_ID=${KAKAO_CHANNEL_ID:-}
+
+      # Optional: Friend Talk (NHN Cloud Toast) for proactive messaging
+      - KAKAO_SENDER_KEY=${KAKAO_SENDER_KEY:-}
+      - TOAST_APP_KEY=${TOAST_APP_KEY:-}
+      - TOAST_SECRET_KEY=${TOAST_SECRET_KEY:-}
+
+      # Webhook Configuration
+      - KAKAO_WEBHOOK_PORT=8788
+      - KAKAO_WEBHOOK_PATH=/kakao/webhook
+
+      # Gateway Settings
+      - MOLTBOT_GATEWAY_MODE=local
+      - NODE_ENV=production
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8788/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+    networks:
+      - moltbot-network
+
+  # Optional: ngrok for local development with public URL
+  ngrok:
+    image: ngrok/ngrok:latest
+    container_name: moltbot-ngrok
+    restart: unless-stopped
+    command:
+      - "http"
+      - "moltbot-kakao:8788"
+      - "--log=stdout"
+    environment:
+      - NGROK_AUTHTOKEN=${NGROK_AUTHTOKEN:-}
+    ports:
+      - "4040:4040"  # ngrok web interface
+    depends_on:
+      - moltbot-kakao
+    networks:
+      - moltbot-network
+    profiles:
+      - dev  # Only start with: docker-compose --profile dev up
+
+volumes:
+  moltbot-data:
+    driver: local
+
+networks:
+  moltbot-network:
+    driver: bridge

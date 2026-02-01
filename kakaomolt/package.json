@@ -1,0 +1,30 @@
+{
+  "name": "@moltbot/kakao",
+  "version": "0.1.0",
+  "type": "module",
+  "description": "KakaoTalk channel plugin for Moltbot",
+  "license": "MIT",
+  "moltbot": {
+    "extensions": ["./index.ts"],
+    "channel": {
+      "id": "kakao",
+      "label": "KakaoTalk",
+      "docsPath": "/channels/kakao",
+      "blurb": "KakaoTalk messaging integration via Kakao Channel API",
+      "order": 25
+    },
+    "install": {
+      "npmSpec": "@moltbot/kakao",
+      "defaultChoice": "npm"
+    }
+  },
+  "exports": {
+    ".": "./index.ts"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.45.0"
+  },
+  "devDependencies": {
+    "moltbot": "workspace:*"
+  }
+}

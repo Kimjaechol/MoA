@@ -1,0 +1,46 @@
+# Fly.io deployment configuration for Moltbot + KakaoTalk
+# Deploy with: fly launch --config extensions/kakao/fly.toml
+
+app = "moltbot-kakao"
+primary_region = "nrt"  # Tokyo (closest to Korea)
+
+[build]
+  dockerfile = "extensions/kakao/Dockerfile"
+
+[env]
+  NODE_ENV = "production"
+  MOLTBOT_GATEWAY_MODE = "local"
+  KAKAO_WEBHOOK_PORT = "8788"
+  KAKAO_WEBHOOK_PATH = "/kakao/webhook"
+
+[http_service]
+  internal_port = 8788
+  force_https = true
+  auto_stop_machines = false
+  auto_start_machines = true
+  min_machines_running = 1
+  processes = ["app"]
+
+  [http_service.concurrency]
+    type = "connections"
+    hard_limit = 100
+    soft_limit = 80
+
+[[vm]]
+  cpu_kind = "shared"
+  cpus = 1
+  memory_mb = 512
+
+[checks]
+  [checks.health]
+    port = 8788
+    type = "http"
+    interval = "30s"
+    timeout = "10s"
+    grace_period = "10s"
+    method = "GET"
+    path = "/health"
+
+[mounts]
+  source = "moltbot_data"
+  destination = "/data/.moltbot"
