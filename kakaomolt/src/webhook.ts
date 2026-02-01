@@ -1,4 +1,5 @@
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
+import { randomBytes } from "node:crypto";
 import type { KakaoIncomingMessage, KakaoSkillResponse, ResolvedKakaoAccount } from "./types.js";
 import { createKakaoApiClient } from "./api-client.js";
 import { getConsultationButton, isLegalQuestion } from "./lawcall-router.js";
@@ -8,6 +9,8 @@ import {
   postBillingDeduct,
   getCreditStatusMessage,
 } from "./billing-handler.js";
+import { handleSyncCommand, isSyncCommand, type SyncCommandContext } from "./sync/index.js";
+import { getSupabase } from "./supabase.js";
 
 export interface KakaoWebhookOptions {
   account: ResolvedKakaoAccount;
@@ -118,6 +121,56 @@ export async function startKakaoWebhook(opts: KakaoWebhookOptions): Promise<{
     }
 
     try {
+      // Step 0: Check for sync commands (/동기화, /sync)
+      if (isSyncCommand(utterance)) {
+        // Get or create user in Supabase
+        const supabase = getSupabase();
+        let supabaseUserId: string;
+
+        const { data: existingUser } = await supabase
+          .from("lawcall_users")
+          .select("id")
+          .eq("kakao_user_id", userId)
+          .single();
+
+        if (existingUser) {
+          supabaseUserId = existingUser.id;
+        } else {
+          // Create new user
+          const { data: newUser, error } = await supabase
+            .from("lawcall_users")
+            .insert({ kakao_user_id: userId })
+            .select("id")
+            .single();
+
+          if (error || !newUser) {
+            const response = apiClient.buildSkillResponse(
+              "사용자 등록에 실패했습니다. 잠시 후 다시 시도해주세요.",
+            );
+            res.writeHead(200, { "Content-Type": "application/json" });
+            res.end(JSON.stringify(response));
+            return;
+          }
+          supabaseUserId = newUser.id;
+        }
+
+        // Create sync context
+        const syncContext: SyncCommandContext = {
+          kakaoUserId: userId,
+          userId: supabaseUserId,
+          deviceId: `kakao-${userId.slice(0, 16)}-${randomBytes(4).toString("hex")}`,
+          deviceName: "KakaoTalk",
+          deviceType: "mobile",
+        };
+
+        const syncResult = await handleSyncCommand(syncContext, utterance);
+        const response = apiClient.buildSkillResponse(syncResult.message);
+        res.writeHead(200, { "Content-Type": "application/json" });
+        res.end(JSON.stringify(response));
+        logger.info(`[kakao] Handled sync command for ${userId.slice(0, 8)}...`);
+        return;
+      }
+
       // Step 1: Check for billing commands (잔액, 충전, API키 등록 등)
       const billingCmd = await handleBillingCommand(userId, utterance);
       if (billingCmd.handled) {

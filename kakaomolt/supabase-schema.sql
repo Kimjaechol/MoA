@@ -239,6 +239,248 @@ END;
 $$ LANGUAGE plpgsql;
 
 -- ============================================
+-- E2E Memory Sync System
+-- ============================================
+
+-- Enable pgvector extension for vector similarity search
+CREATE EXTENSION IF NOT EXISTS vector;
+
+-- Device registry for multi-device sync
+CREATE TABLE IF NOT EXISTS user_devices (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  user_id UUID NOT NULL REFERENCES lawcall_users(id) ON DELETE CASCADE,
+  device_id TEXT NOT NULL,
+  device_name TEXT,
+  device_type TEXT CHECK (device_type IN ('mobile', 'desktop', 'tablet', 'unknown')),
+  last_sync_at TIMESTAMPTZ,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  UNIQUE(user_id, device_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_user_devices_user_id ON user_devices(user_id);
+
+-- Encrypted memory storage (E2E - server cannot read)
+CREATE TABLE IF NOT EXISTS memory_sync (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  user_id UUID NOT NULL REFERENCES lawcall_users(id) ON DELETE CASCADE,
+
+  -- E2E encrypted data (server cannot decrypt)
+  encrypted_data TEXT NOT NULL,           -- Base64 encoded AES-256-GCM ciphertext
+  iv TEXT NOT NULL,                       -- Initialization vector
+  auth_tag TEXT NOT NULL,                 -- GCM authentication tag
+
+  -- Metadata (not encrypted, for sync logic)
+  version INTEGER NOT NULL DEFAULT 1,     -- Incremental version for conflict resolution
+  chunk_index INTEGER NOT NULL DEFAULT 0, -- For large data split into chunks
+  total_chunks INTEGER NOT NULL DEFAULT 1,
+  data_type TEXT NOT NULL CHECK (data_type IN ('memory', 'context', 'settings', 'full_backup')),
+  checksum TEXT NOT NULL,                 -- SHA-256 of plaintext for integrity
+
+  -- Sync metadata
+  source_device_id TEXT NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  expires_at TIMESTAMPTZ,                 -- Optional auto-expiry
+
+  UNIQUE(user_id, data_type, version, chunk_index)
+);
+
+CREATE INDEX IF NOT EXISTS idx_memory_sync_user_id ON memory_sync(user_id);
+CREATE INDEX IF NOT EXISTS idx_memory_sync_expires ON memory_sync(expires_at) WHERE expires_at IS NOT NULL;
+
+-- Sync delta changes (for incremental sync)
+CREATE TABLE IF NOT EXISTS memory_deltas (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  user_id UUID NOT NULL REFERENCES lawcall_users(id) ON DELETE CASCADE,
+
+  -- E2E encrypted delta
+  encrypted_delta TEXT NOT NULL,
+  iv TEXT NOT NULL,
+  auth_tag TEXT NOT NULL,
+
+  -- Delta metadata
+  base_version INTEGER NOT NULL,          -- Version this delta applies to
+  delta_type TEXT NOT NULL CHECK (delta_type IN ('add', 'update', 'delete')),
+  entity_type TEXT NOT NULL,              -- 'memory_chunk', 'conversation', 'setting'
+
+  source_device_id TEXT NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  applied_at TIMESTAMPTZ                  -- When delta was applied to full sync
+);
+
+CREATE INDEX IF NOT EXISTS idx_memory_deltas_user_version ON memory_deltas(user_id, base_version);
+
+-- Conversation history (E2E encrypted)
+CREATE TABLE IF NOT EXISTS conversation_sync (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  user_id UUID NOT NULL REFERENCES lawcall_users(id) ON DELETE CASCADE,
+  session_id TEXT NOT NULL,
+
+  -- E2E encrypted messages
+  encrypted_messages TEXT NOT NULL,
+  iv TEXT NOT NULL,
+  auth_tag TEXT NOT NULL,
+
+  -- Metadata
+  message_count INTEGER NOT NULL DEFAULT 0,
+  version INTEGER NOT NULL DEFAULT 1,
+
+  source_device_id TEXT NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+
+  UNIQUE(user_id, session_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_conversation_sync_user_id ON conversation_sync(user_id);
+
+-- Key derivation salts (per user, for PBKDF2)
+CREATE TABLE IF NOT EXISTS user_key_salts (
+  user_id UUID PRIMARY KEY REFERENCES lawcall_users(id) ON DELETE CASCADE,
+  salt TEXT NOT NULL,                     -- Base64 encoded salt
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+-- ============================================
+-- Sync Functions
+-- ============================================
+
+-- Get latest sync version for a user
+CREATE OR REPLACE FUNCTION get_sync_version(p_user_id UUID, p_data_type TEXT)
+RETURNS INTEGER AS $$
+DECLARE
+  v_version INTEGER;
+BEGIN
+  SELECT COALESCE(MAX(version), 0) INTO v_version
+  FROM memory_sync
+  WHERE user_id = p_user_id AND data_type = p_data_type;
+  RETURN v_version;
+END;
+$$ LANGUAGE plpgsql;
+
+-- Clean up expired sync data
+CREATE OR REPLACE FUNCTION cleanup_expired_sync()
+RETURNS INTEGER AS $$
+DECLARE
+  deleted_count INTEGER;
+BEGIN
+  DELETE FROM memory_sync WHERE expires_at < NOW();
+  GET DIAGNOSTICS deleted_count = ROW_COUNT;
+  RETURN deleted_count;
+END;
+$$ LANGUAGE plpgsql;
+
+-- Atomic sync upload with version check
+CREATE OR REPLACE FUNCTION upload_sync_data(
+  p_user_id UUID,
+  p_encrypted_data TEXT,
+  p_iv TEXT,
+  p_auth_tag TEXT,
+  p_data_type TEXT,
+  p_checksum TEXT,
+  p_source_device_id TEXT,
+  p_chunk_index INTEGER DEFAULT 0,
+  p_total_chunks INTEGER DEFAULT 1,
+  p_expires_at TIMESTAMPTZ DEFAULT NULL
+) RETURNS TABLE(success BOOLEAN, new_version INTEGER, error_message TEXT) AS $$
+DECLARE
+  v_new_version INTEGER;
+BEGIN
+  -- Get next version
+  SELECT COALESCE(MAX(version), 0) + 1 INTO v_new_version
+  FROM memory_sync
+  WHERE user_id = p_user_id AND data_type = p_data_type;
+
+  -- Insert new sync data
+  INSERT INTO memory_sync (
+    user_id, encrypted_data, iv, auth_tag,
+    version, chunk_index, total_chunks, data_type, checksum,
+    source_device_id, expires_at
+  ) VALUES (
+    p_user_id, p_encrypted_data, p_iv, p_auth_tag,
+    v_new_version, p_chunk_index, p_total_chunks, p_data_type, p_checksum,
+    p_source_device_id, p_expires_at
+  );
+
+  -- Update device last sync time
+  UPDATE user_devices
+  SET last_sync_at = NOW()
+  WHERE user_id = p_user_id AND device_id = p_source_device_id;
+
+  RETURN QUERY SELECT true, v_new_version, NULL::TEXT;
+EXCEPTION
+  WHEN unique_violation THEN
+    RETURN QUERY SELECT false, 0, 'Version conflict - retry with latest version'::TEXT;
+END;
+$$ LANGUAGE plpgsql;
+
+-- Get sync data for download
+CREATE OR REPLACE FUNCTION download_sync_data(
+  p_user_id UUID,
+  p_data_type TEXT,
+  p_min_version INTEGER DEFAULT 0
+) RETURNS TABLE(
+  encrypted_data TEXT,
+  iv TEXT,
+  auth_tag TEXT,
+  version INTEGER,
+  chunk_index INTEGER,
+  total_chunks INTEGER,
+  checksum TEXT,
+  source_device_id TEXT,
+  created_at TIMESTAMPTZ
+) AS $$
+BEGIN
+  RETURN QUERY
+  SELECT
+    ms.encrypted_data,
+    ms.iv,
+    ms.auth_tag,
+    ms.version,
+    ms.chunk_index,
+    ms.total_chunks,
+    ms.checksum,
+    ms.source_device_id,
+    ms.created_at
+  FROM memory_sync ms
+  WHERE ms.user_id = p_user_id
+    AND ms.data_type = p_data_type
+    AND ms.version > p_min_version
+    AND (ms.expires_at IS NULL OR ms.expires_at > NOW())
+  ORDER BY ms.version DESC, ms.chunk_index ASC
+  LIMIT 100; -- Safety limit
+END;
+$$ LANGUAGE plpgsql;
+
+-- ============================================
+-- RLS for new tables
+-- ============================================
+ALTER TABLE user_devices ENABLE ROW LEVEL SECURITY;
+ALTER TABLE memory_sync ENABLE ROW LEVEL SECURITY;
+ALTER TABLE memory_deltas ENABLE ROW LEVEL SECURITY;
+ALTER TABLE conversation_sync ENABLE ROW LEVEL SECURITY;
+ALTER TABLE user_key_salts ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "Service role full access on user_devices"
+  ON user_devices FOR ALL USING (auth.role() = 'service_role');
+
+CREATE POLICY "Service role full access on memory_sync"
+  ON memory_sync FOR ALL USING (auth.role() = 'service_role');
+
+CREATE POLICY "Service role full access on memory_deltas"
+  ON memory_deltas FOR ALL USING (auth.role() = 'service_role');
+
+CREATE POLICY "Service role full access on conversation_sync"
+  ON conversation_sync FOR ALL USING (auth.role() = 'service_role');
+
+CREATE POLICY "Service role full access on user_key_salts"
+  ON user_key_salts FOR ALL USING (auth.role() = 'service_role');
+
+-- ============================================
+-- Scheduled cleanup (run via pg_cron or external cron)
+-- ============================================
+-- SELECT cron.schedule('cleanup-expired-sync', '*/30 * * * *', 'SELECT cleanup_expired_sync()');
+
+-- ============================================
 -- Sample Data (Optional - for testing)
 -- ============================================
 -- INSERT INTO lawcall_users (kakao_user_id, credits) VALUES ('test_user_001', 10000);
