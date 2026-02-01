@@ -502,7 +502,7 @@ export function createGeminiProvider(config: Partial<VoiceProviderConfig> = {}):
   const apiKey = config.apiKey ??
     process.env.GOOGLE_API_KEY ??
     process.env.GEMINI_API_KEY ??
-    process.env.MOLTBOT_GEMINI_API_KEY;
+    process.env.OPENCLAW_GEMINI_API_KEY;
 
   if (!apiKey) {
     throw new Error("Gemini API key not found. Set GOOGLE_API_KEY or GEMINI_API_KEY.");
@@ -518,6 +518,6 @@ export function isGeminiAvailable(): boolean {
   return !!(
     process.env.GOOGLE_API_KEY ||
     process.env.GEMINI_API_KEY ||
-    process.env.MOLTBOT_GEMINI_API_KEY
+    process.env.OPENCLAW_GEMINI_API_KEY
   );
 }

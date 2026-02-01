@@ -208,12 +208,21 @@ export class RealtimeVoiceClient extends EventEmitter {
 
     // Note: In Node.js, you'll need a WebSocket library like 'ws'
     // This is a simplified implementation
-    this.ws = new WebSocket(`${url}?${params}`, {
+    const wsOptions: WebSocketOptions = {
       headers: {
         Authorization: `Bearer ${this.config.apiKey}`,
         "OpenAI-Beta": "realtime=v1",
       },
-    } as WebSocketOptions);
+    };
+
+    // Use dynamic check for Node.js vs browser environment
+    if (typeof globalThis.WebSocket !== "undefined" && typeof process !== "undefined" && process.versions?.node) {
+      // Node.js environment - use ws package style
+      this.ws = new (globalThis.WebSocket as unknown as new (url: string, opts: WebSocketOptions) => WebSocket)(`${url}?${params}`, wsOptions);
+    } else {
+      // Browser environment - headers not directly supported
+      this.ws = new WebSocket(`${url}?${params}`);
+    }
 
     return new Promise((resolve, reject) => {
       if (!this.ws) return reject(new Error("WebSocket not initialized"));
@@ -332,14 +341,14 @@ export class RealtimeVoiceClient extends EventEmitter {
         case "conversation.item.input_audio_transcription.completed":
           this.emit(
             "input.transcript",
-            (message as { transcript: string }).transcript,
+            (message as unknown as { transcript: string }).transcript,
             true,
           );
           break;
 
         case "response.audio.delta":
           const audioData = Buffer.from(
-            (message as { delta: string }).delta,
+            (message as unknown as { delta: string }).delta,
             "base64",
           );
           this.session!.audioStats.outputBytes += audioData.length;
@@ -350,7 +359,7 @@ export class RealtimeVoiceClient extends EventEmitter {
         case "response.audio_transcript.delta":
           this.emit(
             "response.text",
-            (message as { delta: string }).delta,
+            (message as unknown as { delta: string }).delta,
             false,
           );
           break;
@@ -358,7 +367,7 @@ export class RealtimeVoiceClient extends EventEmitter {
         case "response.audio_transcript.done":
           this.emit(
             "response.text",
-            (message as { transcript: string }).transcript,
+            (message as unknown as { transcript: string }).transcript,
             true,
           );
           break;
@@ -383,7 +392,7 @@ export class RealtimeVoiceClient extends EventEmitter {
 
         case "error":
           const error = new Error(
-            (message as { error: { message: string } }).error.message,
+            (message as unknown as { error: { message: string } }).error.message,
           );
           this.emit("session.error", error);
           break;
@@ -475,7 +484,7 @@ export function isRealtimeAvailable(): boolean {
   // Check for OpenAI API key
   return !!(
     process.env.OPENAI_API_KEY ||
-    process.env.MOLTBOT_OPENAI_API_KEY
+    process.env.OPENCLAW_OPENAI_API_KEY
   );
 }
 

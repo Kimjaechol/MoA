@@ -426,7 +426,7 @@ export function parseBridgeCommand(message: string): {
   const trimmed = message.trim();
 
   // Korean commands
-  const koreanMatch = trimmed.match(/^[/\/](전송|보내기|forward)\s+(\w+)\s+(@?\S+)\s+(.+)$/is);
+  const koreanMatch = trimmed.match(/^[/\/](전송|보내기|forward)\s+(\w+)\s+(@?\S+)\s+(.+)$/i);
   if (koreanMatch) {
     const channel = normalizeChannelName(koreanMatch[2]);
     if (!channel) {
@@ -445,7 +445,7 @@ export function parseBridgeCommand(message: string): {
   }
 
   // English commands
-  const englishMatch = trimmed.match(/^[/\/](send|forward|msg)\s+(\w+)\s+(@?\S+)\s+(.+)$/is);
+  const englishMatch = trimmed.match(/^[/\/](send|forward|msg)\s+(\w+)\s+(@?\S+)\s+(.+)$/i);
   if (englishMatch) {
     const channel = normalizeChannelName(englishMatch[2]);
     if (!channel) {

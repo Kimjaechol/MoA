@@ -252,7 +252,7 @@ export async function startKakaoWebhook(opts: KakaoWebhookOptions): Promise<{
       // Estimate tokens: ~4 chars per token for Korean
       const estimatedInputTokens = Math.ceil(utterance.length / 4);
       const estimatedOutputTokens = Math.ceil(result.text.length / 4);
-      const model = process.env.MOLTBOT_MODEL ?? "claude-3-haiku-20240307";
+      const model = process.env.OPENCLAW_MODEL ?? "claude-3-haiku-20240307";
 
       const billingResult = await postBillingDeduct(
         userId,

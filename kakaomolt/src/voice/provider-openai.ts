@@ -146,12 +146,23 @@ export class OpenAIRealtimeProvider extends VoiceProvider {
     const url = `${OPENAI_REALTIME_ENDPOINT}?model=${this.config.model}`;
 
     return new Promise((resolve, reject) => {
-      this.ws = new WebSocket(url, {
+      // For Node.js WebSocket (ws package), headers must be passed as protocols + options
+      // For browser WebSocket, we need a different approach
+      const wsOptions: WebSocketOptions = {
         headers: {
           Authorization: `Bearer ${this.config.apiKey}`,
           "OpenAI-Beta": "realtime=v1",
         },
-      } as WebSocketOptions);
+      };
+
+      // Use dynamic check for Node.js vs browser environment
+      if (typeof globalThis.WebSocket !== "undefined" && typeof process !== "undefined" && process.versions?.node) {
+        // Node.js environment - use ws package style
+        this.ws = new (globalThis.WebSocket as unknown as new (url: string, opts: WebSocketOptions) => WebSocket)(url, wsOptions);
+      } else {
+        // Browser environment - headers not directly supported, would need proxy
+        this.ws = new WebSocket(url);
+      }
 
       this.ws.onopen = () => {
         this.sendSessionUpdate();
@@ -240,7 +251,7 @@ export class OpenAIRealtimeProvider extends VoiceProvider {
         case "conversation.item.input_audio_transcription.completed":
           this.emit(
             "input.transcript",
-            (message as { transcript: string }).transcript,
+            (message as unknown as { transcript: string }).transcript,
             true,
           );
           break;
@@ -261,7 +272,7 @@ export class OpenAIRealtimeProvider extends VoiceProvider {
           }
 
           const audioData = Buffer.from(
-            (message as { delta: string }).delta,
+            (message as unknown as { delta: string }).delta,
             "base64",
           );
           this.session!.stats.outputAudioBytes += audioData.length;
@@ -271,7 +282,7 @@ export class OpenAIRealtimeProvider extends VoiceProvider {
         case "response.audio_transcript.delta":
           this.emit(
             "response.text",
-            (message as { delta: string }).delta,
+            (message as unknown as { delta: string }).delta,
             false,
           );
           break;
@@ -279,13 +290,13 @@ export class OpenAIRealtimeProvider extends VoiceProvider {
         case "response.audio_transcript.done":
           this.emit(
             "response.text",
-            (message as { transcript: string }).transcript,
+            (message as unknown as { transcript: string }).transcript,
             true,
           );
           break;
 
         case "response.function_call_arguments.done":
-          const funcCall = message as {
+          const funcCall = message as unknown as {
             name: string;
             arguments: string;
             call_id: string;
@@ -313,7 +324,7 @@ export class OpenAIRealtimeProvider extends VoiceProvider {
           this.emit("response.ended");
 
           // Extract token usage
-          const usage = (message as { response?: { usage?: { input_tokens: number; output_tokens: number } } }).response?.usage;
+          const usage = (message as unknown as { response?: { usage?: { input_tokens: number; output_tokens: number } } }).response?.usage;
           if (usage) {
             this.session!.stats.inputTokens += usage.input_tokens;
             this.session!.stats.outputTokens += usage.output_tokens;
@@ -328,7 +339,7 @@ export class OpenAIRealtimeProvider extends VoiceProvider {
 
         case "error":
           const error = new Error(
-            (message as { error: { message: string } }).error.message,
+            (message as unknown as { error: { message: string } }).error.message,
           );
           this.emit("session.error", error, this.session!);
           break;
@@ -516,7 +527,7 @@ interface WebSocketOptions {
 export function createOpenAIProvider(config: Partial<VoiceProviderConfig> = {}): OpenAIRealtimeProvider {
   const apiKey = config.apiKey ??
     process.env.OPENAI_API_KEY ??
-    process.env.MOLTBOT_OPENAI_API_KEY;
+    process.env.OPENCLAW_OPENAI_API_KEY;
 
   if (!apiKey) {
     throw new Error("OpenAI API key not found. Set OPENAI_API_KEY.");
@@ -531,6 +542,6 @@ export function createOpenAIProvider(config: Partial<VoiceProviderConfig> = {}):
 export function isOpenAIAvailable(): boolean {
   return !!(
     process.env.OPENAI_API_KEY ||
-    process.env.MOLTBOT_OPENAI_API_KEY
+    process.env.OPENCLAW_OPENAI_API_KEY
   );
 }

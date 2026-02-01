@@ -40,7 +40,7 @@ export interface ToolExecutionResult {
 }
 
 // Moltbot's available tools catalog
-export const MOLTBOT_TOOLS: ToolDefinition[] = [
+export const OPENCLAW_TOOLS: ToolDefinition[] = [
   // Communication & Messaging
   {
     name: "message",
@@ -259,10 +259,10 @@ export class MoltbotToolBridge {
    */
   getAvailableTools(): ToolDefinition[] {
     if (this.gateway) {
-      return MOLTBOT_TOOLS;
+      return OPENCLAW_TOOLS;
     }
     // Without gateway, only local tools are available
-    return MOLTBOT_TOOLS.filter((t) => !t.requiresGateway);
+    return OPENCLAW_TOOLS.filter((t) => !t.requiresGateway);
   }
 
   /**
@@ -276,7 +276,7 @@ export class MoltbotToolBridge {
    * Get tool definition by name
    */
   getTool(name: string): ToolDefinition | undefined {
-    return MOLTBOT_TOOLS.find((t) => t.name === name);
+    return OPENCLAW_TOOLS.find((t) => t.name === name);
   }
 
   /**
@@ -485,8 +485,8 @@ export function createToolBridge(options?: {
  */
 export function formatToolList(category?: ToolCategory): string {
   const tools = category
-    ? MOLTBOT_TOOLS.filter((t) => t.category === category)
-    : MOLTBOT_TOOLS;
+    ? OPENCLAW_TOOLS.filter((t) => t.category === category)
+    : OPENCLAW_TOOLS;
 
   if (tools.length === 0) {
     return "사용 가능한 도구가 없습니다.";

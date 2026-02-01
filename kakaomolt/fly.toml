@@ -9,7 +9,7 @@ primary_region = "nrt"  # Tokyo (closest to Korea)
 
 [env]
   NODE_ENV = "production"
-  MOLTBOT_GATEWAY_MODE = "local"
+  OPENCLAW_GATEWAY_MODE = "local"
   KAKAO_WEBHOOK_PORT = "8788"
   KAKAO_WEBHOOK_PATH = "/kakao/webhook"
 

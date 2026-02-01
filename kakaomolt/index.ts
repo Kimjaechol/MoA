@@ -1,4 +1,4 @@
-import type { MoltbotPluginApi } from "clawdbot/plugin-sdk";
+import type { OpenClawPluginApi } from "openclaw/plugin-sdk";
 import { kakaoPlugin } from "./src/channel.js";
 import { setKakaoRuntime } from "./src/runtime.js";
 import { createKakaoApiClient } from "./src/api-client.js";
@@ -54,7 +54,7 @@ const kakaoPluginDefinition = {
   description: "KakaoTalk channel plugin using Kakao i Open Builder and Friend Talk",
   configSchema: emptyPluginConfigSchema(),
 
-  register(api: MoltbotPluginApi) {
+  register(api: OpenClawPluginApi) {
     // Initialize runtime
     setKakaoRuntime(api.runtime);
 
