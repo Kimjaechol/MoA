@@ -455,19 +455,57 @@ function detectDataAccessIntent(message: string, dataType: ProtectedDataType): b
 }
 
 /**
- * 외부 전송 의도 감지
+ * 외부 전송 의도 감지 (아웃바운드 - 데이터가 나가는 것)
+ *
+ * 중요: 크롤링/스크래핑 등 데이터를 가져오는 인바운드 작업은 감지하지 않음
  */
 function detectExternalTransferIntent(message: string): boolean {
-  const transferPatterns = [
-    /보내|전송|upload|send|forward/i,
-    /추출|내보내|export|extract/i,
-    /공유|share/i,
-    /백업.*(?:서버|클라우드)|backup.*(?:server|cloud)/i,
-    /(?:서버|클라우드|외부).*(?:저장|전송|업로드)/i,
-    /이메일.*(?:첨부|보내)/i,
+  // 먼저 인바운드(데이터 가져오기) 작업인지 확인 - 인바운드는 허용
+  if (detectInboundOperation(message)) {
+    return false;
+  }
+
+  // 아웃바운드(데이터 내보내기) 패턴만 감지
+  const outboundPatterns = [
+    /(?:내\s*)?(?:연락처|메시지|파일|데이터|정보).*(?:보내|전송|업로드|upload|send|forward)/i,
+    /(?:연락처|메시지|파일|데이터|정보).*(?:추출|내보내|export|extract)/i,
+    /(?:연락처|메시지|파일|데이터|정보).*(?:외부|서버|클라우드).*(?:전송|저장|업로드)/i,
+    /(?:이메일|메일).*(?:첨부.*보내|발송)/i,
+    /(?:서버|클라우드|외부).*(?:로|에)\s*(?:전송|업로드|보내)/i,
+    /(?:백업|dump|덤프).*(?:서버|클라우드|외부)/i,
   ];
 
-  return transferPatterns.some(p => p.test(message));
+  return outboundPatterns.some(p => p.test(message));
+}
+
+/**
+ * 인바운드 작업 감지 (데이터를 가져오는 작업 - 허용됨)
+ *
+ * 웹 크롤링, 스크래핑, 외부 API 호출 등 데이터를 '가져오는' 작업은
+ * 데이터 유출이 아니므로 차단하지 않음
+ */
+export function detectInboundOperation(message: string): boolean {
+  const inboundPatterns = [
+    // 크롤링/스크래핑
+    /크롤링|크롤|crawl|scraping|스크래핑|스크랩/i,
+    // 데이터 가져오기
+    /(?:웹|사이트|페이지|url).*(?:에서|로부터).*(?:가져|추출|읽|긁어|수집)/i,
+    /(?:가져|불러|다운로드|download|fetch|get).*(?:웹|사이트|페이지|url|api)/i,
+    // 검색/조회
+    /(?:검색|찾아|조회|search|find|lookup).*(?:해|줘|주세요)/i,
+    // 외부 API 호출
+    /(?:api|API).*(?:호출|call|요청|request)/i,
+    /(?:외부|external).*(?:api|API|서비스).*(?:조회|요청|호출)/i,
+    // 뉴스/정보 수집
+    /(?:뉴스|기사|정보|데이터).*(?:수집|모아|가져)/i,
+    /(?:실시간|최신).*(?:정보|데이터|가격|환율)/i,
+    // RSS/피드
+    /rss|피드|feed/i,
+    // 날씨, 주식 등 외부 정보 조회
+    /(?:날씨|주식|환율|시세).*(?:알려|조회|확인)/i,
+  ];
+
+  return inboundPatterns.some(p => p.test(message));
 }
 
 // ============================================
@@ -644,6 +682,9 @@ const behaviorProfiles = new Map<string, BehaviorProfile>();
 
 /**
  * 이상 행동 분석
+ *
+ * 중요: 반복적인 크롤링/검색 작업은 이상 행동으로 판단하지 않음
+ * 이상 행동은 데이터 '유출' 시도와 관련된 것만 감지
  */
 export function analyzeAnomalies(
   kakaoUserId: string,
@@ -652,34 +693,52 @@ export function analyzeAnomalies(
   isAnomalous: boolean;
   anomalies: string[];
   riskScore: number;
+  isInboundOperation: boolean;
 } {
   const anomalies: string[] = [];
   let riskScore = 0;
 
+  // 인바운드 작업(크롤링, 검색 등)인지 확인 - 인바운드는 반복해도 문제없음
+  const isInbound = detectInboundOperation(message);
+  if (isInbound) {
+    // 인바운드 작업은 이상 행동으로 취급하지 않음
+    return {
+      isAnomalous: false,
+      anomalies: [],
+      riskScore: 0,
+      isInboundOperation: true,
+    };
+  }
+
   const profile = behaviorProfiles.get(kakaoUserId);
   const currentHour = new Date().getHours();
 
-  // 1. 비정상적인 활동 시간
+  // 1. 비정상적인 활동 시간 (데이터 유출 시도와 연관될 때만)
+  //    단순 활동 시간만으로는 차단하지 않음
   if (profile && !profile.typicalHours.includes(currentHour)) {
-    anomalies.push("비정상적인 활동 시간");
-    riskScore += 10;
+    // 다른 위협 징후와 함께 있을 때만 점수 추가
+    if (detectExternalTransferIntent(message)) {
+      anomalies.push("비정상적인 시간대에 데이터 전송 시도");
+      riskScore += 15;
+    }
   }
 
-  // 2. 비정상적으로 긴 메시지
-  if (message.length > 2000) {
-    anomalies.push("비정상적으로 긴 메시지");
-    riskScore += 20;
+  // 2. 비정상적으로 긴 메시지 (아웃바운드 시도와 연관될 때만)
+  if (message.length > 2000 && detectExternalTransferIntent(message)) {
+    anomalies.push("대량 데이터 전송 시도");
+    riskScore += 25;
   }
 
-  // 3. 반복적인 패턴 (봇 의심)
-  if (profile) {
+  // 3. 반복적인 데이터 유출 시도 패턴만 감지
+  //    일반적인 반복 패턴은 문제없음 (크롤링 등)
+  if (profile && detectExternalTransferIntent(message)) {
     const recentPatterns = profile.lastPatterns.slice(-10);
     const messagePattern = message.slice(0, 50);
     const repetitions = recentPatterns.filter(p => p === messagePattern).length;
 
     if (repetitions >= 3) {
-      anomalies.push("반복적인 메시지 패턴");
-      riskScore += 30;
+      anomalies.push("반복적인 데이터 유출 시도");
+      riskScore += 35;
     }
 
     // 패턴 업데이트
@@ -689,15 +748,16 @@ export function analyzeAnomalies(
     }
   }
 
-  // 4. Base64/인코딩된 데이터 감지
-  if (/^[A-Za-z0-9+/]{50,}={0,2}$/.test(message.replace(/\s/g, ""))) {
-    anomalies.push("인코딩된 데이터 감지");
-    riskScore += 40;
+  // 4. Base64/인코딩된 데이터 (아웃바운드와 연관될 때만 의심)
+  if (/^[A-Za-z0-9+/]{50,}={0,2}$/.test(message.replace(/\s/g, "")) &&
+      detectExternalTransferIntent(message)) {
+    anomalies.push("인코딩된 데이터 전송 시도");
+    riskScore += 45;
   }
 
-  // 5. 스크립트/코드 감지
+  // 5. 스크립트/코드 감지 - 보안 우회 시도
   if (/<script|<\/script|javascript:|data:text\/html/i.test(message)) {
-    anomalies.push("스크립트 코드 감지");
+    anomalies.push("스크립트 삽입 시도");
     riskScore += 50;
   }
 
@@ -705,7 +765,26 @@ export function analyzeAnomalies(
     isAnomalous: anomalies.length > 0,
     anomalies,
     riskScore: Math.min(100, riskScore),
+    isInboundOperation: false,
   };
+}
+
+/**
+ * 외부 전송 의도 감지를 위한 간단한 내부 헬퍼
+ */
+function detectExternalTransferIntent(message: string): boolean {
+  // 먼저 인바운드 작업인지 확인
+  if (detectInboundOperation(message)) {
+    return false;
+  }
+
+  const outboundPatterns = [
+    /(?:내\s*)?(?:연락처|메시지|파일|데이터|정보).*(?:보내|전송|업로드)/i,
+    /(?:연락처|메시지|파일|데이터|정보).*(?:추출|내보내)/i,
+    /(?:서버|클라우드|외부).*(?:로|에)\s*(?:전송|업로드|보내)/i,
+  ];
+
+  return outboundPatterns.some(p => p.test(message));
 }
 
 // ============================================
