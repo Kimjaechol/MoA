@@ -1,0 +1,806 @@
+/**
+ * User Settings & Multi-Provider API Key Management
+ *
+ * Manages user preferences including:
+ * - Multiple API keys for different providers
+ * - Model selection and preferences
+ * - Free tier fallback configuration
+ */
+
+import { createHash, createCipheriv, createDecipheriv, randomBytes } from "node:crypto";
+import { getSupabase, isSupabaseConfigured } from "./supabase.js";
+
+// ============================================
+// Types
+// ============================================
+
+export type LLMProvider =
+  | "anthropic"  // Claude
+  | "openai"     // GPT
+  | "google"     // Gemini
+  | "groq"       // Groq (Llama, Mixtral)
+  | "together"   // Together AI
+  | "openrouter"; // OpenRouter (multi-model)
+
+export interface ProviderInfo {
+  id: LLMProvider;
+  name: string;
+  displayName: string;
+  keyPrefix: string;
+  keyPattern: RegExp;
+  website: string;
+  freeCredits?: string;
+  freeTier?: boolean;
+  models: ModelInfo[];
+}
+
+export interface ModelInfo {
+  id: string;
+  name: string;
+  provider: LLMProvider;
+  inputPrice: number;  // per 1M tokens in KRW
+  outputPrice: number; // per 1M tokens in KRW
+  contextWindow: number;
+  recommended?: boolean;
+  free?: boolean;
+}
+
+export interface UserSettings {
+  userId: string;
+  kakaoUserId: string;
+  preferredProvider: LLMProvider;
+  preferredModel: string;
+  apiKeys: Partial<Record<LLMProvider, string>>; // Encrypted
+  autoFallback: boolean; // Auto-switch to free tier when credits run out
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+// ============================================
+// Provider & Model Registry
+// ============================================
+
+export const PROVIDERS: Record<LLMProvider, ProviderInfo> = {
+  anthropic: {
+    id: "anthropic",
+    name: "Anthropic",
+    displayName: "Anthropic (Claude)",
+    keyPrefix: "sk-ant-",
+    keyPattern: /^sk-ant-[a-zA-Z0-9_-]{20,}$/,
+    website: "https://console.anthropic.com",
+    models: [
+      { id: "claude-3-5-haiku-20241022", name: "Claude 3.5 Haiku", provider: "anthropic", inputPrice: 800, outputPrice: 4000, contextWindow: 200000, recommended: true },
+      { id: "claude-3-5-sonnet-20241022", name: "Claude 3.5 Sonnet", provider: "anthropic", inputPrice: 3000, outputPrice: 15000, contextWindow: 200000 },
+      { id: "claude-sonnet-4-20250514", name: "Claude Sonnet 4", provider: "anthropic", inputPrice: 3000, outputPrice: 15000, contextWindow: 200000 },
+      { id: "claude-opus-4-5-20251101", name: "Claude Opus 4.5", provider: "anthropic", inputPrice: 15000, outputPrice: 75000, contextWindow: 200000 },
+    ],
+  },
+  openai: {
+    id: "openai",
+    name: "OpenAI",
+    displayName: "OpenAI (GPT)",
+    keyPrefix: "sk-",
+    keyPattern: /^sk-[a-zA-Z0-9]{20,}$/,
+    website: "https://platform.openai.com",
+    models: [
+      { id: "gpt-4o-mini", name: "GPT-4o Mini", provider: "openai", inputPrice: 150, outputPrice: 600, contextWindow: 128000, recommended: true },
+      { id: "gpt-4o", name: "GPT-4o", provider: "openai", inputPrice: 2500, outputPrice: 10000, contextWindow: 128000 },
+      { id: "o1-mini", name: "o1 Mini", provider: "openai", inputPrice: 3000, outputPrice: 12000, contextWindow: 128000 },
+      { id: "o1", name: "o1", provider: "openai", inputPrice: 15000, outputPrice: 60000, contextWindow: 200000 },
+    ],
+  },
+  google: {
+    id: "google",
+    name: "Google",
+    displayName: "Google (Gemini)",
+    keyPrefix: "AIza",
+    keyPattern: /^AIza[a-zA-Z0-9_-]{35}$/,
+    website: "https://aistudio.google.com",
+    freeCredits: "월 1,500회 무료 (Gemini Flash)",
+    freeTier: true,
+    models: [
+      { id: "gemini-2.0-flash", name: "Gemini 2.0 Flash", provider: "google", inputPrice: 0, outputPrice: 0, contextWindow: 1000000, recommended: true, free: true },
+      { id: "gemini-1.5-flash", name: "Gemini 1.5 Flash", provider: "google", inputPrice: 75, outputPrice: 300, contextWindow: 1000000, free: true },
+      { id: "gemini-1.5-pro", name: "Gemini 1.5 Pro", provider: "google", inputPrice: 1250, outputPrice: 5000, contextWindow: 2000000 },
+    ],
+  },
+  groq: {
+    id: "groq",
+    name: "Groq",
+    displayName: "Groq (초고속 무료)",
+    keyPrefix: "gsk_",
+    keyPattern: /^gsk_[a-zA-Z0-9]{50,}$/,
+    website: "https://console.groq.com",
+    freeCredits: "무료 (속도 제한만 있음)",
+    freeTier: true,
+    models: [
+      { id: "llama-3.3-70b-versatile", name: "Llama 3.3 70B", provider: "groq", inputPrice: 0, outputPrice: 0, contextWindow: 128000, recommended: true, free: true },
+      { id: "mixtral-8x7b-32768", name: "Mixtral 8x7B", provider: "groq", inputPrice: 0, outputPrice: 0, contextWindow: 32768, free: true },
+      { id: "gemma2-9b-it", name: "Gemma 2 9B", provider: "groq", inputPrice: 0, outputPrice: 0, contextWindow: 8192, free: true },
+    ],
+  },
+  together: {
+    id: "together",
+    name: "Together AI",
+    displayName: "Together AI",
+    keyPrefix: "",
+    keyPattern: /^[a-f0-9]{64}$/,
+    website: "https://api.together.xyz",
+    freeCredits: "$25 무료 크레딧 (가입 시)",
+    models: [
+      { id: "meta-llama/Llama-3.3-70B-Instruct-Turbo", name: "Llama 3.3 70B Turbo", provider: "together", inputPrice: 88, outputPrice: 88, contextWindow: 128000, recommended: true },
+      { id: "mistralai/Mixtral-8x22B-Instruct-v0.1", name: "Mixtral 8x22B", provider: "together", inputPrice: 120, outputPrice: 120, contextWindow: 65536 },
+      { id: "Qwen/Qwen2.5-72B-Instruct-Turbo", name: "Qwen 2.5 72B", provider: "together", inputPrice: 120, outputPrice: 120, contextWindow: 32768 },
+    ],
+  },
+  openrouter: {
+    id: "openrouter",
+    name: "OpenRouter",
+    displayName: "OpenRouter (통합)",
+    keyPrefix: "sk-or-",
+    keyPattern: /^sk-or-[a-zA-Z0-9_-]{40,}$/,
+    website: "https://openrouter.ai",
+    freeCredits: "$1 무료 크레딧",
+    models: [
+      { id: "google/gemini-2.0-flash-exp:free", name: "Gemini 2.0 Flash (Free)", provider: "openrouter", inputPrice: 0, outputPrice: 0, contextWindow: 1000000, recommended: true, free: true },
+      { id: "meta-llama/llama-3.3-70b-instruct:free", name: "Llama 3.3 70B (Free)", provider: "openrouter", inputPrice: 0, outputPrice: 0, contextWindow: 128000, free: true },
+      { id: "anthropic/claude-3.5-haiku", name: "Claude 3.5 Haiku", provider: "openrouter", inputPrice: 800, outputPrice: 4000, contextWindow: 200000 },
+    ],
+  },
+};
+
+// All available models across all providers
+export const ALL_MODELS: ModelInfo[] = Object.values(PROVIDERS).flatMap(p => p.models);
+
+// Free models for fallback
+export const FREE_MODELS: ModelInfo[] = ALL_MODELS.filter(m => m.free);
+
+// Default fallback chain (try in order when credits run out)
+export const FALLBACK_CHAIN: { provider: LLMProvider; model: string }[] = [
+  { provider: "google", model: "gemini-2.0-flash" },
+  { provider: "groq", model: "llama-3.3-70b-versatile" },
+  { provider: "openrouter", model: "google/gemini-2.0-flash-exp:free" },
+];
+
+// ============================================
+// Encryption Utilities
+// ============================================
+
+function getEncryptionKey(): Buffer {
+  const key = process.env.OPENCLAW_ENCRYPTION_KEY ?? process.env.SUPABASE_SERVICE_KEY ?? "default-key-change-me";
+  return createHash("sha256").update(key).digest();
+}
+
+function encryptApiKey(apiKey: string): string {
+  const iv = randomBytes(16);
+  const cipher = createCipheriv("aes-256-cbc", getEncryptionKey(), iv);
+  let encrypted = cipher.update(apiKey, "utf8", "hex");
+  encrypted += cipher.final("hex");
+  return iv.toString("hex") + ":" + encrypted;
+}
+
+function decryptApiKey(encryptedKey: string): string {
+  try {
+    const [ivHex, encrypted] = encryptedKey.split(":");
+    const iv = Buffer.from(ivHex, "hex");
+    const decipher = createDecipheriv("aes-256-cbc", getEncryptionKey(), iv);
+    let decrypted = decipher.update(encrypted, "hex", "utf8");
+    decrypted += decipher.final("utf8");
+    return decrypted;
+  } catch {
+    return "";
+  }
+}
+
+// ============================================
+// User Settings CRUD
+// ============================================
+
+/**
+ * Hash user ID for privacy
+ */
+export function hashUserId(kakaoUserId: string): string {
+  const salt = process.env.OPENCLAW_USER_SALT ?? "openclaw-default-salt";
+  return createHash("sha256").update(kakaoUserId + salt).digest("hex");
+}
+
+/**
+ * Get user settings (creates default if not exists)
+ */
+export async function getUserSettings(kakaoUserId: string): Promise<UserSettings> {
+  const hashedId = hashUserId(kakaoUserId);
+
+  if (!isSupabaseConfigured()) {
+    // Development fallback
+    return {
+      userId: hashedId,
+      kakaoUserId: hashedId,
+      preferredProvider: "anthropic",
+      preferredModel: "claude-3-5-haiku-20241022",
+      apiKeys: {},
+      autoFallback: true,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    };
+  }
+
+  const supabase = getSupabase();
+
+  // Try to get existing settings
+  const { data: existing } = await supabase
+    .from("user_settings")
+    .select("*")
+    .eq("kakao_user_id", hashedId)
+    .single();
+
+  if (existing) {
+    // Decrypt API keys
+    const apiKeys: Partial<Record<LLMProvider, string>> = {};
+    if (existing.api_keys) {
+      for (const [provider, encrypted] of Object.entries(existing.api_keys)) {
+        if (encrypted && typeof encrypted === "string") {
+          apiKeys[provider as LLMProvider] = decryptApiKey(encrypted);
+        }
+      }
+    }
+
+    return {
+      userId: existing.id,
+      kakaoUserId: existing.kakao_user_id,
+      preferredProvider: existing.preferred_provider ?? "anthropic",
+      preferredModel: existing.preferred_model ?? "claude-3-5-haiku-20241022",
+      apiKeys,
+      autoFallback: existing.auto_fallback ?? true,
+      createdAt: new Date(existing.created_at),
+      updatedAt: new Date(existing.updated_at),
+    };
+  }
+
+  // Create default settings
+  const { data: newSettings, error } = await supabase
+    .from("user_settings")
+    .insert({
+      kakao_user_id: hashedId,
+      preferred_provider: "anthropic",
+      preferred_model: "claude-3-5-haiku-20241022",
+      api_keys: {},
+      auto_fallback: true,
+    })
+    .select()
+    .single();
+
+  if (error || !newSettings) {
+    throw new Error(`Failed to create user settings: ${error?.message}`);
+  }
+
+  return {
+    userId: newSettings.id,
+    kakaoUserId: newSettings.kakao_user_id,
+    preferredProvider: "anthropic",
+    preferredModel: "claude-3-5-haiku-20241022",
+    apiKeys: {},
+    autoFallback: true,
+    createdAt: new Date(newSettings.created_at),
+    updatedAt: new Date(newSettings.updated_at),
+  };
+}
+
+/**
+ * Set API key for a specific provider
+ */
+export async function setProviderApiKey(
+  kakaoUserId: string,
+  provider: LLMProvider,
+  apiKey: string,
+): Promise<void> {
+  const hashedId = hashUserId(kakaoUserId);
+  const encryptedKey = encryptApiKey(apiKey);
+
+  if (!isSupabaseConfigured()) {
+    return;
+  }
+
+  const supabase = getSupabase();
+
+  // Get existing settings first
+  await getUserSettings(kakaoUserId);
+
+  // Update API keys using JSONB set
+  await supabase.rpc("set_user_api_key", {
+    p_kakao_user_id: hashedId,
+    p_provider: provider,
+    p_encrypted_key: encryptedKey,
+  });
+}
+
+/**
+ * Remove API key for a specific provider
+ */
+export async function removeProviderApiKey(
+  kakaoUserId: string,
+  provider: LLMProvider,
+): Promise<void> {
+  const hashedId = hashUserId(kakaoUserId);
+
+  if (!isSupabaseConfigured()) {
+    return;
+  }
+
+  const supabase = getSupabase();
+
+  await supabase.rpc("remove_user_api_key", {
+    p_kakao_user_id: hashedId,
+    p_provider: provider,
+  });
+}
+
+/**
+ * Set preferred model
+ */
+export async function setPreferredModel(
+  kakaoUserId: string,
+  provider: LLMProvider,
+  modelId: string,
+): Promise<void> {
+  const hashedId = hashUserId(kakaoUserId);
+
+  if (!isSupabaseConfigured()) {
+    return;
+  }
+
+  const supabase = getSupabase();
+
+  await supabase
+    .from("user_settings")
+    .update({
+      preferred_provider: provider,
+      preferred_model: modelId,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("kakao_user_id", hashedId);
+}
+
+/**
+ * Toggle auto-fallback setting
+ */
+export async function setAutoFallback(
+  kakaoUserId: string,
+  enabled: boolean,
+): Promise<void> {
+  const hashedId = hashUserId(kakaoUserId);
+
+  if (!isSupabaseConfigured()) {
+    return;
+  }
+
+  const supabase = getSupabase();
+
+  await supabase
+    .from("user_settings")
+    .update({
+      auto_fallback: enabled,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("kakao_user_id", hashedId);
+}
+
+// ============================================
+// API Key Validation
+// ============================================
+
+/**
+ * Validate API key format for a provider
+ */
+export function isValidKeyFormat(provider: LLMProvider, apiKey: string): boolean {
+  const providerInfo = PROVIDERS[provider];
+  if (!providerInfo) return false;
+
+  // Special case for Together AI (hex string)
+  if (provider === "together") {
+    return /^[a-f0-9]{64}$/i.test(apiKey);
+  }
+
+  return providerInfo.keyPattern.test(apiKey);
+}
+
+/**
+ * Detect provider from API key
+ */
+export function detectProviderFromKey(apiKey: string): LLMProvider | null {
+  if (apiKey.startsWith("sk-ant-")) return "anthropic";
+  if (apiKey.startsWith("AIza")) return "google";
+  if (apiKey.startsWith("gsk_")) return "groq";
+  if (apiKey.startsWith("sk-or-")) return "openrouter";
+  if (/^[a-f0-9]{64}$/i.test(apiKey)) return "together";
+  if (apiKey.startsWith("sk-")) return "openai";
+  return null;
+}
+
+/**
+ * Validate API key by making a test request
+ */
+export async function validateApiKey(
+  provider: LLMProvider,
+  apiKey: string,
+): Promise<{ valid: boolean; error?: string }> {
+  try {
+    switch (provider) {
+      case "anthropic": {
+        const response = await fetch("https://api.anthropic.com/v1/messages", {
+          method: "POST",
+          headers: {
+            "x-api-key": apiKey,
+            "anthropic-version": "2023-06-01",
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            model: "claude-3-haiku-20240307",
+            max_tokens: 1,
+            messages: [{ role: "user", content: "hi" }],
+          }),
+        });
+        if (response.status === 401) {
+          return { valid: false, error: "유효하지 않은 API 키입니다." };
+        }
+        return { valid: true };
+      }
+
+      case "openai": {
+        const response = await fetch("https://api.openai.com/v1/models", {
+          headers: { Authorization: `Bearer ${apiKey}` },
+        });
+        if (response.status === 401) {
+          return { valid: false, error: "유효하지 않은 API 키입니다." };
+        }
+        return { valid: true };
+      }
+
+      case "google": {
+        const response = await fetch(
+          `https://generativelanguage.googleapis.com/v1/models?key=${apiKey}`,
+        );
+        if (response.status === 400 || response.status === 403) {
+          return { valid: false, error: "유효하지 않은 API 키입니다." };
+        }
+        return { valid: true };
+      }
+
+      case "groq": {
+        const response = await fetch("https://api.groq.com/openai/v1/models", {
+          headers: { Authorization: `Bearer ${apiKey}` },
+        });
+        if (response.status === 401) {
+          return { valid: false, error: "유효하지 않은 API 키입니다." };
+        }
+        return { valid: true };
+      }
+
+      case "together": {
+        const response = await fetch("https://api.together.xyz/v1/models", {
+          headers: { Authorization: `Bearer ${apiKey}` },
+        });
+        if (response.status === 401) {
+          return { valid: false, error: "유효하지 않은 API 키입니다." };
+        }
+        return { valid: true };
+      }
+
+      case "openrouter": {
+        const response = await fetch("https://openrouter.ai/api/v1/auth/key", {
+          headers: { Authorization: `Bearer ${apiKey}` },
+        });
+        if (response.status === 401) {
+          return { valid: false, error: "유효하지 않은 API 키입니다." };
+        }
+        return { valid: true };
+      }
+
+      default:
+        return { valid: false, error: "지원하지 않는 프로바이더입니다." };
+    }
+  } catch (err) {
+    return { valid: false, error: "API 키 검증 중 오류가 발생했습니다." };
+  }
+}
+
+// ============================================
+// Model Resolution & Fallback
+// ============================================
+
+export interface ResolvedModel {
+  provider: LLMProvider;
+  model: string;
+  apiKey: string;
+  isFallback: boolean;
+  isFree: boolean;
+}
+
+/**
+ * Resolve which model to use for a request
+ * Implements fallback logic when credits run out
+ */
+export async function resolveModel(
+  kakaoUserId: string,
+  hasCredits: boolean,
+): Promise<ResolvedModel | { error: string }> {
+  const settings = await getUserSettings(kakaoUserId);
+
+  // Check if user has API key for preferred provider
+  const preferredKey = settings.apiKeys[settings.preferredProvider];
+  if (preferredKey) {
+    return {
+      provider: settings.preferredProvider,
+      model: settings.preferredModel,
+      apiKey: preferredKey,
+      isFallback: false,
+      isFree: true, // Using own key
+    };
+  }
+
+  // Check if user has any API keys
+  for (const [provider, key] of Object.entries(settings.apiKeys)) {
+    if (key) {
+      const providerInfo = PROVIDERS[provider as LLMProvider];
+      const defaultModel = providerInfo?.models.find(m => m.recommended)?.id ?? providerInfo?.models[0]?.id;
+      if (defaultModel) {
+        return {
+          provider: provider as LLMProvider,
+          model: defaultModel,
+          apiKey: key,
+          isFallback: true,
+          isFree: true,
+        };
+      }
+    }
+  }
+
+  // No user API keys - check platform credits
+  if (hasCredits) {
+    // Use platform API with user's preferred model
+    const platformKey = getPlatformApiKey(settings.preferredProvider);
+    if (platformKey) {
+      return {
+        provider: settings.preferredProvider,
+        model: settings.preferredModel,
+        apiKey: platformKey,
+        isFallback: false,
+        isFree: false, // Using platform credits
+      };
+    }
+  }
+
+  // No credits - try free tier fallback
+  if (settings.autoFallback) {
+    for (const fallback of FALLBACK_CHAIN) {
+      const fallbackKey = settings.apiKeys[fallback.provider] ?? getPlatformApiKey(fallback.provider);
+      if (fallbackKey) {
+        return {
+          provider: fallback.provider,
+          model: fallback.model,
+          apiKey: fallbackKey,
+          isFallback: true,
+          isFree: true,
+        };
+      }
+    }
+  }
+
+  return {
+    error: "사용 가능한 API 키가 없습니다. API 키를 등록하거나 크레딧을 충전해주세요.",
+  };
+}
+
+/**
+ * Get platform API key for a provider
+ */
+function getPlatformApiKey(provider: LLMProvider): string | undefined {
+  switch (provider) {
+    case "anthropic":
+      return process.env.ANTHROPIC_API_KEY;
+    case "openai":
+      return process.env.OPENAI_API_KEY;
+    case "google":
+      return process.env.GOOGLE_API_KEY ?? process.env.GEMINI_API_KEY;
+    case "groq":
+      return process.env.GROQ_API_KEY;
+    case "together":
+      return process.env.TOGETHER_API_KEY;
+    case "openrouter":
+      return process.env.OPENROUTER_API_KEY;
+    default:
+      return undefined;
+  }
+}
+
+// ============================================
+// Message Formatting
+// ============================================
+
+/**
+ * Get API guide message with all providers
+ */
+export function getApiKeyGuideMessage(): string {
+  const lines = [
+    "🔑 **API 키 등록 안내**",
+    "",
+    "API 키를 등록하면 무료로 이용할 수 있습니다!",
+    "",
+    "━━━━━━━━━━━━━━━━━━━━",
+    "",
+  ];
+
+  // Highlight free options first
+  lines.push("🆓 **무료로 시작하기 (추천)**");
+  lines.push("");
+
+  const freeProviders = Object.values(PROVIDERS).filter(p => p.freeTier || p.freeCredits);
+  for (const p of freeProviders) {
+    lines.push(`📌 ${p.displayName}`);
+    if (p.freeCredits) {
+      lines.push(`   💰 ${p.freeCredits}`);
+    }
+    lines.push(`   🌐 ${p.website}`);
+    lines.push("");
+  }
+
+  lines.push("━━━━━━━━━━━━━━━━━━━━");
+  lines.push("");
+  lines.push("📋 **등록 방법**");
+  lines.push("");
+  lines.push('API 키를 그대로 입력하면 자동 인식됩니다:');
+  lines.push("");
+  lines.push("예시:");
+  lines.push("• `AIzaSy...` (Google Gemini)");
+  lines.push("• `gsk_...` (Groq)");
+  lines.push("• `sk-ant-...` (Anthropic)");
+  lines.push("• `sk-...` (OpenAI)");
+  lines.push("");
+  lines.push("⚠️ 키는 AES-256으로 암호화되어 안전하게 저장됩니다.");
+
+  return lines.join("\n");
+}
+
+/**
+ * Get model selection message
+ */
+export function getModelSelectionMessage(currentProvider: LLMProvider, currentModel: string): string {
+  const lines = [
+    "🤖 **모델 선택**",
+    "",
+    `현재 모델: ${currentModel}`,
+    "",
+    "━━━━━━━━━━━━━━━━━━━━",
+    "",
+  ];
+
+  for (const [providerId, provider] of Object.entries(PROVIDERS)) {
+    lines.push(`**${provider.displayName}**`);
+    for (const model of provider.models) {
+      const current = providerId === currentProvider && model.id === currentModel ? " ✓" : "";
+      const free = model.free ? " 🆓" : "";
+      const recommended = model.recommended ? " ⭐" : "";
+      lines.push(`• ${model.name}${free}${recommended}${current}`);
+    }
+    lines.push("");
+  }
+
+  lines.push("━━━━━━━━━━━━━━━━━━━━");
+  lines.push("");
+  lines.push("변경하려면 모델 이름을 입력하세요:");
+  lines.push('"모델 변경 gemini", "모델 변경 haiku"');
+
+  return lines.join("\n");
+}
+
+/**
+ * Get user's API key status message
+ */
+export function getApiKeyStatusMessage(settings: UserSettings): string {
+  const lines = [
+    "🔑 **API 키 상태**",
+    "",
+  ];
+
+  const registeredKeys: string[] = [];
+  const availableProviders: string[] = [];
+
+  for (const [providerId, provider] of Object.entries(PROVIDERS)) {
+    const hasKey = !!settings.apiKeys[providerId as LLMProvider];
+    if (hasKey) {
+      registeredKeys.push(`✅ ${provider.displayName}`);
+    } else {
+      availableProviders.push(provider.displayName);
+    }
+  }
+
+  if (registeredKeys.length > 0) {
+    lines.push("**등록된 키:**");
+    lines.push(...registeredKeys);
+    lines.push("");
+  } else {
+    lines.push("❌ 등록된 API 키가 없습니다.");
+    lines.push("");
+  }
+
+  lines.push(`🤖 현재 모델: ${settings.preferredModel}`);
+  lines.push(`🔄 자동 전환: ${settings.autoFallback ? "켜짐" : "꺼짐"}`);
+
+  if (availableProviders.length > 0 && registeredKeys.length < 2) {
+    lines.push("");
+    lines.push('💡 "API키 등록"이라고 말씀하시면 무료 API 키를 등록할 수 있어요!');
+  }
+
+  return lines.join("\n");
+}
+
+/**
+ * Parse model change command
+ */
+export function parseModelChangeCommand(message: string): {
+  isCommand: boolean;
+  provider?: LLMProvider;
+  model?: string;
+} {
+  const normalized = message.trim().toLowerCase();
+
+  // Pattern: "모델 변경 xxx" or "모델 xxx"
+  const match = normalized.match(/모델\s*(변경)?\s+(.+)/);
+  if (!match) {
+    return { isCommand: false };
+  }
+
+  const query = match[2].trim();
+
+  // Search for matching model
+  for (const [providerId, provider] of Object.entries(PROVIDERS)) {
+    for (const model of provider.models) {
+      const modelNameLower = model.name.toLowerCase();
+      const modelIdLower = model.id.toLowerCase();
+
+      if (
+        modelNameLower.includes(query) ||
+        modelIdLower.includes(query) ||
+        query.includes(modelNameLower.split(" ")[0]) // Match first word (e.g., "gemini", "haiku")
+      ) {
+        return {
+          isCommand: true,
+          provider: providerId as LLMProvider,
+          model: model.id,
+        };
+      }
+    }
+  }
+
+  return { isCommand: true }; // Command recognized but model not found
+}
+
+/**
+ * Parse API key from message and detect provider
+ */
+export function parseApiKeyFromMessage(message: string): {
+  provider: LLMProvider;
+  apiKey: string;
+} | null {
+  // Try to extract API key patterns
+  const patterns = [
+    { pattern: /sk-ant-[a-zA-Z0-9_-]{20,}/, provider: "anthropic" as LLMProvider },
+    { pattern: /AIza[a-zA-Z0-9_-]{35}/, provider: "google" as LLMProvider },
+    { pattern: /gsk_[a-zA-Z0-9]{50,}/, provider: "groq" as LLMProvider },
+    { pattern: /sk-or-[a-zA-Z0-9_-]{40,}/, provider: "openrouter" as LLMProvider },
+    { pattern: /\b[a-f0-9]{64}\b/i, provider: "together" as LLMProvider },
+    { pattern: /sk-[a-zA-Z0-9]{20,}/, provider: "openai" as LLMProvider }, // Must be last (catches sk-ant- otherwise)
+  ];
+
+  for (const { pattern, provider } of patterns) {
+    const match = message.match(pattern);
+    if (match) {
+      // Make sure it's not sk-ant- for openai
+      if (provider === "openai" && match[0].startsWith("sk-ant-")) {
+        continue;
+      }
+      return { provider, apiKey: match[0] };
+    }
+  }
+
+  return null;
+}
