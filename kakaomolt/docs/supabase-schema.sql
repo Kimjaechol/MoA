@@ -345,6 +345,79 @@ CREATE INDEX IF NOT EXISTS idx_pending_confirmations_user_id ON pending_confirma
 CREATE INDEX IF NOT EXISTS idx_pending_confirmations_status ON pending_confirmations(status);
 
 -- ============================================
+-- Security Events Table
+-- ============================================
+
+CREATE TABLE IF NOT EXISTS security_events (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  user_id TEXT NOT NULL,
+
+  -- Event info
+  event_type TEXT NOT NULL,
+  details JSONB DEFAULT '{}',
+  severity TEXT DEFAULT 'info', -- info, warning, high, critical
+
+  -- Source info
+  ip_address TEXT,
+  user_agent TEXT,
+  device_id TEXT,
+
+  created_at TIMESTAMPTZ DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_security_events_user_id ON security_events(user_id);
+CREATE INDEX IF NOT EXISTS idx_security_events_event_type ON security_events(event_type);
+CREATE INDEX IF NOT EXISTS idx_security_events_severity ON security_events(severity);
+CREATE INDEX IF NOT EXISTS idx_security_events_created_at ON security_events(created_at);
+
+-- ============================================
+-- Data Transfer Consents Table
+-- ============================================
+
+CREATE TABLE IF NOT EXISTS data_transfer_consents (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  user_id TEXT NOT NULL,
+
+  data_type TEXT NOT NULL,
+  granted BOOLEAN DEFAULT false,
+  destination TEXT,
+  purpose TEXT,
+
+  granted_at TIMESTAMPTZ,
+  expires_at TIMESTAMPTZ,
+  revoked_at TIMESTAMPTZ,
+
+  created_at TIMESTAMPTZ DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_data_consents_user_id ON data_transfer_consents(user_id);
+CREATE INDEX IF NOT EXISTS idx_data_consents_data_type ON data_transfer_consents(data_type);
+
+-- ============================================
+-- Blocked IPs Table
+-- ============================================
+
+CREATE TABLE IF NOT EXISTS blocked_ips (
+  ip_address TEXT PRIMARY KEY,
+  reason TEXT,
+  blocked_at TIMESTAMPTZ DEFAULT now(),
+  expires_at TIMESTAMPTZ,
+  permanent BOOLEAN DEFAULT false
+);
+
+-- ============================================
+-- Blocked Users Table
+-- ============================================
+
+CREATE TABLE IF NOT EXISTS blocked_users (
+  user_id TEXT PRIMARY KEY,
+  reason TEXT,
+  blocked_at TIMESTAMPTZ DEFAULT now(),
+  expires_at TIMESTAMPTZ,
+  permanent BOOLEAN DEFAULT false
+);
+
+-- ============================================
 -- Trigger for updated_at
 -- ============================================
 
