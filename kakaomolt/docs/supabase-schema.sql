@@ -284,6 +284,67 @@ CREATE POLICY "Service role full access" ON memory_sync
   FOR ALL USING (auth.role() = 'service_role');
 
 -- ============================================
+-- Action Permissions Table
+-- ============================================
+
+CREATE TABLE IF NOT EXISTS user_permissions (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  kakao_user_id TEXT UNIQUE NOT NULL,
+
+  -- Permissions array (JSONB)
+  -- Each entry: { category, granted, grantedAt, expiresAt, scope, restrictions }
+  permissions JSONB DEFAULT '[]',
+
+  -- Global consent (false by default for safety)
+  global_consent BOOLEAN DEFAULT false,
+
+  created_at TIMESTAMPTZ DEFAULT now(),
+  updated_at TIMESTAMPTZ DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_user_permissions_kakao_id ON user_permissions(kakao_user_id);
+
+-- ============================================
+-- Action Audit Log Table
+-- ============================================
+
+CREATE TABLE IF NOT EXISTS action_audit_log (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  user_id TEXT NOT NULL,
+
+  -- Action info
+  action TEXT NOT NULL,
+  category TEXT,
+  details JSONB DEFAULT '{}',
+
+  -- Result
+  result TEXT DEFAULT 'success', -- success, blocked, pending
+
+  created_at TIMESTAMPTZ DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_audit_log_user_id ON action_audit_log(user_id);
+CREATE INDEX IF NOT EXISTS idx_audit_log_created_at ON action_audit_log(created_at);
+CREATE INDEX IF NOT EXISTS idx_audit_log_action ON action_audit_log(action);
+
+-- ============================================
+-- Pending Confirmations Table (Optional - for persistence)
+-- ============================================
+
+CREATE TABLE IF NOT EXISTS pending_confirmations (
+  id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL,
+  action TEXT NOT NULL,
+  details TEXT,
+  status TEXT DEFAULT 'pending', -- pending, approved, denied, expired
+  created_at TIMESTAMPTZ DEFAULT now(),
+  expires_at TIMESTAMPTZ NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_pending_confirmations_user_id ON pending_confirmations(user_id);
+CREATE INDEX IF NOT EXISTS idx_pending_confirmations_status ON pending_confirmations(status);
+
+-- ============================================
 -- Trigger for updated_at
 -- ============================================
 
