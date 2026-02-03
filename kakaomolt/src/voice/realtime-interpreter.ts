@@ -16,9 +16,11 @@ import { EventEmitter } from "node:events";
 import {
   GeminiLiveProvider,
   createGeminiProvider,
+} from "./provider-gemini.js";
+import {
   type VoiceProviderConfig,
   type VoiceSession,
-} from "./provider-gemini.js";
+} from "./provider-interface.js";
 
 // ============================================
 // Language Configuration
@@ -519,7 +521,7 @@ export async function translateText(
   const key = apiKey ??
     process.env.GOOGLE_API_KEY ??
     process.env.GEMINI_API_KEY ??
-    process.env.MOLTBOT_GEMINI_API_KEY;
+    process.env.OPENCLAW_GEMINI_API_KEY;
 
   if (!key) {
     return {

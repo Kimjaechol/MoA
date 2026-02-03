@@ -47,8 +47,8 @@ USER moltbot
 
 # Environment defaults
 ENV NODE_ENV=production \
-    MOLTBOT_DATA_DIR=/data/.moltbot \
-    MOLTBOT_CONFIG_DIR=/data/.moltbot \
+    OPENCLAW_DATA_DIR=/data/.moltbot \
+    OPENCLAW_CONFIG_DIR=/data/.moltbot \
     KAKAO_WEBHOOK_PORT=8788 \
     KAKAO_WEBHOOK_PATH=/kakao/webhook
 

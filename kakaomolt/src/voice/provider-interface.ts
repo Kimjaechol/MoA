@@ -347,9 +347,9 @@ export function getAudioConfig(provider: VoiceProviderType): { input: AudioConfi
 export function isProviderAvailable(provider: VoiceProviderType): boolean {
   switch (provider) {
     case "openai":
-      return !!(process.env.OPENAI_API_KEY || process.env.MOLTBOT_OPENAI_API_KEY);
+      return !!(process.env.OPENAI_API_KEY || process.env.OPENCLAW_OPENAI_API_KEY);
     case "gemini":
-      return !!(process.env.GOOGLE_API_KEY || process.env.GEMINI_API_KEY || process.env.MOLTBOT_GEMINI_API_KEY);
+      return !!(process.env.GOOGLE_API_KEY || process.env.GEMINI_API_KEY || process.env.OPENCLAW_GEMINI_API_KEY);
     default:
       return false;
   }

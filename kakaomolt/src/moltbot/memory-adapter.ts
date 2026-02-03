@@ -1,23 +1,23 @@
 /**
- * Moltbot Memory Adapter
+ * OpenClaw Memory Adapter
  *
- * Bridges Moltbot's local memory system with KakaoMolt's cloud sync.
+ * Bridges OpenClaw's local memory system with KakaoMolt's cloud sync.
  * Reads from local SQLite database and exports for E2E encrypted sync.
  *
- * Moltbot Memory Structure:
- * - Database: ~/.clawdbot/memory/{agentId}.sqlite
+ * OpenClaw Memory Structure:
+ * - Database: ~/.openclaw/memory/{agentId}.sqlite
  * - Tables: files, chunks, chunks_vec (vector), chunks_fts (FTS5)
- * - Sessions: ~/.clawdbot/agents/{agentId}/sessions/*.jsonl
+ * - Sessions: ~/.openclaw/agents/{agentId}/sessions/*.jsonl
  */
 
 import { existsSync, readFileSync, readdirSync, statSync, writeFileSync, mkdirSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { homedir } from "node:os";
 
-// Moltbot paths
-const MOLTBOT_BASE_DIR = join(homedir(), ".clawdbot");
-const MEMORY_DIR = join(MOLTBOT_BASE_DIR, "memory");
-const AGENTS_DIR = join(MOLTBOT_BASE_DIR, "agents");
+// OpenClaw paths
+const OPENCLAW_BASE_DIR = join(homedir(), ".openclaw");
+const MEMORY_DIR = join(OPENCLAW_BASE_DIR, "memory");
+const AGENTS_DIR = join(OPENCLAW_BASE_DIR, "agents");
 
 export interface MoltbotMemoryChunk {
   id: string;
@@ -84,8 +84,8 @@ export interface MoltbotMemoryExport {
 /**
  * Check if Moltbot is installed and configured
  */
-export function isMoltbotInstalled(): boolean {
-  return existsSync(MOLTBOT_BASE_DIR);
+export function isOpenClawInstalled(): boolean {
+  return existsSync(OPENCLAW_BASE_DIR);
 }
 
 /**
@@ -314,7 +314,7 @@ function extractTextContent(content: unknown): string {
  * Export all Moltbot data for an agent (for sync)
  */
 export async function exportMoltbotData(agentId: string): Promise<MoltbotMemoryExport | null> {
-  if (!isMoltbotInstalled()) {
+  if (!isOpenClawInstalled()) {
     return null;
   }
 
@@ -508,7 +508,7 @@ export async function getMoltbotMemoryStats(agentId: string): Promise<{
   dbSizeBytes?: number;
   lastUpdated?: string;
 } | null> {
-  if (!isMoltbotInstalled()) {
+  if (!isOpenClawInstalled()) {
     return { exists: false };
   }
 

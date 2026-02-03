@@ -16,6 +16,15 @@ import {
   getCovidStats,
   type PublicDataResult,
 } from './public-data.js';
+import {
+  getDirections,
+  parseNavigationCommand,
+  formatRouteResultForKakao,
+  isNavigationQuery,
+  type RouteResult,
+  type TransportMode,
+  type NavigationProvider,
+} from './navigation.js';
 
 export interface ToolResult {
   success: boolean;
@@ -297,6 +306,65 @@ export const tools: Record<string, ToolDefinition> = {
       }
     },
   },
+
+  // 길찾기 / 내비게이션
+  getDirections: {
+    name: 'getDirections',
+    description: '출발지에서 도착지까지의 경로, 소요 시간, 거리를 조회합니다. 자동차, 대중교통, 도보, 자전거 경로를 지원합니다.',
+    category: 'info',
+    parameters: [
+      {
+        name: 'origin',
+        type: 'string',
+        required: true,
+        description: '출발지 (주소 또는 장소명, 예: 서울역, 강남역)',
+      },
+      {
+        name: 'destination',
+        type: 'string',
+        required: true,
+        description: '도착지 (주소 또는 장소명, 예: 인천공항, 코엑스)',
+      },
+      {
+        name: 'mode',
+        type: 'string',
+        required: false,
+        description: '이동 수단: driving(자동차), transit(대중교통), walking(도보), cycling(자전거). 기본값: driving',
+      },
+      {
+        name: 'provider',
+        type: 'string',
+        required: false,
+        description: '지도 제공자: kakao, naver, google, auto(자동 선택). 기본값: auto',
+      },
+    ],
+    execute: async (params) => {
+      try {
+        const result = await getDirections(
+          params.origin as string,
+          params.destination as string,
+          {
+            mode: params.mode as TransportMode | undefined,
+            provider: params.provider as NavigationProvider | undefined,
+          },
+        );
+        return {
+          success: result.success,
+          data: {
+            ...result,
+            formattedMessage: formatRouteResultForKakao(result),
+          },
+          source: 'navigation',
+        };
+      } catch (error) {
+        return {
+          success: false,
+          error: error instanceof Error ? error.message : '경로 조회 실패',
+          source: 'navigation',
+        };
+      }
+    },
+  },
 };
 
 /**
@@ -346,3 +414,12 @@ export function getToolsPrompt(): string {
 }
 
 export type { WeatherResult, CalendarEvent, SportsResult, PublicDataResult };
+
+// Navigation exports
+export {
+  getDirections,
+  parseNavigationCommand,
+  formatRouteResultForKakao,
+  isNavigationQuery,
+} from './navigation.js';
+export type { RouteResult, TransportMode, NavigationProvider } from './navigation.js';

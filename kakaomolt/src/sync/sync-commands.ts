@@ -507,7 +507,8 @@ export async function handleSyncCommand(
     case "업로드":
     case "upload":
     case "push":
-      return handleUpload(context, options?.memoryData);
+      // handleUpload takes optional agentId string, not memoryData
+      return handleUpload(context, args[0]);
 
     case "다운로드":
     case "download":

@@ -14,21 +14,28 @@ const PLATFORM_API_MULTIPLIER = 2;
 
 // LLM model pricing (per 1M tokens, in credits)
 // 1 credit = 1 KRW (Korean Won)
+// Updated: 2026-02
 const MODEL_PRICING: Record<string, { input: number; output: number }> = {
-  // Claude models
+  // Claude models (latest)
   "claude-opus-4-5-20251101": { input: 15000, output: 75000 },
   "claude-sonnet-4-20250514": { input: 3000, output: 15000 },
   "claude-3-5-sonnet-20241022": { input: 3000, output: 15000 },
+  "claude-3-5-haiku-20241022": { input: 800, output: 4000 },
   "claude-3-haiku-20240307": { input: 250, output: 1250 },
-  // OpenAI models
+  // OpenAI models (latest)
   "gpt-4o": { input: 2500, output: 10000 },
   "gpt-4o-mini": { input: 150, output: 600 },
   "gpt-4-turbo": { input: 10000, output: 30000 },
-  "gpt-3.5-turbo": { input: 500, output: 1500 },
+  "o1": { input: 15000, output: 60000 },
+  "o1-mini": { input: 3000, output: 12000 },
+  // Gemini models
+  "gemini-2.0-flash": { input: 75, output: 300 },
+  "gemini-1.5-pro": { input: 1250, output: 5000 },
+  "gemini-1.5-flash": { input: 75, output: 300 },
 };
 
 // Default model if not specified
-const DEFAULT_MODEL = "claude-3-haiku-20240307";
+const DEFAULT_MODEL = "claude-3-5-haiku-20241022";
 
 // Encryption key for API keys (32 bytes for AES-256)
 function getEncryptionKey(): Buffer {

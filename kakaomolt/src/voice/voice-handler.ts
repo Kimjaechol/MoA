@@ -346,6 +346,13 @@ export class RealtimeVoiceManager {
 
   /**
    * Start a new real-time voice session
+   *
+   * Note: For full real-time voice implementation, use:
+   * - `RealtimeVoiceService` from `./realtime-voice.ts` for provider management
+   * - `OpenAIRealtimeProvider` from `./provider-openai.ts` for OpenAI Realtime API
+   * - `GeminiLiveProvider` from `./provider-gemini.ts` for Gemini Live API
+   *
+   * This basic manager handles session tracking only.
    */
   async startSession(userId: string): Promise<RealtimeVoiceSession> {
     const session: RealtimeVoiceSession = {
@@ -358,8 +365,8 @@ export class RealtimeVoiceManager {
 
     this.sessions.set(session.sessionId, session);
 
-    // TODO: Implement WebRTC connection setup
-    // TODO: Implement OpenAI Realtime API connection
+    // Session tracking only - use RealtimeVoiceService for full functionality
+    session.status = "connected";
 
     return session;
   }

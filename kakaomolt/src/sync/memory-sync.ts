@@ -28,7 +28,7 @@ import {
 import {
   exportMoltbotData,
   importMoltbotData,
-  isMoltbotInstalled,
+  isOpenClawInstalled,
   getMoltbotMemoryStats,
   type MoltbotMemoryExport,
 } from "../moltbot/index.js";
@@ -497,7 +497,7 @@ export class MemorySyncManager {
    * Check if local Moltbot is installed
    */
   checkMoltbotInstalled(): boolean {
-    return isMoltbotInstalled();
+    return isOpenClawInstalled();
   }
 
   /**
@@ -524,7 +524,7 @@ export class MemorySyncManager {
       return { success: false, error: "Encryption not initialized. Call initWithPassphrase first." };
     }
 
-    if (!isMoltbotInstalled()) {
+    if (!isOpenClawInstalled()) {
       return { success: false, error: "Moltbot is not installed on this device." };
     }
 

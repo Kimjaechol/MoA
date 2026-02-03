@@ -24,7 +24,7 @@ import {
   type ChannelType,
   type BridgeResult,
 } from "./channel-bridge.js";
-import { isMoltbotInstalled, listAgentIds } from "./memory-adapter.js";
+import { isOpenClawInstalled, listAgentIds } from "./memory-adapter.js";
 
 export interface AgentConfig {
   /** Gateway URL (auto-discover if not provided) */
@@ -108,7 +108,7 @@ export class MoltbotAgentIntegration {
       // Find agent ID if not provided
       let agentId = this.config.agentId;
 
-      if (!agentId && isMoltbotInstalled()) {
+      if (!agentId && isOpenClawInstalled()) {
         const agents = listAgentIds();
         if (agents.length > 0) {
           agentId = agents[0]; // Use first available agent
@@ -388,7 +388,7 @@ export class MoltbotAgentIntegration {
     const trimmed = message.trim();
 
     // Check for tool commands: /도구 <name> or /tool <name>
-    const match = trimmed.match(/^[/\/](도구|tool)\s+(\w+)(?:\s+(.+))?$/is);
+    const match = trimmed.match(/^[/\/](도구|tool)\s+(\w+)(?:\s+(.+))?$/i);
     if (!match) {
       return { isCommand: false };
     }

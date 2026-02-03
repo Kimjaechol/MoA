@@ -1,10 +1,10 @@
 {
-  "name": "@moltbot/kakao",
+  "name": "@openclaw/kakao",
   "version": "0.1.0",
   "type": "module",
-  "description": "KakaoTalk channel plugin for Moltbot",
+  "description": "KakaoTalk channel plugin for OpenClaw",
   "license": "MIT",
-  "moltbot": {
+  "openclaw": {
     "extensions": ["./index.ts"],
     "channel": {
       "id": "kakao",
@@ -14,7 +14,7 @@
       "order": 25
     },
     "install": {
-      "npmSpec": "@moltbot/kakao",
+      "npmSpec": "@openclaw/kakao",
       "defaultChoice": "npm"
     }
   },
@@ -25,6 +25,6 @@
     "@supabase/supabase-js": "^2.45.0"
   },
   "devDependencies": {
-    "moltbot": "workspace:*"
+    "openclaw": "workspace:*"
   }
 }
