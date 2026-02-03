@@ -568,10 +568,12 @@ export function createConfirmationRequest(
 export async function handleConfirmationResponse(
   kakaoUserId: string,
   approved: boolean,
+  permanent: boolean = false,
 ): Promise<{
   found: boolean;
   confirmation?: PendingConfirmation;
   message: string;
+  permanent: boolean;
 }> {
   // 사용자의 가장 최근 pending 확인 요청 찾기
   let latestConfirmation: PendingConfirmation | undefined;
@@ -588,6 +590,7 @@ export async function handleConfirmationResponse(
     return {
       found: false,
       message: "확인 대기 중인 요청이 없습니다.",
+      permanent: false,
     };
   }
 
@@ -599,6 +602,7 @@ export async function handleConfirmationResponse(
       found: true,
       confirmation: latestConfirmation,
       message: "확인 요청이 만료되었습니다. 다시 시도해주세요.",
+      permanent: false,
     };
   }
 
@@ -613,16 +617,27 @@ export async function handleConfirmationResponse(
   });
 
   if (approved) {
+    // "계속 허용"인 경우 영구 권한 부여
+    if (permanent && latestConfirmation.action) {
+      await grantPermission(kakaoUserId, latestConfirmation.action, {
+        scope: "permanent",
+      });
+    }
+
     return {
       found: true,
       confirmation: latestConfirmation,
-      message: "승인되었습니다. 작업을 수행합니다.",
+      message: permanent
+        ? "계속 허용되었습니다. 앞으로 동일한 행위를 할 때 다시 묻지 않습니다."
+        : "승인되었습니다. 작업을 수행합니다.",
+      permanent,
     };
   } else {
     return {
       found: true,
       confirmation: latestConfirmation,
       message: "거부되었습니다. 작업이 취소되었습니다.",
+      permanent: false,
     };
   }
 }
@@ -633,14 +648,21 @@ export async function handleConfirmationResponse(
 export function isConfirmationResponse(message: string): {
   isResponse: boolean;
   approved?: boolean;
+  permanent?: boolean; // "계속 허용" 여부
 } {
   const normalized = message.trim().toLowerCase();
+
+  // "계속 허용"은 영구 허용 (다시 묻지 않음)
+  const permanentPatterns = ["계속 허용", "계속허용", "항상 허용", "항상허용", "영구 허용", "always allow"];
+  if (permanentPatterns.some(p => normalized === p || normalized.startsWith(p))) {
+    return { isResponse: true, approved: true, permanent: true };
+  }
 
   const approvePatterns = ["네", "예", "응", "ㅇㅇ", "ok", "yes", "승인", "확인", "동의", "허락", "해줘", "해도 돼"];
   const denyPatterns = ["아니", "아니요", "ㄴㄴ", "no", "거부", "취소", "안돼", "하지마", "그만"];
 
   if (approvePatterns.some(p => normalized === p || normalized.startsWith(p))) {
-    return { isResponse: true, approved: true };
+    return { isResponse: true, approved: true, permanent: false };
   }
 
   if (denyPatterns.some(p => normalized === p || normalized.startsWith(p))) {
@@ -760,9 +782,8 @@ ${riskEmoji[actionInfo.riskLevel]} **${actionInfo.name}**
 ${detailsSection}
 이 행위를 이번에 한해서 허용하시겠습니까?
 
-"네" 또는 "아니오"로 응답해주세요.
-
-💡 이번 1회만 허용되며, 다음에 동일한 행위를 할 때 다시 동의를 받습니다.`;
+"네" / "아니오"로 응답해주세요.
+위 기능을 계속 허용하고 싶다면 "계속 허용"이라고 말씀해주세요.`;
 }
 
 /**
@@ -784,8 +805,8 @@ export function formatConfirmationMessage(
 ${details}
 
 이 행위를 이번에 한해서 허용하시겠습니까? ("네" / "아니오")
+위 기능을 계속 허용하고 싶다면 "계속 허용"이라고 말씀해주세요.
 
-💡 이번 1회만 허용되며, 다음에 동일한 행위를 할 때 다시 동의를 받습니다.
 ⏱️ 5분 내에 응답해주세요.`;
 }
 

@@ -86,7 +86,7 @@ export class ActionGuard {
           canProceed: false,
           needsResponse: true,
           responseMessage: formatPermissionRequestMessage(action, actionDetails),
-          quickReplies: ["네", "아니오"],
+          quickReplies: ["네", "아니오", "계속 허용"],
           permissionStatus: "needs_permission",
         };
 
@@ -101,7 +101,7 @@ export class ActionGuard {
           canProceed: false,
           needsResponse: true,
           responseMessage: formatConfirmationMessage(action, detailsStr),
-          quickReplies: ["네", "아니오"],
+          quickReplies: ["네", "아니오", "계속 허용"],
           permissionStatus: "needs_confirmation",
           pendingConfirmation: confirmation,
         };
@@ -115,7 +115,7 @@ export class ActionGuard {
           canProceed: false,
           needsResponse: true,
           responseMessage: formatPermissionRequestMessage(action, expiredDetails),
-          quickReplies: ["네", "아니오"],
+          quickReplies: ["네", "아니오", "계속 허용"],
           permissionStatus: "needs_permission",
         };
 
@@ -272,7 +272,11 @@ export class ActionGuard {
       return { handled: false };
     }
 
-    const result = await handleConfirmationResponse(kakaoUserId, confirmResponse.approved ?? false);
+    const result = await handleConfirmationResponse(
+      kakaoUserId,
+      confirmResponse.approved ?? false,
+      confirmResponse.permanent ?? false,
+    );
 
     if (!result.found) {
       return { handled: false };
@@ -305,12 +309,25 @@ export class ActionGuard {
     }
 
     if (confirmResponse.approved) {
-      // 1회성 권한 부여: 즉시 만료 (1회 사용 후 자동 소멸)
+      const info = SENSITIVE_ACTIONS[pendingAction];
+
+      if (confirmResponse.permanent) {
+        // "계속 허용": 영구 권한 부여 (다시 묻지 않음)
+        await grantPermission(kakaoUserId, pendingAction, {
+          scope: "permanent",
+        });
+        return {
+          handled: true,
+          granted: true,
+          response: `✅ "${info.name}" 행위가 계속 허용되었습니다.\n\n앞으로 동일한 행위를 할 때 다시 동의를 구하지 않습니다.\n취소하려면 "권한 취소 ${getActionKeyword(pendingAction)}"이라고 말씀해주세요.\n\n요청하신 작업을 진행합니다.`,
+        };
+      }
+
+      // "네": 1회성 권한 부여 (이번 한 번만)
       await grantPermission(kakaoUserId, pendingAction, {
         expiresIn: 30 * 1000, // 30초 후 자동 만료 (1회 실행 충분한 시간)
         scope: "one_time",
       });
-      const info = SENSITIVE_ACTIONS[pendingAction];
       return {
         handled: true,
         granted: true,
