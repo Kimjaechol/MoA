@@ -78,13 +78,14 @@ export class ActionGuard {
     // 권한 없음 또는 확인 필요
     switch (permCheck.reason) {
       case "not_requested":
-        // 권한이 없음 - 권한 요청 메시지 생성
+        // 권한이 없음 - 구체적 행위 내용과 함께 1회성 권한 요청 메시지 생성
+        const actionDetails = formatActionDetails(action, details);
         await logAction(kakaoUserId, `permission_requested:${action}`, details, "pending");
 
         return {
           canProceed: false,
           needsResponse: true,
-          responseMessage: formatPermissionRequestMessage(action),
+          responseMessage: formatPermissionRequestMessage(action, actionDetails),
           quickReplies: ["네", "아니오"],
           permissionStatus: "needs_permission",
         };
@@ -106,13 +107,14 @@ export class ActionGuard {
         };
 
       case "expired":
-        // 권한 만료 - 재요청
+        // 이전 1회성 권한 사용 완료 - 다시 동의 필요
+        const expiredDetails = formatActionDetails(action, details);
         await logAction(kakaoUserId, `permission_expired:${action}`, details, "blocked");
 
         return {
           canProceed: false,
           needsResponse: true,
-          responseMessage: `⚠️ "${actionInfo.name}" 권한이 만료되었습니다.\n\n다시 허용하시겠습니까?`,
+          responseMessage: formatPermissionRequestMessage(action, expiredDetails),
           quickReplies: ["네", "아니오"],
           permissionStatus: "needs_permission",
         };
@@ -124,7 +126,7 @@ export class ActionGuard {
         return {
           canProceed: false,
           needsResponse: true,
-          responseMessage: `🚫 "${actionInfo.name}" 권한이 거부되어 있습니다.\n\n권한을 허용하려면 "권한 허용 ${getActionKeyword(action)}"이라고 말씀해주세요.`,
+          responseMessage: `🚫 "${actionInfo.name}" 행위가 거부되었습니다.\n\n다음에 필요하시면 다시 요청해주세요.`,
           permissionStatus: "denied",
         };
 
@@ -207,12 +209,16 @@ export class ActionGuard {
 
       case "grant":
         if (cmd.category) {
-          await grantPermission(kakaoUserId, cmd.category);
+          // 명시적 명령어로 부여해도 1회성
+          await grantPermission(kakaoUserId, cmd.category, {
+            expiresIn: 30 * 1000,
+            scope: "one_time",
+          });
           const info = SENSITIVE_ACTIONS[cmd.category];
           return {
             handled: true,
-            response: `✅ "${info.name}" 권한이 허용되었습니다.\n\n이제 이 기능을 사용할 수 있습니다.`,
-            quickReplies: ["권한 상태", "권한 취소 " + getActionKeyword(cmd.category)],
+            response: `✅ "${info.name}" 행위가 이번 1회에 한해 허용되었습니다.`,
+            quickReplies: ["권한 상태"],
           };
         }
         return {
@@ -299,19 +305,23 @@ export class ActionGuard {
     }
 
     if (confirmResponse.approved) {
-      await grantPermission(kakaoUserId, pendingAction);
+      // 1회성 권한 부여: 즉시 만료 (1회 사용 후 자동 소멸)
+      await grantPermission(kakaoUserId, pendingAction, {
+        expiresIn: 30 * 1000, // 30초 후 자동 만료 (1회 실행 충분한 시간)
+        scope: "one_time",
+      });
       const info = SENSITIVE_ACTIONS[pendingAction];
       return {
         handled: true,
         granted: true,
-        response: `✅ "${info.name}" 권한이 허용되었습니다.\n\n요청하신 작업을 진행합니다.`,
+        response: `✅ "${info.name}" 행위가 이번 1회에 한해 허용되었습니다.\n\n요청하신 작업을 진행합니다.`,
       };
     } else {
       const info = SENSITIVE_ACTIONS[pendingAction];
       return {
         handled: true,
         granted: false,
-        response: `🚫 "${info.name}" 권한이 거부되었습니다.\n\n나중에 필요하시면 "권한 허용 ${getActionKeyword(pendingAction)}"이라고 말씀해주세요.`,
+        response: `🚫 "${info.name}" 행위가 거부되었습니다.\n\n다음에 필요하시면 다시 요청해주세요.`,
       };
     }
   }

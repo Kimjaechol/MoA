@@ -734,8 +734,14 @@ export async function getAuditLog(
 
 /**
  * 권한 요청 메시지 생성
+ *
+ * 모든 권한은 1회성입니다. "이번에 한해서 허용" 문구를 사용하여
+ * 사용자가 영구 허용으로 오해하지 않도록 합니다.
  */
-export function formatPermissionRequestMessage(action: SensitiveActionCategory): string {
+export function formatPermissionRequestMessage(
+  action: SensitiveActionCategory,
+  details?: string,
+): string {
   const actionInfo = SENSITIVE_ACTIONS[action];
   const riskEmoji = {
     low: "🟢",
@@ -744,18 +750,25 @@ export function formatPermissionRequestMessage(action: SensitiveActionCategory):
     critical: "🔴",
   };
 
+  const detailsSection = details
+    ? `\n📋 상세 내용:\n${details}\n`
+    : "";
+
   return `⚠️ **권한 요청**
 
 ${riskEmoji[actionInfo.riskLevel]} **${actionInfo.name}**
-${actionInfo.description}
+${detailsSection}
+이 행위를 이번에 한해서 허용하시겠습니까?
 
-이 기능을 허용하시겠습니까?
+"네" 또는 "아니오"로 응답해주세요.
 
-"네" 또는 "아니오"로 응답해주세요.`;
+💡 이번 1회만 허용되며, 다음에 동일한 행위를 할 때 다시 동의를 받습니다.`;
 }
 
 /**
  * 확인 요청 메시지 생성
+ *
+ * 이번 1회에 한해서만 허용되며, 이후 동일 행위 시 다시 확인합니다.
  */
 export function formatConfirmationMessage(
   action: SensitiveActionCategory,
@@ -770,8 +783,9 @@ export function formatConfirmationMessage(
 📋 상세 내용:
 ${details}
 
-진행하시겠습니까? ("네" / "아니오")
+이 행위를 이번에 한해서 허용하시겠습니까? ("네" / "아니오")
 
+💡 이번 1회만 허용되며, 다음에 동일한 행위를 할 때 다시 동의를 받습니다.
 ⏱️ 5분 내에 응답해주세요.`;
 }
 
