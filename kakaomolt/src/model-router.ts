@@ -459,52 +459,76 @@ async function tryFallbackProviders(
   maxTokens: number,
 ): Promise<ChatResponse | null> {
   const settings = await getUserSettings(kakaoUserId);
+  const credits = await getCredits(kakaoUserId);
+  const hasCredits = credits > 0;
 
   // 1단계: 무료 모델 먼저 시도
-  const freeFallbacks: Array<{ provider: LLMProvider; model: string; isFree: boolean }> = [
-    { provider: "google", model: "gemini-2.0-flash", isFree: true },
-    { provider: "groq", model: "llama-3.3-70b-versatile", isFree: true },
-    { provider: "openrouter", model: "google/gemini-2.0-flash-exp:free", isFree: true },
+  const freeFallbacks: Array<{ provider: LLMProvider; model: string }> = [
+    { provider: "google", model: "gemini-2.0-flash" },
+    { provider: "groq", model: "llama-3.3-70b-versatile" },
+    { provider: "openrouter", model: "google/gemini-2.0-flash-exp:free" },
   ];
 
-  // 2단계: 유료 모델 가성비순 (사용자 API 키가 있는 것만)
-  const paidFallbacks: Array<{ provider: LLMProvider; model: string; isFree: boolean }> = [
-    { provider: "google", model: "gemini-1.5-pro", isFree: false },
-    { provider: "openai", model: "gpt-4o-mini", isFree: false },
-    { provider: "anthropic", model: "claude-3-5-haiku-latest", isFree: false },
-    { provider: "together", model: "meta-llama/Llama-3.3-70B-Instruct-Turbo", isFree: false },
-    { provider: "openai", model: "gpt-4o", isFree: false },
-    { provider: "anthropic", model: "claude-sonnet-4-20250514", isFree: false },
-  ];
-
-  const allFallbacks = [...freeFallbacks, ...paidFallbacks];
-
-  for (const fallback of allFallbacks) {
-    const apiKey = fallback.isFree
-      ? (settings.apiKeys[fallback.provider] ?? getPlatformKey(fallback.provider))
-      : settings.apiKeys[fallback.provider]; // 유료는 사용자 키만
-
+  for (const fallback of freeFallbacks) {
+    const apiKey = settings.apiKeys[fallback.provider] ?? getPlatformKey(fallback.provider);
     if (!apiKey) continue;
 
     try {
       const response = await callProvider(
-        {
-          provider: fallback.provider,
-          model: fallback.model,
-          apiKey,
-          isFallback: true,
-          isFree: fallback.isFree,
-        },
-        messages,
-        maxTokens,
+        { provider: fallback.provider, model: fallback.model, apiKey, isFallback: true, isFree: true },
+        messages, maxTokens,
       );
-
       response.isFallback = true;
-      response.isFree = fallback.isFree;
+      response.isFree = true;
       return response;
     } catch {
-      // Try next fallback
       continue;
+    }
+  }
+
+  // 2단계: 유료 모델 가성비순 (사용자 키 우선, 없으면 플랫폼 키 + 크레딧)
+  const paidFallbacks: Array<{ provider: LLMProvider; model: string }> = [
+    { provider: "google", model: "gemini-1.5-pro" },
+    { provider: "openai", model: "gpt-4o-mini" },
+    { provider: "anthropic", model: "claude-3-5-haiku-latest" },
+    { provider: "together", model: "meta-llama/Llama-3.3-70B-Instruct-Turbo" },
+    { provider: "openai", model: "gpt-4o" },
+    { provider: "anthropic", model: "claude-sonnet-4-20250514" },
+  ];
+
+  for (const fallback of paidFallbacks) {
+    // 사용자 키가 있으면 무료 (isFree=true)
+    const userKey = settings.apiKeys[fallback.provider];
+    if (userKey) {
+      try {
+        const response = await callProvider(
+          { provider: fallback.provider, model: fallback.model, apiKey: userKey, isFallback: true, isFree: true },
+          messages, maxTokens,
+        );
+        response.isFallback = true;
+        response.isFree = true;
+        return response;
+      } catch {
+        continue;
+      }
+    }
+
+    // 사용자 키 없으면 플랫폼 API 사용 (크레딧 차감, 2배)
+    if (hasCredits) {
+      const platformKey = getPlatformKey(fallback.provider);
+      if (platformKey) {
+        try {
+          const response = await callProvider(
+            { provider: fallback.provider, model: fallback.model, apiKey: platformKey, isFallback: true, isFree: false },
+            messages, maxTokens,
+          );
+          response.isFallback = true;
+          response.isFree = false;
+          return response;
+        } catch {
+          continue;
+        }
+      }
     }
   }
 
