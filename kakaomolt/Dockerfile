@@ -1,5 +1,5 @@
-# Moltbot + KakaoTalk LawCall - Production Deployment
-# Optimized for minimal size and fast startup
+# KakaoMolt - Standalone Webhook Server for Railway Deployment
+# Runs the Kakao webhook directly without the full OpenClaw gateway
 
 FROM node:22-alpine AS builder
 
@@ -12,17 +12,11 @@ WORKDIR /app
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 COPY extensions/kakao/package.json extensions/kakao/
 
-# Install all dependencies (including dev for build)
+# Install all dependencies (including dev for tsx)
 RUN pnpm install --frozen-lockfile
 
-# Copy source code
-COPY . .
-
-# Build TypeScript
-RUN pnpm build
-
-# Prune dev dependencies
-RUN pnpm prune --prod
+# Copy extension source code
+COPY extensions/kakao ./extensions/kakao
 
 # Production stage - minimal image
 FROM node:22-alpine AS production
@@ -33,8 +27,7 @@ RUN addgroup -g 1001 -S moltbot && \
 
 WORKDIR /app
 
-# Copy only necessary files
-COPY --from=builder --chown=moltbot:moltbot /app/dist ./dist
+# Copy necessary files from builder
 COPY --from=builder --chown=moltbot:moltbot /app/package.json ./
 COPY --from=builder --chown=moltbot:moltbot /app/node_modules ./node_modules
 COPY --from=builder --chown=moltbot:moltbot /app/extensions/kakao ./extensions/kakao
@@ -47,17 +40,16 @@ USER moltbot
 
 # Environment defaults
 ENV NODE_ENV=production \
-    OPENCLAW_DATA_DIR=/data/.moltbot \
-    OPENCLAW_CONFIG_DIR=/data/.moltbot \
+    PORT=8788 \
     KAKAO_WEBHOOK_PORT=8788 \
     KAKAO_WEBHOOK_PATH=/kakao/webhook
 
-# Expose webhook port
+# Expose webhook port (Railway uses $PORT)
 EXPOSE 8788
 
 # Health check
-HEALTHCHECK --interval=30s --timeout=10s --start-period=10s --retries=3 \
+HEALTHCHECK --interval=30s --timeout=10s --start-period=15s --retries=3 \
   CMD wget --no-verbose --tries=1 --spider http://localhost:8788/health || exit 1
 
-# Start gateway
-CMD ["node", "dist/cli/index.js", "gateway", "run", "--bind", "0.0.0.0", "--port", "8788"]
+# Start standalone webhook server via tsx
+CMD ["npx", "tsx", "extensions/kakao/server.ts"]

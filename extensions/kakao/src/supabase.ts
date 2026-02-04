@@ -94,6 +94,146 @@ export interface Database {
           completed_at?: string | null;
         };
       };
+      // E2E Memory Sync tables
+      user_devices: {
+        Row: {
+          id: string;
+          user_id: string;
+          device_id: string;
+          device_name: string | null;
+          device_type: string | null;
+          last_sync_at: string | null;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          user_id: string;
+          device_id: string;
+          device_name?: string | null;
+          device_type?: string | null;
+          last_sync_at?: string | null;
+          created_at?: string;
+        };
+        Update: {
+          device_name?: string | null;
+          device_type?: string | null;
+          last_sync_at?: string | null;
+        };
+      };
+      memory_sync: {
+        Row: {
+          id: string;
+          user_id: string;
+          encrypted_data: string;
+          iv: string;
+          auth_tag: string;
+          version: number;
+          chunk_index: number;
+          total_chunks: number;
+          data_type: string;
+          checksum: string;
+          source_device_id: string;
+          created_at: string;
+          expires_at: string | null;
+        };
+        Insert: {
+          id?: string;
+          user_id: string;
+          encrypted_data: string;
+          iv: string;
+          auth_tag: string;
+          version?: number;
+          chunk_index?: number;
+          total_chunks?: number;
+          data_type: string;
+          checksum: string;
+          source_device_id: string;
+          created_at?: string;
+          expires_at?: string | null;
+        };
+        Update: never;
+      };
+      memory_deltas: {
+        Row: {
+          id: string;
+          user_id: string;
+          encrypted_delta: string;
+          iv: string;
+          auth_tag: string;
+          base_version: number;
+          delta_type: string;
+          entity_type: string;
+          source_device_id: string;
+          created_at: string;
+          applied_at: string | null;
+        };
+        Insert: {
+          id?: string;
+          user_id: string;
+          encrypted_delta: string;
+          iv: string;
+          auth_tag: string;
+          base_version: number;
+          delta_type: string;
+          entity_type: string;
+          source_device_id: string;
+          created_at?: string;
+          applied_at?: string | null;
+        };
+        Update: {
+          applied_at?: string | null;
+        };
+      };
+      conversation_sync: {
+        Row: {
+          id: string;
+          user_id: string;
+          session_id: string;
+          encrypted_messages: string;
+          iv: string;
+          auth_tag: string;
+          message_count: number;
+          version: number;
+          source_device_id: string;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          user_id: string;
+          session_id: string;
+          encrypted_messages: string;
+          iv: string;
+          auth_tag: string;
+          message_count?: number;
+          version?: number;
+          source_device_id: string;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          encrypted_messages?: string;
+          iv?: string;
+          auth_tag?: string;
+          message_count?: number;
+          version?: number;
+          source_device_id?: string;
+          updated_at?: string;
+        };
+      };
+      user_key_salts: {
+        Row: {
+          user_id: string;
+          salt: string;
+          created_at: string;
+        };
+        Insert: {
+          user_id: string;
+          salt: string;
+          created_at?: string;
+        };
+        Update: never;
+      };
     };
   };
 }

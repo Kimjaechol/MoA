@@ -1,4 +1,4 @@
-import type { ChannelPlugin } from "clawdbot/plugin-sdk";
+import type { ChannelPlugin } from "openclaw/plugin-sdk";
 import type { ResolvedKakaoAccount } from "./types.js";
 import {
   listKakaoAccountIds,
