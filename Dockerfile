@@ -18,9 +18,6 @@ RUN if [ -n "$OPENCLAW_DOCKER_APT_PACKAGES" ]; then \
 
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml .npmrc ./
 COPY ui/package.json ./ui/package.json
-COPY packages/moltbot/package.json ./packages/moltbot/package.json
-COPY packages/clawdbot/package.json ./packages/clawdbot/package.json
-COPY extensions/kakao/package.json ./extensions/kakao/package.json
 COPY patches ./patches
 COPY scripts ./scripts
 
@@ -31,6 +28,9 @@ RUN OPENCLAW_A2UI_SKIP_MISSING=1 pnpm build
 # Force pnpm for UI build (Bun may fail on ARM/Synology architectures)
 ENV OPENCLAW_PREFER_PNPM=1
 RUN pnpm ui:build
+
+# Install kakao extension runtime deps (not in main pnpm workspace install)
+RUN npm install --no-save @supabase/supabase-js@2 zod@4
 
 ENV NODE_ENV=production
 
