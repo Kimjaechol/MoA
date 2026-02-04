@@ -32,6 +32,7 @@ import {
   getApiKeyGuideMessage,
   getModelSelectionMessage,
   getApiKeyStatusMessage,
+  setModelMode,
   PROVIDERS,
   type LLMProvider,
 } from "./user-settings.js";
@@ -179,6 +180,128 @@ ${providerInfo.freeTier ? "🆓 이 제공자는 무료 티어를 제공합니�
 
 질문을 시작해 주세요!`,
       quickReplies: ["모델 선택", "API키 상태", "잔액"],
+    };
+  }
+
+  // ============================================
+  // AI Mode Selection Commands
+  // ============================================
+
+  // AI 모드 메뉴
+  if (normalizedMessage === "ai 모드" || normalizedMessage === "ai모드" || normalizedMessage === "모드 선택") {
+    const settings = await getUserSettings(userId);
+    const currentMode = settings.modelMode ?? "cost_effective";
+    const modeLabels: Record<string, string> = {
+      manual: "🎯 직접 선택",
+      cost_effective: "💰 무료/가성비 우선",
+      best_performance: "🚀 최고 성능 우선",
+    };
+
+    const hasAnyKey = Object.values(settings.apiKeys).some(k => !!k);
+    const keyInfo = hasAnyKey
+      ? "🔑 API 키 등록됨 → **무료** 이용 중"
+      : "💳 플랫폼 API 사용 중 → 크레딧 차감";
+
+    return {
+      handled: true,
+      response: `🤖 **AI 모드 선택**
+
+현재 모드: **${modeLabels[currentMode]}**
+${keyInfo}
+
+━━━━━━━━━━━━━━━━━━━━
+
+아래 3가지 모드 중 하나를 선택하세요:
+
+1️⃣ **직접 선택** - 원하는 AI 모델을 직접 지정
+   → "AI 모드 직접선택"
+
+2️⃣ **무료/가성비 우선** (기본) - 무료 모델 먼저, 유료는 저렴한 순서
+   → "AI 모드 가성비"
+   순서: Gemini Flash(무료) → Groq(무료) → Gemini Pro → GPT-4o Mini → ...
+
+3️⃣ **최고 성능 우선** - 가장 똑똑한 AI부터 적용
+   → "AI 모드 최고성능"
+   순서: Claude Opus 4.5 → GPT-4o → Claude Sonnet → Gemini Pro → ...
+
+━━━━━━━━━━━━━━━━━━━━
+
+💡 **요금 안내** (모든 모드 공통)
+• API 키 직접 등록 시 → **완전 무료!**
+• API 키 미등록 시 → 플랫폼 API 제공 (크레딧 차감)
+${!hasAnyKey ? '\n"API키 등록"으로 무료 이용을 시작하세요!' : ""}`,
+      quickReplies: hasAnyKey
+        ? ["AI 모드 직접선택", "AI 모드 가성비", "AI 모드 최고성능"]
+        : ["AI 모드 직접선택", "AI 모드 가성비", "AI 모드 최고성능", "API키 등록"],
+    };
+  }
+
+  // AI 모드 변경: 직접 선택
+  if (normalizedMessage === "ai 모드 직접선택" || normalizedMessage === "ai모드 직접선택"
+    || normalizedMessage === "모드 직접선택" || normalizedMessage === "직접선택") {
+    await setModelMode(userId, "manual");
+    const manualSettings = await getUserSettings(userId);
+    const manualHasKey = Object.values(manualSettings.apiKeys).some(k => !!k);
+    return {
+      handled: true,
+      response: `✅ AI 모드가 **🎯 직접 선택**으로 변경되었습니다.
+
+현재 선택된 모델: ${manualSettings.preferredModel}
+
+다른 모델을 사용하려면 "모델 선택"으로 변경하세요.
+이 모드에서는 선택한 모델만 사용되며, 자동 전환이 없습니다.
+
+💡 **요금**: ${manualHasKey ? "API 키 등록됨 → 무료 이용 중" : "API 키 미등록 → 플랫폼 API 사용 (크레딧 차감)"}
+${!manualHasKey ? '"API키 등록"으로 무료 이용이 가능합니다.' : ""}`,
+      quickReplies: manualHasKey ? ["모델 선택", "AI 모드"] : ["모델 선택", "API키 등록", "AI 모드"],
+    };
+  }
+
+  // AI 모드 변경: 가성비 우선
+  if (normalizedMessage === "ai 모드 가성비" || normalizedMessage === "ai모드 가성비"
+    || normalizedMessage === "모드 가성비" || normalizedMessage === "가성비 모드") {
+    await setModelMode(userId, "cost_effective");
+    const ceSettings = await getUserSettings(userId);
+    const ceHasKey = Object.values(ceSettings.apiKeys).some(k => !!k);
+    return {
+      handled: true,
+      response: `✅ AI 모드가 **💰 무료/가성비 우선**으로 변경되었습니다.
+
+적용 순서:
+1. Gemini 2.0 Flash (무료 월 1,500회)
+2. Groq Llama 3.3 (무료)
+3. OpenRouter (무료)
+4. Gemini Pro → GPT-4o Mini → Claude Haiku (저렴순)
+5. GPT-4o → Claude Sonnet → Claude Opus (고성능)
+
+무료 모델부터 자동으로 사용됩니다.
+
+💡 **요금**: ${ceHasKey ? "API 키 등록됨 → 무료 이용 중" : "API 키 미등록 → 유료 모델 사용 시 크레딧 차감"}
+${!ceHasKey ? '"API키 등록"으로 유료 모델도 무료로 사용 가능!' : ""}`,
+      quickReplies: ceHasKey ? ["AI 모드", "모델 선택"] : ["AI 모드", "API키 등록", "모델 선택"],
+    };
+  }
+
+  // AI 모드 변경: 최고 성능
+  if (normalizedMessage === "ai 모드 최고성능" || normalizedMessage === "ai모드 최고성능"
+    || normalizedMessage === "모드 최고성능" || normalizedMessage === "최고성능 모드") {
+    await setModelMode(userId, "best_performance");
+    const bpSettings = await getUserSettings(userId);
+    const bpHasKey = Object.values(bpSettings.apiKeys).some(k => !!k);
+    return {
+      handled: true,
+      response: `✅ AI 모드가 **🚀 최고 성능 우선**으로 변경되었습니다.
+
+적용 순서:
+1. Claude Opus 4.5 (최고 성능)
+2. GPT-4o (고성능)
+3. Claude Sonnet 4 (고성능)
+4. Gemini 1.5 Pro (고성능)
+5. GPT-4o Mini → Claude Haiku (빠름)
+
+💡 **요금**: ${bpHasKey ? "API 키 등록됨 → 무료 이용 중" : "API 키 미등록 → 플랫폼 API 사용 (크레딧 차감)"}
+${!bpHasKey ? '⚠️ 최고 성능 모델은 비용이 높습니다.\n"API키 등록"으로 무료 이용하거나 "충전"으로 크레딧을 준비하세요.' : ""}`,
+      quickReplies: bpHasKey ? ["AI 모드", "잔액"] : ["API키 등록", "충전", "AI 모드"],
     };
   }
 
@@ -372,28 +495,42 @@ function getPricingMessage(): string {
 
 ━━━━━━━━━━━━━━━━━━━━
 
-🆓 **무료로 이용하기** (추천!)
+🔑 **방법 1: API 키 직접 등록 → 완전 무료!**
 
-📌 Google Gemini API
-   • 월 1,500회 무료
+나만의 API 키를 등록하면 모든 AI 모델을
+**무료**로 이용할 수 있습니다.
+
+📌 Google Gemini API (추천!)
+   • 월 1,500회 무료 제공
    • "Gemini 무료"라고 입력
 
-📌 Groq API
+📌 Groq API (추천!)
    • 완전 무료 (속도 제한만)
    • "Groq 무료"라고 입력
 
-━━━━━━━━━━━━━━━━━━━━
-
-💰 **크레딧 요금** (무료 API 미등록 시)
-
-📌 Claude Haiku: 약 1-2원/대화
-📌 GPT-4o-mini: 약 2-3원/대화
-📌 Claude Sonnet: 약 10-20원/대화
+📌 Anthropic / OpenAI
+   • 본인 계정 비용만 발생 (추가 수수료 없음)
+   • "API키 등록"으로 등록
 
 ━━━━━━━━━━━━━━━━━━━━
 
-💡 나만의 API 키 등록 시 **무료**!
-"API키 등록"이라고 말씀해주세요.`;
+💳 **방법 2: API 키 없이 사용 → 크레딧 차감**
+
+API 키 등록 없이도 바로 사용 가능합니다.
+플랫폼이 AI를 대신 호출하며, 다음과 같은 비용이
+크레딧으로 차감됩니다.
+
+📌 Claude Haiku: 약 2-4원/대화
+📌 GPT-4o-mini: 약 4-6원/대화
+📌 Claude Sonnet: 약 20-40원/대화
+📌 Claude Opus: 약 100-200원/대화
+
+💰 "충전"으로 크레딧을 충전하세요.
+
+━━━━━━━━━━━━━━━━━━━━
+
+💡 API 키 등록이 어려우신 분도
+크레딧 충전으로 바로 이용 가능합니다!`;
 }
 
 /**

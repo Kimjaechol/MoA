@@ -448,6 +448,10 @@ export async function routeChat(
 
 /**
  * Try fallback providers when primary fails
+ *
+ * 폴백 순서:
+ * 1. 무료 모델 (Gemini Flash → Groq → OpenRouter 무료)
+ * 2. 유료 모델 가성비순 (Gemini Pro → GPT-4o Mini → Claude Haiku → ...)
  */
 async function tryFallbackProviders(
   kakaoUserId: string,
@@ -455,37 +459,76 @@ async function tryFallbackProviders(
   maxTokens: number,
 ): Promise<ChatResponse | null> {
   const settings = await getUserSettings(kakaoUserId);
+  const credits = await getCredits(kakaoUserId);
+  const hasCredits = credits > 0;
 
-  // Fallback chain: Google Gemini -> Groq -> OpenRouter free
-  const fallbacks: Array<{ provider: LLMProvider; model: string }> = [
+  // 1단계: 무료 모델 먼저 시도
+  const freeFallbacks: Array<{ provider: LLMProvider; model: string }> = [
     { provider: "google", model: "gemini-2.0-flash" },
     { provider: "groq", model: "llama-3.3-70b-versatile" },
     { provider: "openrouter", model: "google/gemini-2.0-flash-exp:free" },
   ];
 
-  for (const fallback of fallbacks) {
+  for (const fallback of freeFallbacks) {
     const apiKey = settings.apiKeys[fallback.provider] ?? getPlatformKey(fallback.provider);
     if (!apiKey) continue;
 
     try {
       const response = await callProvider(
-        {
-          provider: fallback.provider,
-          model: fallback.model,
-          apiKey,
-          isFallback: true,
-          isFree: true,
-        },
-        messages,
-        maxTokens,
+        { provider: fallback.provider, model: fallback.model, apiKey, isFallback: true, isFree: true },
+        messages, maxTokens,
       );
-
       response.isFallback = true;
       response.isFree = true;
       return response;
     } catch {
-      // Try next fallback
       continue;
+    }
+  }
+
+  // 2단계: 유료 모델 가성비순 (사용자 키 우선, 없으면 플랫폼 키 + 크레딧)
+  const paidFallbacks: Array<{ provider: LLMProvider; model: string }> = [
+    { provider: "google", model: "gemini-1.5-pro" },
+    { provider: "openai", model: "gpt-4o-mini" },
+    { provider: "anthropic", model: "claude-3-5-haiku-latest" },
+    { provider: "together", model: "meta-llama/Llama-3.3-70B-Instruct-Turbo" },
+    { provider: "openai", model: "gpt-4o" },
+    { provider: "anthropic", model: "claude-sonnet-4-20250514" },
+  ];
+
+  for (const fallback of paidFallbacks) {
+    // 사용자 키가 있으면 무료 (isFree=true)
+    const userKey = settings.apiKeys[fallback.provider];
+    if (userKey) {
+      try {
+        const response = await callProvider(
+          { provider: fallback.provider, model: fallback.model, apiKey: userKey, isFallback: true, isFree: true },
+          messages, maxTokens,
+        );
+        response.isFallback = true;
+        response.isFree = true;
+        return response;
+      } catch {
+        continue;
+      }
+    }
+
+    // 사용자 키 없으면 플랫폼 API 사용 (크레딧 차감, 2배)
+    if (hasCredits) {
+      const platformKey = getPlatformKey(fallback.provider);
+      if (platformKey) {
+        try {
+          const response = await callProvider(
+            { provider: fallback.provider, model: fallback.model, apiKey: platformKey, isFallback: true, isFree: false },
+            messages, maxTokens,
+          );
+          response.isFallback = true;
+          response.isFree = false;
+          return response;
+        } catch {
+          continue;
+        }
+      }
     }
   }
 
