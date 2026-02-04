@@ -18,6 +18,9 @@ RUN if [ -n "$OPENCLAW_DOCKER_APT_PACKAGES" ]; then \
 
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml .npmrc ./
 COPY ui/package.json ./ui/package.json
+COPY packages/moltbot/package.json ./packages/moltbot/package.json
+COPY packages/clawdbot/package.json ./packages/clawdbot/package.json
+COPY extensions/kakao/package.json ./extensions/kakao/package.json
 COPY patches ./patches
 COPY scripts ./scripts
 
