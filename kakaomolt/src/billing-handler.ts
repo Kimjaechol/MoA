@@ -32,6 +32,7 @@ import {
   getApiKeyGuideMessage,
   getModelSelectionMessage,
   getApiKeyStatusMessage,
+  setModelMode,
   PROVIDERS,
   type LLMProvider,
 } from "./user-settings.js";
@@ -179,6 +180,100 @@ ${providerInfo.freeTier ? "🆓 이 제공자는 무료 티어를 제공합니�
 
 질문을 시작해 주세요!`,
       quickReplies: ["모델 선택", "API키 상태", "잔액"],
+    };
+  }
+
+  // ============================================
+  // AI Mode Selection Commands
+  // ============================================
+
+  // AI 모드 메뉴
+  if (normalizedMessage === "ai 모드" || normalizedMessage === "ai모드" || normalizedMessage === "모드 선택") {
+    const settings = await getUserSettings(userId);
+    const currentMode = settings.modelMode ?? "cost_effective";
+    const modeLabels: Record<string, string> = {
+      manual: "🎯 직접 선택",
+      cost_effective: "💰 무료/가성비 우선",
+      best_performance: "🚀 최고 성능 우선",
+    };
+
+    return {
+      handled: true,
+      response: `🤖 **AI 모드 선택**
+
+현재 모드: **${modeLabels[currentMode]}**
+
+아래 3가지 모드 중 하나를 선택하세요:
+
+1️⃣ **직접 선택** - 원하는 AI 모델을 직접 지정
+   → "AI 모드 직접선택"
+
+2️⃣ **무료/가성비 우선** (기본) - 무료 모델 먼저, 유료는 저렴한 순서
+   → "AI 모드 가성비"
+   순서: Gemini Flash(무료) → Groq(무료) → Gemini Pro(저렴) → GPT-4o Mini → ...
+
+3️⃣ **최고 성능 우선** - 가장 똑똑한 AI부터 적용
+   → "AI 모드 최고성능"
+   순서: Claude Opus 4.5 → GPT-4o → Claude Sonnet → Gemini Pro → ...`,
+      quickReplies: ["AI 모드 직접선택", "AI 모드 가성비", "AI 모드 최고성능"],
+    };
+  }
+
+  // AI 모드 변경: 직접 선택
+  if (normalizedMessage === "ai 모드 직접선택" || normalizedMessage === "ai모드 직접선택"
+    || normalizedMessage === "모드 직접선택" || normalizedMessage === "직접선택") {
+    await setModelMode(userId, "manual");
+    const settings = await getUserSettings(userId);
+    return {
+      handled: true,
+      response: `✅ AI 모드가 **🎯 직접 선택**으로 변경되었습니다.
+
+현재 선택된 모델: ${settings.preferredModel}
+
+다른 모델을 사용하려면 "모델 선택"으로 변경하세요.
+이 모드에서는 선택한 모델만 사용되며, 자동 전환이 없습니다.`,
+      quickReplies: ["모델 선택", "AI 모드"],
+    };
+  }
+
+  // AI 모드 변경: 가성비 우선
+  if (normalizedMessage === "ai 모드 가성비" || normalizedMessage === "ai모드 가성비"
+    || normalizedMessage === "모드 가성비" || normalizedMessage === "가성비 모드") {
+    await setModelMode(userId, "cost_effective");
+    return {
+      handled: true,
+      response: `✅ AI 모드가 **💰 무료/가성비 우선**으로 변경되었습니다.
+
+적용 순서:
+1. Gemini 2.0 Flash (무료 월 1,500회)
+2. Groq Llama 3.3 (무료)
+3. OpenRouter (무료)
+4. Gemini Pro → GPT-4o Mini → Claude Haiku (유료 저렴순)
+5. GPT-4o → Claude Sonnet → Claude Opus (유료 고성능)
+
+무료 모델부터 자동으로 사용됩니다.`,
+      quickReplies: ["AI 모드", "모델 선택"],
+    };
+  }
+
+  // AI 모드 변경: 최고 성능
+  if (normalizedMessage === "ai 모드 최고성능" || normalizedMessage === "ai모드 최고성능"
+    || normalizedMessage === "모드 최고성능" || normalizedMessage === "최고성능 모드") {
+    await setModelMode(userId, "best_performance");
+    return {
+      handled: true,
+      response: `✅ AI 모드가 **🚀 최고 성능 우선**으로 변경되었습니다.
+
+적용 순서:
+1. Claude Opus 4.5 (최고 성능)
+2. GPT-4o (고성능)
+3. Claude Sonnet 4 (고성능)
+4. Gemini 1.5 Pro (고성능)
+5. GPT-4o Mini → Claude Haiku (빠름)
+
+⚠️ 최고 성능 모델은 API 비용이 높습니다.
+API 키를 등록하거나 크레딧을 충전해주세요.`,
+      quickReplies: ["AI 모드", "잔액", "API키 등록"],
     };
   }
 
