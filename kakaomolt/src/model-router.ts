@@ -448,6 +448,10 @@ export async function routeChat(
 
 /**
  * Try fallback providers when primary fails
+ *
+ * 폴백 순서:
+ * 1. 무료 모델 (Gemini Flash → Groq → OpenRouter 무료)
+ * 2. 유료 모델 가성비순 (Gemini Pro → GPT-4o Mini → Claude Haiku → ...)
  */
 async function tryFallbackProviders(
   kakaoUserId: string,
@@ -456,15 +460,30 @@ async function tryFallbackProviders(
 ): Promise<ChatResponse | null> {
   const settings = await getUserSettings(kakaoUserId);
 
-  // Fallback chain: Google Gemini -> Groq -> OpenRouter free
-  const fallbacks: Array<{ provider: LLMProvider; model: string }> = [
-    { provider: "google", model: "gemini-2.0-flash" },
-    { provider: "groq", model: "llama-3.3-70b-versatile" },
-    { provider: "openrouter", model: "google/gemini-2.0-flash-exp:free" },
+  // 1단계: 무료 모델 먼저 시도
+  const freeFallbacks: Array<{ provider: LLMProvider; model: string; isFree: boolean }> = [
+    { provider: "google", model: "gemini-2.0-flash", isFree: true },
+    { provider: "groq", model: "llama-3.3-70b-versatile", isFree: true },
+    { provider: "openrouter", model: "google/gemini-2.0-flash-exp:free", isFree: true },
   ];
 
-  for (const fallback of fallbacks) {
-    const apiKey = settings.apiKeys[fallback.provider] ?? getPlatformKey(fallback.provider);
+  // 2단계: 유료 모델 가성비순 (사용자 API 키가 있는 것만)
+  const paidFallbacks: Array<{ provider: LLMProvider; model: string; isFree: boolean }> = [
+    { provider: "google", model: "gemini-1.5-pro", isFree: false },
+    { provider: "openai", model: "gpt-4o-mini", isFree: false },
+    { provider: "anthropic", model: "claude-3-5-haiku-latest", isFree: false },
+    { provider: "together", model: "meta-llama/Llama-3.3-70B-Instruct-Turbo", isFree: false },
+    { provider: "openai", model: "gpt-4o", isFree: false },
+    { provider: "anthropic", model: "claude-sonnet-4-20250514", isFree: false },
+  ];
+
+  const allFallbacks = [...freeFallbacks, ...paidFallbacks];
+
+  for (const fallback of allFallbacks) {
+    const apiKey = fallback.isFree
+      ? (settings.apiKeys[fallback.provider] ?? getPlatformKey(fallback.provider))
+      : settings.apiKeys[fallback.provider]; // 유료는 사용자 키만
+
     if (!apiKey) continue;
 
     try {
@@ -474,14 +493,14 @@ async function tryFallbackProviders(
           model: fallback.model,
           apiKey,
           isFallback: true,
-          isFree: true,
+          isFree: fallback.isFree,
         },
         messages,
         maxTokens,
       );
 
       response.isFallback = true;
-      response.isFree = true;
+      response.isFree = fallback.isFree;
       return response;
     } catch {
       // Try next fallback

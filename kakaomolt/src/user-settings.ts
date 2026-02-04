@@ -155,12 +155,47 @@ export const ALL_MODELS: ModelInfo[] = Object.values(PROVIDERS).flatMap(p => p.m
 // Free models for fallback
 export const FREE_MODELS: ModelInfo[] = ALL_MODELS.filter(m => m.free);
 
-// Default fallback chain (try in order when credits run out)
-export const FALLBACK_CHAIN: { provider: LLMProvider; model: string }[] = [
-  { provider: "google", model: "gemini-2.0-flash" },
-  { provider: "groq", model: "llama-3.3-70b-versatile" },
-  { provider: "openrouter", model: "google/gemini-2.0-flash-exp:free" },
+// ============================================
+// 4단계 폴백 체인 (Fallback Chain)
+// ============================================
+//
+// 1단계: 무료 고성능 모델 (Gemini Flash - 월 1,500회 무료)
+// 2단계: 무료 차선 모델 (Groq - 완전 무료, 속도제한)
+// 3단계: 유료 모델 - 성능 좋고 API 비용이 저렴한 순서
+// 4단계: API 미설정 시 → 플랫폼 유료 API 사용
+// ============================================
+
+/** 1~2단계: 무료 폴백 체인 */
+export const FREE_FALLBACK_CHAIN: { provider: LLMProvider; model: string; tier: string }[] = [
+  { provider: "google", model: "gemini-2.0-flash", tier: "무료 고성능" },
+  { provider: "groq", model: "llama-3.3-70b-versatile", tier: "무료" },
+  { provider: "openrouter", model: "google/gemini-2.0-flash-exp:free", tier: "무료" },
 ];
+
+/**
+ * 3단계: 유료 폴백 체인 (성능 대비 가격이 좋은 순서)
+ *
+ * 정렬 기준: 성능/가격 비율 (가성비)
+ * - Gemini 1.5 Pro: 높은 성능, 매우 저렴 (입력 1,250원/1M)
+ * - GPT-4o Mini: 괜찮은 성능, 매우 저렴 (입력 150원/1M)
+ * - Claude 3.5 Haiku: 빠르고 저렴 (입력 800원/1M)
+ * - Together Llama 3.3: 오픈소스, 저렴 (입력 88원/1M)
+ * - GPT-4o: 높은 성능, 중간 가격 (입력 2,500원/1M)
+ * - Claude Sonnet 4: 높은 성능, 중간 가격 (입력 3,000원/1M)
+ * - Claude Opus 4.5: 최고 성능, 고가 (입력 15,000원/1M)
+ */
+export const PAID_FALLBACK_CHAIN: { provider: LLMProvider; model: string; tier: string }[] = [
+  { provider: "google", model: "gemini-1.5-pro", tier: "유료 가성비" },
+  { provider: "openai", model: "gpt-4o-mini", tier: "유료 저렴" },
+  { provider: "anthropic", model: "claude-3-5-haiku-latest", tier: "유료 저렴" },
+  { provider: "together", model: "meta-llama/Llama-3.3-70B-Instruct-Turbo", tier: "유료 저렴" },
+  { provider: "openai", model: "gpt-4o", tier: "유료 고성능" },
+  { provider: "anthropic", model: "claude-sonnet-4-20250514", tier: "유료 고성능" },
+  { provider: "anthropic", model: "claude-opus-4-5-20251101", tier: "유료 최고성능" },
+];
+
+// 이전 코드 호환용
+export const FALLBACK_CHAIN = FREE_FALLBACK_CHAIN;
 
 // ============================================
 // Encryption Utilities
@@ -517,7 +552,15 @@ export interface ResolvedModel {
 
 /**
  * Resolve which model to use for a request
- * Implements fallback logic when credits run out
+ *
+ * 4단계 폴백 체인:
+ *
+ * 0단계: 사용자가 직접 선택한 선호 모델 (API 키 있을 때)
+ * 1단계: 무료 고성능 모델 (Gemini Flash 무료 → Groq 무료 → OpenRouter 무료)
+ * 2단계: 유료 모델 - 사용자 API 키, 가성비 순서
+ *        (Gemini Pro → GPT-4o Mini → Claude Haiku → Together → GPT-4o → Sonnet → Opus)
+ * 3단계: 플랫폼 유료 API (크레딧 차감, 가성비 순서)
+ * 4단계: 모든 옵션 실패 → 무료 API 등록 안내
  */
 export async function resolveModel(
   kakaoUserId: string,
@@ -525,7 +568,9 @@ export async function resolveModel(
 ): Promise<ResolvedModel | { error: string }> {
   const settings = await getUserSettings(kakaoUserId);
 
-  // Check if user has API key for preferred provider
+  // ============================================
+  // 0단계: 사용자가 직접 선택한 선호 모델
+  // ============================================
   const preferredKey = settings.apiKeys[settings.preferredProvider];
   if (preferredKey) {
     return {
@@ -533,19 +578,21 @@ export async function resolveModel(
       model: settings.preferredModel,
       apiKey: preferredKey,
       isFallback: false,
-      isFree: true, // Using own key
+      isFree: true, // 자체 API 키 = 플랫폼 비용 무료
     };
   }
 
-  // Check if user has any API keys
-  for (const [provider, key] of Object.entries(settings.apiKeys)) {
-    if (key) {
-      const providerInfo = PROVIDERS[provider as LLMProvider];
-      const defaultModel = providerInfo?.models.find(m => m.recommended)?.id ?? providerInfo?.models[0]?.id;
-      if (defaultModel) {
+  // ============================================
+  // 1단계: 무료 모델 우선 시도 (가장 비용 효율적)
+  // Gemini Flash(무료 1500회/월) → Groq(완전무료) → OpenRouter(무료)
+  // ============================================
+  if (settings.autoFallback) {
+    for (const fallback of FREE_FALLBACK_CHAIN) {
+      const key = settings.apiKeys[fallback.provider] ?? getPlatformApiKey(fallback.provider);
+      if (key) {
         return {
-          provider: provider as LLMProvider,
-          model: defaultModel,
+          provider: fallback.provider,
+          model: fallback.model,
           apiKey: key,
           isFallback: true,
           isFree: true,
@@ -554,39 +601,57 @@ export async function resolveModel(
     }
   }
 
-  // No user API keys - check platform credits
-  if (hasCredits) {
-    // Use platform API with user's preferred model
-    const platformKey = getPlatformApiKey(settings.preferredProvider);
-    if (platformKey) {
+  // ============================================
+  // 2단계: 유료 모델 - 사용자 API 키, 가성비 순서
+  // 사용자가 등록한 API 키가 있는 프로바이더만 시도
+  // Gemini Pro → GPT-4o Mini → Claude Haiku → Together → GPT-4o → Sonnet → Opus
+  // ============================================
+  for (const fallback of PAID_FALLBACK_CHAIN) {
+    const key = settings.apiKeys[fallback.provider];
+    if (key) {
       return {
-        provider: settings.preferredProvider,
-        model: settings.preferredModel,
-        apiKey: platformKey,
-        isFallback: false,
-        isFree: false, // Using platform credits
+        provider: fallback.provider,
+        model: fallback.model,
+        apiKey: key,
+        isFallback: true,
+        isFree: true, // 자체 API 키 = 플랫폼 비용 무료 (API 비용은 사용자 부담)
       };
     }
   }
 
-  // No credits - try free tier fallback
-  if (settings.autoFallback) {
-    for (const fallback of FALLBACK_CHAIN) {
-      const fallbackKey = settings.apiKeys[fallback.provider] ?? getPlatformApiKey(fallback.provider);
-      if (fallbackKey) {
+  // ============================================
+  // 3단계: 플랫폼 유료 API (크레딧 차감, 가성비 순서)
+  // API 키가 아무것도 없는 경우 → 플랫폼 제공 API 사용
+  // ============================================
+  if (hasCredits) {
+    // 가성비 순서로 플랫폼 API 시도
+    for (const fallback of PAID_FALLBACK_CHAIN) {
+      const platformKey = getPlatformApiKey(fallback.provider);
+      if (platformKey) {
         return {
           provider: fallback.provider,
           model: fallback.model,
-          apiKey: fallbackKey,
-          isFallback: true,
-          isFree: true,
+          apiKey: platformKey,
+          isFallback: false,
+          isFree: false, // 플랫폼 크레딧 차감
         };
       }
     }
   }
 
+  // ============================================
+  // 4단계: 모든 옵션 실패 → 무료 API 등록 안내
+  // ============================================
   return {
-    error: "사용 가능한 API 키가 없습니다. API 키를 등록하거나 크레딧을 충전해주세요.",
+    error: [
+      "사용 가능한 API 키가 없습니다.",
+      "",
+      "🆓 무료로 사용하는 방법:",
+      '1. "Gemini 무료" → Google Gemini API 키 등록 (월 1,500회 무료)',
+      '2. "Groq 무료" → Groq API 키 등록 (완전 무료)',
+      "",
+      "💰 유료 사용: 크레딧을 충전하면 모든 모델을 사용할 수 있습니다.",
+    ].join("\n"),
   };
 }
 
