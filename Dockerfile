@@ -34,9 +34,17 @@ RUN pnpm ui:build
 
 ENV NODE_ENV=production
 
+# Expose webhook port (Railway overrides via $PORT)
+EXPOSE 8788
+
+# Health check for Railway/Docker
+HEALTHCHECK --interval=30s --timeout=10s --start-period=15s --retries=3 \
+  CMD wget --no-verbose --tries=1 --spider http://localhost:${PORT:-8788}/health || exit 1
+
 # Security hardening: Run as non-root user
 # The node:22-bookworm image includes a 'node' user (uid 1000)
 # This reduces the attack surface by preventing container escape via root privileges
 USER node
 
-CMD ["node", "dist/index.js"]
+# Start the Kakao webhook server (standalone, no full gateway needed)
+CMD ["npx", "tsx", "extensions/kakao/server.ts"]
