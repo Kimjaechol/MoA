@@ -1,55 +1,44 @@
-# KakaoMolt - Standalone Webhook Server for Railway Deployment
+# KakaoMolt - Standalone Webhook Server for Railway/Docker Deployment
 # Runs the Kakao webhook directly without the full OpenClaw gateway
+#
+# Build context: repo root (railway.json sets dockerfilePath to this file)
+# Usage: docker build -f extensions/kakao/Dockerfile .
 
-FROM node:22-alpine AS builder
-
-# Install pnpm
-RUN corepack enable && corepack prepare pnpm@latest --activate
+FROM node:22-alpine
 
 WORKDIR /app
 
-# Copy package files first for layer caching
-COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
-COPY extensions/kakao/package.json extensions/kakao/
+# Create a minimal ESM package.json for the standalone server
+RUN echo '{"type":"module","private":true}' > package.json
 
-# Install all dependencies (including dev for tsx)
-RUN pnpm install --frozen-lockfile
+# Install only required runtime dependencies:
+#   tsx:                  TypeScript execution engine
+#   zod:                  Schema validation (used in config.ts)
+#   @supabase/supabase-js: Database client (used in supabase.ts, billing, sync)
+RUN npm install tsx@4 zod@4 @supabase/supabase-js@2
 
-# Copy extension source code
+# Copy extension source code (paths relative to repo root build context)
 COPY extensions/kakao ./extensions/kakao
 
-# Production stage - minimal image
-FROM node:22-alpine AS production
-
-# Add non-root user for security
+# Security: non-root user
 RUN addgroup -g 1001 -S moltbot && \
-    adduser -S moltbot -u 1001
+    adduser -S moltbot -u 1001 && \
+    mkdir -p /data/.moltbot && chown -R moltbot:moltbot /data && \
+    chown -R moltbot:moltbot /app
 
-WORKDIR /app
-
-# Copy necessary files from builder
-COPY --from=builder --chown=moltbot:moltbot /app/package.json ./
-COPY --from=builder --chown=moltbot:moltbot /app/node_modules ./node_modules
-COPY --from=builder --chown=moltbot:moltbot /app/extensions/kakao ./extensions/kakao
-
-# Create data directory
-RUN mkdir -p /data/.moltbot && chown -R moltbot:moltbot /data
-
-# Switch to non-root user
 USER moltbot
 
-# Environment defaults
+# Environment defaults (Railway injects PORT automatically)
 ENV NODE_ENV=production \
     PORT=8788 \
     KAKAO_WEBHOOK_PORT=8788 \
     KAKAO_WEBHOOK_PATH=/kakao/webhook
 
-# Expose webhook port (Railway uses $PORT)
 EXPOSE 8788
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=10s --start-period=15s --retries=3 \
   CMD wget --no-verbose --tries=1 --spider http://localhost:8788/health || exit 1
 
-# Start standalone webhook server via tsx
+# Start standalone webhook server
 CMD ["npx", "tsx", "extensions/kakao/server.ts"]
