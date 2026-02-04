@@ -2,14 +2,14 @@
   "$schema": "https://railway.app/railway.schema.json",
   "build": {
     "builder": "DOCKERFILE",
-    "dockerfilePath": "extensions/kakao/Dockerfile"
+    "dockerfilePath": "Dockerfile"
   },
   "deploy": {
     "numReplicas": 1,
     "sleepApplication": false,
     "restartPolicyType": "ON_FAILURE",
     "restartPolicyMaxRetries": 10,
-    "startCommand": "npm install --no-save @supabase/supabase-js@2 2>/dev/null; exec npx tsx extensions/kakao/server.ts",
+    "startCommand": "exec node --import tsx extensions/kakao/server.ts",
     "healthcheckPath": "/health",
     "healthcheckTimeout": 30
   }

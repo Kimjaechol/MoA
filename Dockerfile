@@ -47,4 +47,5 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=15s --retries=3 \
 USER node
 
 # Start the Kakao webhook server (standalone, no full gateway needed)
-CMD ["npx", "tsx", "extensions/kakao/server.ts"]
+# Use node --import tsx instead of npx tsx for reliability in pnpm containers
+CMD ["node", "--import", "tsx", "extensions/kakao/server.ts"]
