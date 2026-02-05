@@ -1,0 +1,12 @@
+# Nixpacks configuration for Railway deployment
+# If Railway uses Nixpacks builder instead of Dockerfile,
+# this ensures the kakao webhook server starts (not the OpenClaw CLI)
+
+[phases.setup]
+nixPkgs = ["nodejs_22"]
+
+[phases.install]
+cmds = ["npm install tsx@4 zod@4 @supabase/supabase-js@2"]
+
+[start]
+cmd = "./node_modules/.bin/tsx extensions/kakao/server.ts"
