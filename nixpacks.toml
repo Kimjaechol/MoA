@@ -6,7 +6,7 @@
 nixPkgs = ["nodejs_22"]
 
 [phases.install]
-cmds = ["npm install tsx@4 zod@4 @supabase/supabase-js@2"]
+cmds = ["corepack enable && pnpm install"]
 
 [start]
 cmd = "./node_modules/.bin/tsx extensions/kakao/server.ts"
