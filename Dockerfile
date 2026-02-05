@@ -26,14 +26,15 @@ COPY scripts ./scripts
 RUN NODE_ENV=development pnpm install --frozen-lockfile
 
 COPY . .
+
+# Re-run pnpm install to pick up extension workspace deps (e.g., @supabase/supabase-js)
+# The first install only saw root + ui package.json; now extensions/kakao/package.json is available
+RUN NODE_ENV=development pnpm install
+
 RUN OPENCLAW_A2UI_SKIP_MISSING=1 pnpm build
 # Force pnpm for UI build (Bun may fail on ARM/Synology architectures)
 ENV OPENCLAW_PREFER_PNPM=1
 RUN pnpm ui:build
-
-# Install MoA extension runtime deps + tsx (ensures tsx is always available
-# even if devDependencies were somehow skipped during pnpm install)
-RUN npm install --no-save tsx@4 @supabase/supabase-js@2 zod@4
 
 # Verify tsx binary exists at build time (fail early if missing)
 RUN test -x ./node_modules/.bin/tsx && echo "[MoA] tsx binary found" || (echo "[MoA] ERROR: tsx binary NOT found!" && exit 1)
