@@ -17,6 +17,16 @@ import {
   parseBridgeCommand,
   type MoltbotAgentIntegration,
 } from "./moltbot/index.js";
+import {
+  generatePairingCode,
+  listUserDevices,
+  removeDevice,
+  sendRelayCommand,
+  getRecentCommands,
+  getCommandResult,
+  getRelayUsageStats,
+  getRelayBillingConfig,
+} from "./relay/index.js";
 
 export interface KakaoWebhookOptions {
   account: ResolvedKakaoAccount;
@@ -41,6 +51,8 @@ export interface KakaoWebhookOptions {
   };
   /** Optional Moltbot agent integration for tools, channels, and memory */
   moltbotAgent?: MoltbotAgentIntegration;
+  /** Optional request interceptor — called before webhook handling. Return true to indicate the request was handled. */
+  requestInterceptor?: (req: IncomingMessage, res: ServerResponse) => Promise<boolean>;
 }
 
 /**
@@ -62,6 +74,7 @@ export async function startKakaoWebhook(opts: KakaoWebhookOptions): Promise<{
     onError,
     logger = console,
     moltbotAgent,
+    requestInterceptor,
   } = opts;
 
   const apiClient = createKakaoApiClient(account);
@@ -73,6 +86,12 @@ export async function startKakaoWebhook(opts: KakaoWebhookOptions): Promise<{
       res.writeHead(200, { "Content-Type": "text/plain" });
       res.end("ok");
       return;
+    }
+
+    // Request interceptor (e.g., relay API routes)
+    if (requestInterceptor) {
+      const handled = await requestInterceptor(req, res);
+      if (handled) return;
     }
 
     // Only accept POST to webhook path
@@ -409,9 +428,13 @@ export function extractKakaoUserInfo(request: KakaoIncomingMessage): {
 
 interface MoltbotCommand {
   isCommand: boolean;
-  type?: "tools" | "channels" | "bridge" | "status" | "memory" | "help";
+  type?: "tools" | "channels" | "bridge" | "status" | "memory" | "help" | "relay" | "relay_register" | "relay_devices" | "relay_remove" | "relay_status";
   args?: string[];
   bridgeCmd?: ReturnType<typeof parseBridgeCommand>;
+  /** For relay commands: target device name */
+  relayDevice?: string;
+  /** For relay commands: the command text to send */
+  relayCommand?: string;
 }
 
 /**
@@ -451,6 +474,39 @@ function parseMoltbotCommand(message: string): MoltbotCommand {
   // Help command: /도움말, /help
   if (/^[/\/](도움말|help)$/i.test(trimmed)) {
     return { isCommand: true, type: "help" };
+  }
+
+  // Relay commands: /원격, /기기등록, /기기, /기기삭제, /원격상태
+  // /원격 <device_name> <command>
+  const relayMatch = trimmed.match(/^[/\/](원격|remote)\s+(\S+)\s+(.+)$/is);
+  if (relayMatch) {
+    return {
+      isCommand: true,
+      type: "relay",
+      relayDevice: relayMatch[2],
+      relayCommand: relayMatch[3],
+    };
+  }
+
+  // /기기등록, /register-device
+  if (/^[/\/](기기등록|register[-_]?device)$/i.test(trimmed)) {
+    return { isCommand: true, type: "relay_register" };
+  }
+
+  // /기기, /devices — list devices
+  if (/^[/\/](기기|기기목록|devices?)$/i.test(trimmed)) {
+    return { isCommand: true, type: "relay_devices" };
+  }
+
+  // /기기삭제 <name>, /remove-device <name>
+  const removeMatch = trimmed.match(/^[/\/](기기삭제|remove[-_]?device)\s+(.+)$/i);
+  if (removeMatch) {
+    return { isCommand: true, type: "relay_remove", args: [removeMatch[2].trim()] };
+  }
+
+  // /원격상태, /relay-status
+  if (/^[/\/](원격상태|relay[-_]?status)$/i.test(trimmed)) {
+    return { isCommand: true, type: "relay_status" };
   }
 
   return { isCommand: false };
@@ -607,7 +663,14 @@ async function handleMoltbotCommand(
 
     case "help": {
       return {
-        text: `📖 **KakaoMolt 명령어 도움말**
+        text: `📖 **MoA 명령어 도움말**
+
+**원격 제어 (Relay)**
+• \`/기기등록\` - 새 기기 페어링 코드 발급
+• \`/기기\` - 등록된 기기 목록
+• \`/원격 <기기명> <명령>\` - 원격 명령 전송
+• \`/기기삭제 <기기명>\` - 기기 등록 해제
+• \`/원격상태\` - 원격 명령 이력
 
 **메모리 동기화**
 • \`/동기화 설정 <암호>\` - 동기화 시작
@@ -632,8 +695,182 @@ async function handleMoltbotCommand(
 **결제**
 • \`잔액\` - 크레딧 확인
 • \`충전\` - 크레딧 충전`,
-        quickReplies: ["도구", "채널", "상태", "동기화"],
+        quickReplies: ["기기", "기기등록", "원격상태", "도구"],
       };
+    }
+
+    // ============================================
+    // Relay Commands
+    // ============================================
+
+    case "relay": {
+      // /원격 <device_name> <command>
+      if (!cmd.relayDevice || !cmd.relayCommand) {
+        return {
+          text: "사용법: /원격 <기기명> <명령>\n\n예시:\n/원격 노트북 ls ~/Desktop\n/원격 사무실PC 파일읽기 ~/memo.txt",
+          quickReplies: ["기기", "기기등록", "원격상태"],
+        };
+      }
+
+      // Get Supabase user ID for billing
+      const supabase = getSupabase();
+      const { data: relayUser } = await supabase
+        .from("lawcall_users")
+        .select("id")
+        .eq("kakao_user_id", userId)
+        .single();
+
+      if (!relayUser) {
+        return { text: "사용자 정보를 찾을 수 없습니다. 먼저 메시지를 보내 계정을 활성화해주세요." };
+      }
+
+      const result = await sendRelayCommand({
+        userId: relayUser.id,
+        targetDeviceName: cmd.relayDevice,
+        commandText: cmd.relayCommand,
+      });
+
+      if (!result.success) {
+        return { text: result.error ?? "명령 전송에 실패했습니다.", quickReplies: ["기기", "기기등록"] };
+      }
+
+      const config = getRelayBillingConfig();
+      return {
+        text: `"${cmd.relayDevice}" 기기로 명령을 전송했습니다.\n\n명령: ${cmd.relayCommand.slice(0, 100)}\n비용: ${config.commandCost} 크레딧\n\n기기가 명령을 실행하면 결과를 알려드리겠습니다.`,
+        quickReplies: ["원격상태", "기기"],
+      };
+    }
+
+    case "relay_register": {
+      // /기기등록 — generate pairing code
+      const supabase = getSupabase();
+      const { data: regUser } = await supabase
+        .from("lawcall_users")
+        .select("id")
+        .eq("kakao_user_id", userId)
+        .single();
+
+      if (!regUser) {
+        // Create user first
+        const { data: newUser } = await supabase
+          .from("lawcall_users")
+          .insert({ kakao_user_id: userId })
+          .select("id")
+          .single();
+        if (!newUser) {
+          return { text: "사용자 등록에 실패했습니다." };
+        }
+        const codeResult = await generatePairingCode(newUser.id);
+        if ("error" in codeResult) {
+          return { text: codeResult.error };
+        }
+        return formatPairingCodeResponse(codeResult.code, codeResult.expiresAt);
+      }
+
+      const codeResult = await generatePairingCode(regUser.id);
+      if ("error" in codeResult) {
+        return { text: codeResult.error };
+      }
+      return formatPairingCodeResponse(codeResult.code, codeResult.expiresAt);
+    }
+
+    case "relay_devices": {
+      // /기기 — list registered devices
+      const supabase = getSupabase();
+      const { data: devUser } = await supabase
+        .from("lawcall_users")
+        .select("id")
+        .eq("kakao_user_id", userId)
+        .single();
+
+      if (!devUser) {
+        return { text: "등록된 기기가 없습니다. /기기등록 명령으로 먼저 기기를 등록해주세요.", quickReplies: ["기기등록"] };
+      }
+
+      const devices = await listUserDevices(devUser.id);
+
+      if (devices.length === 0) {
+        return {
+          text: "등록된 기기가 없습니다.\n\n/기기등록 명령으로 기기를 등록해주세요.",
+          quickReplies: ["기기등록"],
+        };
+      }
+
+      let text = `📱 **등록된 기기 (${devices.length}개)**\n\n`;
+      for (const d of devices) {
+        const status = d.isOnline ? "🟢 온라인" : "🔴 오프라인";
+        const lastSeen = d.lastSeenAt
+          ? `마지막 접속: ${formatTimeAgo(d.lastSeenAt)}`
+          : "접속 기록 없음";
+        text += `**${d.deviceName}** (${d.deviceType})\n`;
+        text += `${status} | ${d.platform ?? "알 수 없음"} | ${lastSeen}\n\n`;
+      }
+      text += `\n사용법: /원격 <기기명> <명령>`;
+
+      return { text, quickReplies: ["기기등록", "원격상태"] };
+    }
+
+    case "relay_remove": {
+      // /기기삭제 <name>
+      const deviceName = cmd.args?.[0];
+      if (!deviceName) {
+        return { text: "사용법: /기기삭제 <기기명>\n\n예시: /기기삭제 노트북" };
+      }
+
+      const supabase = getSupabase();
+      const { data: rmUser } = await supabase
+        .from("lawcall_users")
+        .select("id")
+        .eq("kakao_user_id", userId)
+        .single();
+
+      if (!rmUser) {
+        return { text: "등록된 기기가 없습니다." };
+      }
+
+      const removed = await removeDevice(rmUser.id, deviceName);
+      if (removed) {
+        return { text: `"${deviceName}" 기기가 삭제되었습니다.`, quickReplies: ["기기"] };
+      }
+      return { text: `"${deviceName}" 기기를 찾을 수 없습니다.`, quickReplies: ["기기"] };
+    }
+
+    case "relay_status": {
+      // /원격상태 — recent relay commands
+      const supabase = getSupabase();
+      const { data: statusUser } = await supabase
+        .from("lawcall_users")
+        .select("id")
+        .eq("kakao_user_id", userId)
+        .single();
+
+      if (!statusUser) {
+        return { text: "사용 이력이 없습니다.", quickReplies: ["기기등록"] };
+      }
+
+      const [recentCmds, stats] = await Promise.all([
+        getRecentCommands(statusUser.id, 5),
+        getRelayUsageStats(statusUser.id),
+      ]);
+
+      let text = `📊 **원격 명령 현황**\n\n`;
+      text += `총 명령: ${stats.totalCommands}회 | 오늘: ${stats.commandsToday}회\n`;
+      text += `사용 크레딧: ${stats.totalCreditsUsed}\n\n`;
+
+      if (recentCmds.length > 0) {
+        text += `**최근 명령:**\n`;
+        for (const c of recentCmds) {
+          const statusIcon = {
+            pending: "⏳", delivered: "📤", executing: "⚙️",
+            completed: "✅", failed: "❌", expired: "⏰", cancelled: "🚫",
+          }[c.status] ?? "❓";
+          text += `${statusIcon} ${c.deviceName}: ${c.summary?.slice(0, 50) ?? c.status} (${formatTimeAgo(c.createdAt)})\n`;
+        }
+      } else {
+        text += "최근 명령 이력이 없습니다.";
+      }
+
+      return { text, quickReplies: ["기기", "기기등록"] };
     }
 
     default:
@@ -641,4 +878,24 @@ async function handleMoltbotCommand(
         text: "알 수 없는 명령입니다. /도움말을 입력해주세요.",
       };
   }
+}
+
+// ============================================
+// Relay Helpers
+// ============================================
+
+function formatPairingCodeResponse(code: string, expiresAt: Date): { text: string; quickReplies?: string[] } {
+  const minutes = Math.ceil((expiresAt.getTime() - Date.now()) / 60000);
+  return {
+    text: `🔗 **기기 페어링 코드**\n\n코드: **${code}**\n만료: ${minutes}분 후\n\n등록할 기기에서 다음 명령을 실행하세요:\n\nmoltbot relay pair --code ${code} --name "기기이름"\n\n또는 API로 직접 등록:\nPOST /api/relay/pair\n{"code": "${code}", "device": {"deviceName": "기기이름", "deviceType": "laptop"}}`,
+    quickReplies: ["기기", "도움말"],
+  };
+}
+
+function formatTimeAgo(date: Date): string {
+  const seconds = Math.floor((Date.now() - date.getTime()) / 1000);
+  if (seconds < 60) return "방금 전";
+  if (seconds < 3600) return `${Math.floor(seconds / 60)}분 전`;
+  if (seconds < 86400) return `${Math.floor(seconds / 3600)}시간 전`;
+  return `${Math.floor(seconds / 86400)}일 전`;
 }
