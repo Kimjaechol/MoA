@@ -8,8 +8,8 @@
     "numReplicas": 1,
     "sleepApplication": false,
     "restartPolicyType": "ON_FAILURE",
-    "restartPolicyMaxRetries": 10,
-    "startCommand": "exec node --import tsx extensions/kakao/server.ts",
+    "restartPolicyMaxRetries": 5,
+    "startCommand": "echo '[MoA] Starting via railway.json startCommand...' && exec ./node_modules/.bin/tsx extensions/kakao/server.ts",
     "healthcheckPath": "/health",
     "healthcheckTimeout": 30
   }

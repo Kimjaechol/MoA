@@ -1,6 +1,6 @@
-# Railway 배포 가이드 (LawCall + KakaoTalk)
+# Railway 배포 가이드 (MoA + KakaoTalk)
 
-이 가이드는 Moltbot + KakaoTalk + LawCall을 Railway에 배포하는 방법을 설명합니다.
+이 가이드는 MoA (Master of AI) + KakaoTalk을 Railway에 배포하는 방법을 설명합니다.
 
 ## 비용 최적화 요약
 
@@ -52,7 +52,7 @@ git push -u origin main
 ### 2.2 새 프로젝트 생성
 1. **New Project** 클릭
 2. **Deploy from GitHub repo** 선택
-3. 저장소 선택 (moltbot 또는 lawcall-bot)
+3. 저장소 선택 (moa 또는 lawcall-bot)
 
 ### 2.3 빌드 설정
 1. **Settings** → **Build**
@@ -90,10 +90,10 @@ LAWCALL_SERVICE_NAME=LawCall
 
 ```bash
 # 저렴한 모델 사용
-MOLTBOT_MODEL=claude-3-haiku-20240307
+MOA_MODEL=claude-3-haiku-20240307
 
 # 간결한 응답 설정
-MOLTBOT_MAX_TOKENS=500
+MOA_MAX_TOKENS=500
 ```
 
 ---
@@ -213,7 +213,7 @@ LAWCALL_ROUTES={"민사":"...","형사":"...","노동":"https://lawcall.com/labo
 ### 5초 타임아웃
 Kakao i Open Builder는 5초 타임아웃이 있습니다.
 - 해결: Haiku 모델 사용 (더 빠름)
-- `MOLTBOT_MODEL=claude-3-haiku-20240307`
+- `MOA_MODEL=claude-3-haiku-20240307`
 
 ### API 키 오류
 1. 환경변수 확인

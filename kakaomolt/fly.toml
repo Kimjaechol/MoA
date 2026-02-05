@@ -1,7 +1,7 @@
-# Fly.io deployment configuration for Moltbot + KakaoTalk
+# Fly.io deployment configuration for MoA (Master of AI) + KakaoTalk
 # Deploy with: fly launch --config extensions/kakao/fly.toml
 
-app = "moltbot-kakao"
+app = "moa-kakao"
 primary_region = "nrt"  # Tokyo (closest to Korea)
 
 [build]
@@ -9,7 +9,7 @@ primary_region = "nrt"  # Tokyo (closest to Korea)
 
 [env]
   NODE_ENV = "production"
-  OPENCLAW_GATEWAY_MODE = "local"
+  MOA_GATEWAY_MODE = "local"
   KAKAO_WEBHOOK_PORT = "8788"
   KAKAO_WEBHOOK_PATH = "/kakao/webhook"
 
@@ -42,5 +42,5 @@ primary_region = "nrt"  # Tokyo (closest to Korea)
     path = "/health"
 
 [mounts]
-  source = "moltbot_data"
-  destination = "/data/.moltbot"
+  source = "moa_data"
+  destination = "/data/.moa"
