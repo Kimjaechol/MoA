@@ -2,13 +2,23 @@
  * Relay Command Handler
  *
  * Routes commands from KakaoTalk to target devices via Supabase command queue.
- * Handles command encryption, queuing, and result retrieval.
+ * Handles command encryption, queuing, safety analysis, confirmation flow,
+ * execution monitoring, and result retrieval.
+ *
+ * Safety flow:
+ * 1. Command is parsed and analyzed by safety-guard
+ * 2. Critical commands → blocked immediately
+ * 3. High-risk commands → queued as "awaiting_confirmation", user must /확인
+ * 4. Medium/low-risk commands → queued as "pending", auto-executed
+ * 5. Device executes, sends progress updates, then final result
+ * 6. User can check /원격결과 or /원격상태 to see progress
  */
 
 import { createCipheriv, createDecipheriv, randomBytes, createHash } from "node:crypto";
 import { getSupabase, isSupabaseConfigured } from "../supabase.js";
 import { findDeviceByName, listUserDevices } from "./device-auth.js";
 import { chargeRelayCommand } from "./relay-billing.js";
+import { analyzeCommandSafety, formatSafetyWarning, type SafetyAnalysis } from "./safety-guard.js";
 import type { CommandPayload, CommandResult, CommandStatus } from "./types.js";
 
 // Encryption key derived from env (used for encrypting commands at rest)
@@ -58,17 +68,29 @@ export function decryptPayload<T = CommandPayload | CommandResult>(
   }
 }
 
+// ============================================
+// Send Command (with safety analysis)
+// ============================================
+
+export interface SendRelayResult {
+  success: boolean;
+  commandId?: string;
+  /** If the command requires confirmation, this contains the warning message */
+  confirmationRequired?: boolean;
+  safetyWarning?: string;
+  error?: string;
+}
+
 /**
  * Send a command to a target device via the relay queue.
- *
- * Called when a user sends `/원격 <device_name> <command>` via KakaoTalk.
+ * Analyzes safety first — dangerous commands require explicit confirmation.
  */
 export async function sendRelayCommand(params: {
   userId: string;
   targetDeviceName: string;
   commandText: string;
   priority?: number;
-}): Promise<{ success: boolean; commandId?: string; error?: string }> {
+}): Promise<SendRelayResult> {
   const { userId, targetDeviceName, commandText, priority = 0 } = params;
 
   if (!isSupabaseConfigured()) {
@@ -93,17 +115,31 @@ export async function sendRelayCommand(params: {
     };
   }
 
-  // Charge credits
+  // Parse command text into a structured payload
+  const payload = parseCommandText(commandText);
+
+  // Safety analysis
+  const safety = analyzeCommandSafety(payload);
+
+  // Critical commands are always blocked
+  if (safety.blocked) {
+    return {
+      success: false,
+      error: formatSafetyWarning(safety, "", commandText),
+    };
+  }
+
+  // Charge credits (even for awaiting_confirmation, refund on reject)
   const billing = await chargeRelayCommand(userId);
   if (!billing.success) {
     return { success: false, error: billing.error };
   }
 
-  // Parse command text into a structured payload
-  const payload = parseCommandText(commandText);
-
   // Encrypt the command
   const { encrypted, iv, authTag } = encryptPayload(payload);
+
+  // Determine initial status based on safety analysis
+  const initialStatus: CommandStatus = safety.requiresConfirmation ? "awaiting_confirmation" : "pending";
 
   // Insert into command queue
   const supabase = getSupabase();
@@ -115,10 +151,14 @@ export async function sendRelayCommand(params: {
       encrypted_command: encrypted,
       iv,
       auth_tag: authTag,
-      status: "pending",
+      status: initialStatus,
       priority,
       credits_charged: billing.creditsCharged,
-      expires_at: new Date(Date.now() + 60 * 60 * 1000).toISOString(), // 1 hour expiry
+      risk_level: safety.riskLevel,
+      safety_warnings: safety.warnings,
+      command_preview: commandText.slice(0, 200),
+      execution_log: [],
+      expires_at: new Date(Date.now() + 60 * 60 * 1000).toISOString(),
     })
     .select("id")
     .single();
@@ -135,8 +175,223 @@ export async function sendRelayCommand(params: {
     action: "command",
   });
 
+  // If confirmation required, return the warning
+  if (safety.requiresConfirmation) {
+    return {
+      success: true,
+      commandId: data.id,
+      confirmationRequired: true,
+      safetyWarning: formatSafetyWarning(safety, data.id, commandText),
+    };
+  }
+
   return { success: true, commandId: data.id };
 }
+
+// ============================================
+// Confirmation Flow
+// ============================================
+
+/**
+ * Confirm a command that is awaiting user confirmation.
+ * Changes status from "awaiting_confirmation" to "pending".
+ */
+export async function confirmCommand(commandIdPrefix: string, userId: string): Promise<{
+  success: boolean;
+  commandId?: string;
+  commandPreview?: string;
+  error?: string;
+}> {
+  if (!isSupabaseConfigured()) {
+    return { success: false, error: "서버가 설정되지 않았습니다." };
+  }
+
+  const supabase = getSupabase();
+
+  // Find command by ID prefix (user only sees first 8 chars)
+  const { data: commands } = await supabase
+    .from("relay_commands")
+    .select("id, command_preview, status")
+    .eq("user_id", userId)
+    .eq("status", "awaiting_confirmation")
+    .like("id", `${commandIdPrefix}%`)
+    .limit(1);
+
+  if (!commands || commands.length === 0) {
+    return { success: false, error: "확인 대기 중인 명령을 찾을 수 없습니다." };
+  }
+
+  const cmd = commands[0];
+
+  // Update status to pending (device can now pick it up)
+  const { error } = await supabase
+    .from("relay_commands")
+    .update({
+      status: "pending",
+      execution_log: [{ timestamp: new Date().toISOString(), event: "confirmed_by_user", message: "사용자가 실행을 승인했습니다." }],
+    })
+    .eq("id", cmd.id);
+
+  if (error) {
+    return { success: false, error: `확인 처리 실패: ${error.message}` };
+  }
+
+  return {
+    success: true,
+    commandId: cmd.id,
+    commandPreview: cmd.command_preview,
+  };
+}
+
+/**
+ * Reject a command that is awaiting confirmation.
+ * Credits are refunded.
+ */
+export async function rejectCommand(commandIdPrefix: string, userId: string): Promise<{
+  success: boolean;
+  refundedCredits?: number;
+  error?: string;
+}> {
+  if (!isSupabaseConfigured()) {
+    return { success: false, error: "서버가 설정되지 않았습니다." };
+  }
+
+  const supabase = getSupabase();
+
+  // Find command
+  const { data: commands } = await supabase
+    .from("relay_commands")
+    .select("id, credits_charged")
+    .eq("user_id", userId)
+    .eq("status", "awaiting_confirmation")
+    .like("id", `${commandIdPrefix}%`)
+    .limit(1);
+
+  if (!commands || commands.length === 0) {
+    return { success: false, error: "확인 대기 중인 명령을 찾을 수 없습니다." };
+  }
+
+  const cmd = commands[0];
+
+  // Cancel the command
+  await supabase
+    .from("relay_commands")
+    .update({ status: "cancelled" })
+    .eq("id", cmd.id);
+
+  // Refund credits if any were charged
+  if (cmd.credits_charged > 0) {
+    const { hashUserId } = await import("../billing.js");
+    const hashedId = hashUserId(userId);
+    await supabase.rpc("add_credits", {
+      p_kakao_user_id: hashedId,
+      p_amount: cmd.credits_charged,
+    });
+  }
+
+  return { success: true, refundedCredits: cmd.credits_charged };
+}
+
+// ============================================
+// Execution Progress
+// ============================================
+
+/**
+ * Append a progress log entry to a command (called by device via API)
+ */
+export async function appendExecutionLog(
+  commandId: string,
+  deviceToken: string,
+  logEntry: { event: string; message: string; data?: string },
+): Promise<boolean> {
+  if (!isSupabaseConfigured()) return false;
+
+  const supabase = getSupabase();
+
+  // Verify the device owns this command
+  const { data: cmd } = await supabase
+    .from("relay_commands")
+    .select("id, execution_log, relay_devices!inner(device_token)")
+    .eq("id", commandId)
+    .single();
+
+  if (!cmd) return false;
+
+  const deviceData = cmd.relay_devices as unknown as { device_token: string };
+  if (deviceData.device_token !== deviceToken) return false;
+
+  // Append log entry
+  const existingLog = (cmd.execution_log as Array<Record<string, unknown>>) ?? [];
+  existingLog.push({
+    timestamp: new Date().toISOString(),
+    ...logEntry,
+  });
+
+  const { error } = await supabase
+    .from("relay_commands")
+    .update({
+      status: "executing",
+      execution_log: existingLog,
+    })
+    .eq("id", commandId);
+
+  return !error;
+}
+
+/**
+ * Get execution log for a command (for user monitoring)
+ */
+export async function getExecutionLog(commandId: string, userId: string): Promise<{
+  status: CommandStatus;
+  riskLevel?: string;
+  commandPreview?: string;
+  log: Array<{ timestamp: string; event: string; message: string; data?: string }>;
+  result?: CommandResult;
+  summary?: string;
+  error?: string;
+}> {
+  if (!isSupabaseConfigured()) {
+    return { status: "failed", log: [], error: "서버가 설정되지 않았습니다." };
+  }
+
+  const supabase = getSupabase();
+
+  const { data, error } = await supabase
+    .from("relay_commands")
+    .select("status, risk_level, command_preview, execution_log, encrypted_result, result_iv, result_auth_tag, result_summary")
+    .eq("id", commandId)
+    .eq("user_id", userId)
+    .single();
+
+  if (error || !data) {
+    return { status: "failed", log: [], error: "명령을 찾을 수 없습니다." };
+  }
+
+  const status = data.status as CommandStatus;
+  const log = (data.execution_log as Array<{ timestamp: string; event: string; message: string; data?: string }>) ?? [];
+
+  let result: CommandResult | undefined;
+  if (data.encrypted_result && data.result_iv && data.result_auth_tag) {
+    result = decryptPayload<CommandResult>(
+      data.encrypted_result,
+      data.result_iv,
+      data.result_auth_tag,
+    ) ?? undefined;
+  }
+
+  return {
+    status,
+    riskLevel: data.risk_level ?? undefined,
+    commandPreview: data.command_preview ?? undefined,
+    log,
+    result,
+    summary: data.result_summary ?? undefined,
+  };
+}
+
+// ============================================
+// Result Retrieval
+// ============================================
 
 /**
  * Get the result of a relay command
@@ -192,6 +447,8 @@ export async function getRecentCommands(userId: string, limit = 5): Promise<Arra
   id: string;
   deviceName: string;
   status: CommandStatus;
+  riskLevel?: string;
+  commandPreview?: string;
   summary?: string;
   createdAt: Date;
 }>> {
@@ -204,6 +461,8 @@ export async function getRecentCommands(userId: string, limit = 5): Promise<Arra
     .select(`
       id,
       status,
+      risk_level,
+      command_preview,
       result_summary,
       created_at,
       relay_devices!inner(device_name)
@@ -218,6 +477,8 @@ export async function getRecentCommands(userId: string, limit = 5): Promise<Arra
     id: cmd.id,
     deviceName: (cmd.relay_devices as unknown as { device_name: string }).device_name,
     status: cmd.status as CommandStatus,
+    riskLevel: cmd.risk_level ?? undefined,
+    commandPreview: cmd.command_preview ?? undefined,
     summary: cmd.result_summary ?? undefined,
     createdAt: new Date(cmd.created_at),
   }));
@@ -236,7 +497,7 @@ export async function cancelCommand(commandId: string, userId: string): Promise<
     .update({ status: "cancelled" })
     .eq("id", commandId)
     .eq("user_id", userId)
-    .eq("status", "pending");
+    .in("status", ["pending", "awaiting_confirmation"]);
 
   return !error;
 }
@@ -249,7 +510,7 @@ export async function cancelCommand(commandId: string, userId: string): Promise<
  * Parse free-form command text into a structured payload.
  * Supports Korean and English command prefixes.
  */
-function parseCommandText(text: string): CommandPayload {
+export function parseCommandText(text: string): CommandPayload {
   const trimmed = text.trim();
 
   // File read: 파일읽기 <path> or read <path>

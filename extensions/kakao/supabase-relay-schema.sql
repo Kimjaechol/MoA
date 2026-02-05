@@ -68,8 +68,14 @@ CREATE TABLE IF NOT EXISTS relay_commands (
   auth_tag TEXT NOT NULL,                    -- GCM authentication tag
 
   -- Status tracking
-  status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'delivered', 'executing', 'completed', 'failed', 'expired', 'cancelled')),
+  status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'awaiting_confirmation', 'delivered', 'executing', 'completed', 'failed', 'expired', 'cancelled')),
   priority INTEGER NOT NULL DEFAULT 0,       -- Higher = more urgent
+
+  -- Safety analysis
+  risk_level TEXT CHECK (risk_level IN ('low', 'medium', 'high', 'critical')),
+  safety_warnings TEXT[] DEFAULT '{}',       -- Warning messages from safety guard
+  command_preview TEXT,                       -- Unencrypted short preview for confirmation UI
+  execution_log JSONB DEFAULT '[]',           -- Progress updates from device during execution
 
   -- Result (encrypted)
   encrypted_result TEXT,                     -- AES-256-GCM encrypted result
@@ -91,6 +97,8 @@ CREATE INDEX IF NOT EXISTS idx_relay_commands_device_pending
   ON relay_commands(target_device_id, status) WHERE status = 'pending';
 CREATE INDEX IF NOT EXISTS idx_relay_commands_user ON relay_commands(user_id);
 CREATE INDEX IF NOT EXISTS idx_relay_commands_expires ON relay_commands(expires_at) WHERE status = 'pending';
+CREATE INDEX IF NOT EXISTS idx_relay_commands_awaiting
+  ON relay_commands(user_id, status) WHERE status = 'awaiting_confirmation';
 
 -- ============================================
 -- Relay Usage Log (for billing analytics)
@@ -208,7 +216,7 @@ DECLARE
 BEGIN
   UPDATE relay_commands
   SET status = 'expired'
-  WHERE status IN ('pending', 'delivered')
+  WHERE status IN ('pending', 'awaiting_confirmation', 'delivered')
     AND expires_at < NOW();
   GET DIAGNOSTICS expired_count = ROW_COUNT;
   RETURN expired_count;

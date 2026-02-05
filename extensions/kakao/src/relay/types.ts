@@ -57,7 +57,7 @@ export interface PairingResult {
 // Command Types
 // ============================================
 
-export type CommandStatus = "pending" | "delivered" | "executing" | "completed" | "failed" | "expired" | "cancelled";
+export type CommandStatus = "pending" | "awaiting_confirmation" | "delivered" | "executing" | "completed" | "failed" | "expired" | "cancelled";
 
 /** Encrypted command stored in the database */
 export interface RelayCommand {

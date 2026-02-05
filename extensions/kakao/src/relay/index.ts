@@ -28,12 +28,26 @@ export {
 
 // Command handler
 export {
+  appendExecutionLog,
   cancelCommand,
+  confirmCommand,
   decryptPayload,
   getCommandResult,
+  getExecutionLog,
   getRecentCommands,
+  parseCommandText,
+  rejectCommand,
   sendRelayCommand,
+  type SendRelayResult,
 } from "./relay-handler.js";
+
+// Safety guard
+export {
+  analyzeCommandSafety,
+  formatSafetyWarning,
+  type RiskLevel,
+  type SafetyAnalysis,
+} from "./safety-guard.js";
 
 // Billing
 export {

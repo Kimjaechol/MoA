@@ -24,8 +24,11 @@ import {
   sendRelayCommand,
   getRecentCommands,
   getCommandResult,
+  getExecutionLog,
   getRelayUsageStats,
   getRelayBillingConfig,
+  confirmCommand,
+  rejectCommand,
 } from "./relay/index.js";
 
 export interface KakaoWebhookOptions {
@@ -428,7 +431,7 @@ export function extractKakaoUserInfo(request: KakaoIncomingMessage): {
 
 interface MoltbotCommand {
   isCommand: boolean;
-  type?: "tools" | "channels" | "bridge" | "status" | "memory" | "help" | "relay" | "relay_register" | "relay_devices" | "relay_remove" | "relay_status";
+  type?: "tools" | "channels" | "bridge" | "status" | "memory" | "help" | "relay" | "relay_register" | "relay_devices" | "relay_remove" | "relay_status" | "relay_confirm" | "relay_reject" | "relay_result";
   args?: string[];
   bridgeCmd?: ReturnType<typeof parseBridgeCommand>;
   /** For relay commands: target device name */
@@ -507,6 +510,24 @@ function parseMoltbotCommand(message: string): MoltbotCommand {
   // /원격상태, /relay-status
   if (/^[/\/](원격상태|relay[-_]?status)$/i.test(trimmed)) {
     return { isCommand: true, type: "relay_status" };
+  }
+
+  // /확인 <id_prefix> — confirm a dangerous command
+  const confirmMatch = trimmed.match(/^[/\/](확인|confirm)\s+(\S+)$/i);
+  if (confirmMatch) {
+    return { isCommand: true, type: "relay_confirm", args: [confirmMatch[2]] };
+  }
+
+  // /거부 <id_prefix> — reject a dangerous command
+  const rejectMatch = trimmed.match(/^[/\/](거부|reject|취소)\s+(\S+)$/i);
+  if (rejectMatch) {
+    return { isCommand: true, type: "relay_reject", args: [rejectMatch[2]] };
+  }
+
+  // /원격결과 <id_prefix> — view execution log and result
+  const resultMatch = trimmed.match(/^[/\/](원격결과|relay[-_]?result|결과)\s+(\S+)$/i);
+  if (resultMatch) {
+    return { isCommand: true, type: "relay_result", args: [resultMatch[2]] };
   }
 
   return { isCommand: false };
@@ -669,6 +690,9 @@ async function handleMoltbotCommand(
 • \`/기기등록\` - 새 기기 페어링 코드 발급
 • \`/기기\` - 등록된 기기 목록
 • \`/원격 <기기명> <명령>\` - 원격 명령 전송
+• \`/확인 <ID>\` - 위험 명령 승인
+• \`/거부 <ID>\` - 위험 명령 거부 (크레딧 환불)
+• \`/원격결과 <ID>\` - 실행 로그 및 결과 확인
 • \`/기기삭제 <기기명>\` - 기기 등록 해제
 • \`/원격상태\` - 원격 명령 이력
 
@@ -734,10 +758,18 @@ async function handleMoltbotCommand(
         return { text: result.error ?? "명령 전송에 실패했습니다.", quickReplies: ["기기", "기기등록"] };
       }
 
+      // If the command requires confirmation (dangerous command detected)
+      if (result.confirmationRequired && result.safetyWarning) {
+        return {
+          text: result.safetyWarning,
+          quickReplies: [`확인 ${result.commandId?.slice(0, 8)}`, `거부 ${result.commandId?.slice(0, 8)}`, "기기"],
+        };
+      }
+
       const config = getRelayBillingConfig();
       return {
-        text: `"${cmd.relayDevice}" 기기로 명령을 전송했습니다.\n\n명령: ${cmd.relayCommand.slice(0, 100)}\n비용: ${config.commandCost} 크레딧\n\n기기가 명령을 실행하면 결과를 알려드리겠습니다.`,
-        quickReplies: ["원격상태", "기기"],
+        text: `"${cmd.relayDevice}" 기기로 명령을 전송했습니다.\n\n명령: ${cmd.relayCommand.slice(0, 100)}\n비용: ${config.commandCost} 크레딧\n\n실행 상태 확인: /원격결과 ${result.commandId?.slice(0, 8)}`,
+        quickReplies: [`원격결과 ${result.commandId?.slice(0, 8)}`, "원격상태", "기기"],
       };
     }
 
@@ -861,16 +893,162 @@ async function handleMoltbotCommand(
         text += `**최근 명령:**\n`;
         for (const c of recentCmds) {
           const statusIcon = {
-            pending: "⏳", delivered: "📤", executing: "⚙️",
+            pending: "⏳", awaiting_confirmation: "🔐", delivered: "📤", executing: "⚙️",
             completed: "✅", failed: "❌", expired: "⏰", cancelled: "🚫",
           }[c.status] ?? "❓";
-          text += `${statusIcon} ${c.deviceName}: ${c.summary?.slice(0, 50) ?? c.status} (${formatTimeAgo(c.createdAt)})\n`;
+          const preview = c.commandPreview ? ` \`${c.commandPreview.slice(0, 30)}\`` : "";
+          const riskBadge = c.riskLevel === "high" ? " ⚠️" : "";
+          text += `${statusIcon}${riskBadge} ${c.deviceName}:${preview} ${c.summary?.slice(0, 30) ?? c.status} (${formatTimeAgo(c.createdAt)})\n`;
+          if (c.status === "awaiting_confirmation") {
+            text += `   → /확인 ${c.id.slice(0, 8)} 또는 /거부 ${c.id.slice(0, 8)}\n`;
+          } else if (c.status === "completed" || c.status === "executing") {
+            text += `   → /원격결과 ${c.id.slice(0, 8)}\n`;
+          }
         }
       } else {
         text += "최근 명령 이력이 없습니다.";
       }
 
       return { text, quickReplies: ["기기", "기기등록"] };
+    }
+
+    // ============================================
+    // Confirmation & Monitoring Commands
+    // ============================================
+
+    case "relay_confirm": {
+      // /확인 <id_prefix> — approve a dangerous command
+      const idPrefix = cmd.args?.[0];
+      if (!idPrefix) {
+        return { text: "사용법: /확인 <명령ID>\n\n/원격상태에서 확인 대기 중인 명령의 ID를 확인하세요." };
+      }
+
+      const supabase = getSupabase();
+      const { data: cfmUser } = await supabase
+        .from("lawcall_users")
+        .select("id")
+        .eq("kakao_user_id", userId)
+        .single();
+
+      if (!cfmUser) {
+        return { text: "사용자 정보를 찾을 수 없습니다." };
+      }
+
+      const cfmResult = await confirmCommand(idPrefix, cfmUser.id);
+      if (!cfmResult.success) {
+        return { text: cfmResult.error ?? "확인 처리에 실패했습니다.", quickReplies: ["원격상태"] };
+      }
+
+      return {
+        text: `✅ 명령이 승인되었습니다.\n\n명령: \`${cfmResult.commandPreview?.slice(0, 100) ?? "알 수 없음"}\`\n\n기기로 전송 중입니다. 결과 확인: /원격결과 ${cfmResult.commandId?.slice(0, 8)}`,
+        quickReplies: [`원격결과 ${cfmResult.commandId?.slice(0, 8)}`, "원격상태"],
+      };
+    }
+
+    case "relay_reject": {
+      // /거부 <id_prefix> — reject a dangerous command
+      const idPrefix = cmd.args?.[0];
+      if (!idPrefix) {
+        return { text: "사용법: /거부 <명령ID>" };
+      }
+
+      const supabase = getSupabase();
+      const { data: rejUser } = await supabase
+        .from("lawcall_users")
+        .select("id")
+        .eq("kakao_user_id", userId)
+        .single();
+
+      if (!rejUser) {
+        return { text: "사용자 정보를 찾을 수 없습니다." };
+      }
+
+      const rejResult = await rejectCommand(idPrefix, rejUser.id);
+      if (!rejResult.success) {
+        return { text: rejResult.error ?? "거부 처리에 실패했습니다.", quickReplies: ["원격상태"] };
+      }
+
+      const refundMsg = rejResult.refundedCredits
+        ? `\n${rejResult.refundedCredits} 크레딧이 환불되었습니다.`
+        : "";
+      return {
+        text: `🚫 명령이 취소되었습니다.${refundMsg}`,
+        quickReplies: ["원격상태", "기기"],
+      };
+    }
+
+    case "relay_result": {
+      // /원격결과 <id_prefix> — view execution log
+      const idPrefix = cmd.args?.[0];
+      if (!idPrefix) {
+        return { text: "사용법: /원격결과 <명령ID>\n\n/원격상태에서 명령 ID를 확인하세요." };
+      }
+
+      const supabase = getSupabase();
+      const { data: resUser } = await supabase
+        .from("lawcall_users")
+        .select("id")
+        .eq("kakao_user_id", userId)
+        .single();
+
+      if (!resUser) {
+        return { text: "사용자 정보를 찾을 수 없습니다." };
+      }
+
+      // Find command by prefix
+      const { data: cmds } = await supabase
+        .from("relay_commands")
+        .select("id")
+        .eq("user_id", resUser.id)
+        .like("id", `${idPrefix}%`)
+        .limit(1);
+
+      if (!cmds || cmds.length === 0) {
+        return { text: "명령을 찾을 수 없습니다.", quickReplies: ["원격상태"] };
+      }
+
+      const execLog = await getExecutionLog(cmds[0].id, resUser.id);
+      const statusLabel = {
+        pending: "⏳ 대기 중", awaiting_confirmation: "🔐 확인 대기", delivered: "📤 전달됨",
+        executing: "⚙️ 실행 중", completed: "✅ 완료", failed: "❌ 실패",
+        expired: "⏰ 만료", cancelled: "🚫 취소",
+      }[execLog.status] ?? execLog.status;
+
+      let text = `📋 **명령 실행 상세**\n\n`;
+      text += `상태: ${statusLabel}\n`;
+      if (execLog.riskLevel) {
+        const riskLabel = { low: "🟢 안전", medium: "🟡 주의", high: "🟠 위험" }[execLog.riskLevel] ?? execLog.riskLevel;
+        text += `위험도: ${riskLabel}\n`;
+      }
+      if (execLog.commandPreview) {
+        text += `명령: \`${execLog.commandPreview.slice(0, 100)}\`\n`;
+      }
+
+      // Show execution log
+      if (execLog.log.length > 0) {
+        text += `\n**실행 로그:**\n`;
+        for (const entry of execLog.log.slice(-10)) {
+          const time = new Date(entry.timestamp);
+          const timeStr = `${time.getHours().toString().padStart(2, "0")}:${time.getMinutes().toString().padStart(2, "0")}:${time.getSeconds().toString().padStart(2, "0")}`;
+          text += `[${timeStr}] ${entry.message}\n`;
+          if (entry.data) {
+            text += `  ${entry.data.slice(0, 200)}\n`;
+          }
+        }
+      }
+
+      // Show result if completed
+      if (execLog.summary) {
+        text += `\n**결과:**\n${execLog.summary.slice(0, 500)}`;
+      }
+      if (execLog.result?.output) {
+        text += `\n**출력:**\n\`\`\`\n${execLog.result.output.slice(0, 500)}\n\`\`\``;
+      }
+      if (execLog.result?.error) {
+        text += `\n**오류:**\n${execLog.result.error.slice(0, 300)}`;
+      }
+
+      return { text, quickReplies: ["원격상태", "기기"] };
     }
 
     default:

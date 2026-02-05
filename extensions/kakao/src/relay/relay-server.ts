@@ -8,13 +8,14 @@
  * - POST /api/relay/heartbeat — Device heartbeat
  * - GET  /api/relay/devices  — List user's devices (requires auth)
  * - DELETE /api/relay/device — Remove a device
+ * - POST /api/relay/progress — Device sends execution progress update
  *
  * All device endpoints require Authorization: Bearer <device_token>
  */
 
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { authenticateDevice, completePairing, updateHeartbeat, listUserDevices, removeDevice } from "./device-auth.js";
-import { decryptPayload } from "./relay-handler.js";
+import { decryptPayload, appendExecutionLog } from "./relay-handler.js";
 import { getSupabase, isSupabaseConfigured } from "../supabase.js";
 import type { PairRequest, ResultSubmission } from "./types.js";
 
@@ -81,6 +82,12 @@ export async function handleRelayRequest(
       case "/api/relay/device":
         if (req.method === "DELETE") {
           await handleRemoveDevice(req, res, logger);
+          return true;
+        }
+        break;
+      case "/api/relay/progress":
+        if (req.method === "POST") {
+          await handleProgress(req, res, logger);
           return true;
         }
         break;
@@ -289,6 +296,41 @@ async function handleRemoveDevice(req: IncomingMessage, res: ServerResponse, log
     sendJSON(res, 200, { success: true });
   } else {
     sendJSON(res, 404, { success: false, error: "Device not found" });
+  }
+}
+
+/**
+ * POST /api/relay/progress
+ * Header: Authorization: Bearer <device_token>
+ * Body: { commandId: string, event: string, message: string, data?: string }
+ *
+ * Allows devices to send real-time execution progress updates.
+ * Users can view these via /원격결과 <id> in KakaoTalk.
+ */
+async function handleProgress(req: IncomingMessage, res: ServerResponse, logger: ReturnType<typeof console>) {
+  const device = await authFromHeader(req);
+  if (!device) {
+    sendJSON(res, 401, { error: "Invalid or missing device token" });
+    return;
+  }
+
+  const body = await readBody<{ commandId: string; event: string; message: string; data?: string }>(req);
+  if (!body?.commandId || !body?.event || !body?.message) {
+    sendJSON(res, 400, { error: "commandId, event, and message are required" });
+    return;
+  }
+
+  const success = await appendExecutionLog(body.commandId, device.deviceToken, {
+    event: body.event,
+    message: body.message,
+    data: body.data,
+  });
+
+  if (success) {
+    logger.info(`[relay] Progress update for ${body.commandId}: ${body.event}`);
+    sendJSON(res, 200, { success: true });
+  } else {
+    sendJSON(res, 404, { success: false, error: "Command not found or not owned by device" });
   }
 }
 

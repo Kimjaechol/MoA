@@ -300,6 +300,10 @@ export interface Database {
           auth_tag: string;
           status: string;
           priority: number;
+          risk_level: string | null;
+          safety_warnings: string[];
+          command_preview: string | null;
+          execution_log: Record<string, unknown>[];
           encrypted_result: string | null;
           result_iv: string | null;
           result_auth_tag: string | null;
@@ -319,6 +323,10 @@ export interface Database {
           auth_tag: string;
           status?: string;
           priority?: number;
+          risk_level?: string | null;
+          safety_warnings?: string[];
+          command_preview?: string | null;
+          execution_log?: Record<string, unknown>[];
           encrypted_result?: string | null;
           result_iv?: string | null;
           result_auth_tag?: string | null;
@@ -331,6 +339,10 @@ export interface Database {
         };
         Update: {
           status?: string;
+          risk_level?: string | null;
+          safety_warnings?: string[];
+          command_preview?: string | null;
+          execution_log?: Record<string, unknown>[];
           encrypted_result?: string | null;
           result_iv?: string | null;
           result_auth_tag?: string | null;
