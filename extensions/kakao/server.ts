@@ -7,6 +7,10 @@
  * Usage: ./node_modules/.bin/tsx extensions/kakao/server.ts
  */
 
+// Immediate startup log — if you see this in Railway deploy logs,
+// it means server.ts is running (not the OpenClaw CLI)
+console.log("[MoA] server.ts entry point loaded — this is the MoA webhook server, NOT OpenClaw CLI");
+
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { startKakaoWebhook } from "./src/webhook.js";
 import { resolveKakaoAccount, getDefaultKakaoConfig } from "./src/config.js";

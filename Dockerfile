@@ -21,7 +21,9 @@ COPY ui/package.json ./ui/package.json
 COPY patches ./patches
 COPY scripts ./scripts
 
-RUN pnpm install --frozen-lockfile
+# Force NODE_ENV=development during install to ensure devDependencies (tsx) are installed
+# Railway may set NODE_ENV=production in build env which causes pnpm to skip devDeps
+RUN NODE_ENV=development pnpm install --frozen-lockfile
 
 COPY . .
 RUN OPENCLAW_A2UI_SKIP_MISSING=1 pnpm build
@@ -29,8 +31,12 @@ RUN OPENCLAW_A2UI_SKIP_MISSING=1 pnpm build
 ENV OPENCLAW_PREFER_PNPM=1
 RUN pnpm ui:build
 
-# Install MoA extension runtime deps (not in main pnpm workspace install)
-RUN npm install --no-save @supabase/supabase-js@2 zod@4
+# Install MoA extension runtime deps + tsx (ensures tsx is always available
+# even if devDependencies were somehow skipped during pnpm install)
+RUN npm install --no-save tsx@4 @supabase/supabase-js@2 zod@4
+
+# Verify tsx binary exists at build time (fail early if missing)
+RUN test -x ./node_modules/.bin/tsx && echo "[MoA] tsx binary found" || (echo "[MoA] ERROR: tsx binary NOT found!" && exit 1)
 
 ENV NODE_ENV=production
 
@@ -42,10 +48,9 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=15s --retries=3 \
   CMD wget --no-verbose --tries=1 --spider http://localhost:${PORT:-8788}/health || exit 1
 
 # Security hardening: Run as non-root user
-# The node:22-bookworm image includes a 'node' user (uid 1000)
-# This reduces the attack surface by preventing container escape via root privileges
 USER node
 
 # Start MoA (Master of AI) webhook server
-# Use direct path to tsx binary to avoid npx/module resolution issues in pnpm
+# Use direct path to tsx binary — do NOT use "node --import tsx" (unreliable in pnpm)
+# and do NOT rely on npm start (runs OpenClaw CLI, not MoA server)
 CMD ["./node_modules/.bin/tsx", "extensions/kakao/server.ts"]
