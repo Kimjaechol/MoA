@@ -9,7 +9,6 @@
     "sleepApplication": false,
     "restartPolicyType": "ON_FAILURE",
     "restartPolicyMaxRetries": 5,
-    "startCommand": "echo '[MoA] pwd:' $(pwd) && echo '[MoA] node:' $(node -v) && echo '[MoA] tsx:' $(./node_modules/.bin/tsx --version 2>&1 || echo 'NOT FOUND') && echo '[MoA] server.ts exists:' $(test -f extensions/kakao/server.ts && echo YES || echo NO) && echo '[MoA] Starting server...' && exec ./node_modules/.bin/tsx extensions/kakao/server.ts",
     "healthcheckPath": "/health",
     "healthcheckTimeout": 300
   }
