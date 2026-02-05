@@ -52,6 +52,7 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=15s --retries=3 \
 USER node
 
 # Start MoA (Master of AI) webhook server
-# ENTRYPOINT is used instead of CMD because Railway overrides CMD with npm start
-# which runs the OpenClaw CLI. ENTRYPOINT cannot be overridden by Railway.
-ENTRYPOINT ["./node_modules/.bin/tsx", "extensions/kakao/server.ts"]
+# CMD is used (not ENTRYPOINT) to avoid conflicts with Railway's startCommand.
+# Even if Railway overrides CMD with `npm start`, package.json `start` script
+# now points to the MoA server (not the OpenClaw CLI).
+CMD ["./node_modules/.bin/tsx", "extensions/kakao/server.ts"]
