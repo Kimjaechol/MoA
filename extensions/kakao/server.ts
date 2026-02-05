@@ -1,11 +1,10 @@
 /**
- * Standalone KakaoMolt Webhook Server
+ * MoA (Master of AI) — Standalone Kakao Webhook Server
  *
  * Railway/Docker entry point that starts the Kakao webhook directly
  * without requiring the full OpenClaw gateway.
  *
- * Usage: npx tsx extensions/kakao/server.ts
- * Or:    node dist/extensions/kakao/server.js (after build)
+ * Usage: ./node_modules/.bin/tsx extensions/kakao/server.ts
  */
 
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
@@ -81,19 +80,19 @@ async function defaultOnMessage(params: {
 }
 
 async function main() {
-  console.log(`[kakaomolt] Starting standalone webhook server...`);
-  console.log(`[kakaomolt] PORT=${PORT}, HOST=${HOST}, PATH=${WEBHOOK_PATH}`);
+  console.log(`[MoA] Starting standalone webhook server...`);
+  console.log(`[MoA] PORT=${PORT}, HOST=${HOST}, PATH=${WEBHOOK_PATH}`);
 
   const account = buildAccountFromEnv();
   if (!account) {
-    console.error("[kakaomolt] Failed to build account config");
+    console.error("[MoA] Failed to build account config");
     process.exit(1);
   }
 
   const hasKeys = !!(account.appKey || account.adminKey);
   if (!hasKeys) {
-    console.warn("[kakaomolt] WARNING: No Kakao API keys configured (KAKAO_ADMIN_KEY or KAKAO_APP_KEY)");
-    console.warn("[kakaomolt] Webhook will start but message handling may be limited");
+    console.warn("[MoA] WARNING: No Kakao API keys configured (KAKAO_ADMIN_KEY or KAKAO_APP_KEY)");
+    console.warn("[MoA] Webhook will start but message handling may be limited");
   }
 
   try {
@@ -106,12 +105,12 @@ async function main() {
       logger: console,
     });
 
-    console.log(`[kakaomolt] Webhook server started at ${webhook.url}`);
-    console.log(`[kakaomolt] Health check: http://${HOST === "0.0.0.0" ? "localhost" : HOST}:${PORT}/health`);
+    console.log(`[MoA] Webhook server started at ${webhook.url}`);
+    console.log(`[MoA] Health check: http://${HOST === "0.0.0.0" ? "localhost" : HOST}:${PORT}/health`);
 
     // Graceful shutdown
     const shutdown = async (signal: string) => {
-      console.log(`[kakaomolt] Received ${signal}, shutting down...`);
+      console.log(`[MoA] Received ${signal}, shutting down...`);
       await webhook.stop();
       process.exit(0);
     };
@@ -119,7 +118,7 @@ async function main() {
     process.on("SIGTERM", () => shutdown("SIGTERM"));
     process.on("SIGINT", () => shutdown("SIGINT"));
   } catch (err) {
-    console.error("[kakaomolt] Failed to start webhook server:", err);
+    console.error("[MoA] Failed to start webhook server:", err);
     process.exit(1);
   }
 }

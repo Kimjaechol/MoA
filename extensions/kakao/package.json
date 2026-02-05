@@ -1,8 +1,8 @@
 {
-  "name": "@moltbot/kakao",
+  "name": "@moa-ai/kakao",
   "version": "0.1.0",
   "type": "module",
-  "description": "KakaoTalk channel plugin for Moltbot",
+  "description": "KakaoTalk channel plugin for MoA (Master of AI)",
   "license": "MIT",
   "moltbot": {
     "extensions": ["./index.ts"],
@@ -14,7 +14,7 @@
       "order": 25
     },
     "install": {
-      "npmSpec": "@moltbot/kakao",
+      "npmSpec": "@moa-ai/kakao",
       "defaultChoice": "npm"
     }
   },

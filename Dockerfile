@@ -29,7 +29,7 @@ RUN OPENCLAW_A2UI_SKIP_MISSING=1 pnpm build
 ENV OPENCLAW_PREFER_PNPM=1
 RUN pnpm ui:build
 
-# Install kakao extension runtime deps (not in main pnpm workspace install)
+# Install MoA extension runtime deps (not in main pnpm workspace install)
 RUN npm install --no-save @supabase/supabase-js@2 zod@4
 
 ENV NODE_ENV=production
@@ -46,6 +46,6 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=15s --retries=3 \
 # This reduces the attack surface by preventing container escape via root privileges
 USER node
 
-# Start the Kakao webhook server (standalone, no full gateway needed)
+# Start MoA (Master of AI) webhook server
 # Use direct path to tsx binary to avoid npx/module resolution issues in pnpm
 CMD ["./node_modules/.bin/tsx", "extensions/kakao/server.ts"]

@@ -1,5 +1,5 @@
-# KakaoMolt - Standalone Webhook Server for Railway/Docker Deployment
-# Runs the Kakao webhook directly without the full OpenClaw gateway
+# MoA (Master of AI) - Standalone Webhook Server for Railway/Docker Deployment
+# Runs the Kakao webhook directly without the full gateway
 #
 # Build context: repo root (railway.json sets dockerfilePath to this file)
 # Usage: docker build -f extensions/kakao/Dockerfile .
@@ -21,12 +21,12 @@ RUN npm install tsx@4 zod@4 @supabase/supabase-js@2
 COPY extensions/kakao ./extensions/kakao
 
 # Security: non-root user
-RUN addgroup -g 1001 -S moltbot && \
-    adduser -S moltbot -u 1001 && \
-    mkdir -p /data/.moltbot && chown -R moltbot:moltbot /data && \
-    chown -R moltbot:moltbot /app
+RUN addgroup -g 1001 -S moa && \
+    adduser -S moa -u 1001 && \
+    mkdir -p /data/.moa && chown -R moa:moa /data && \
+    chown -R moa:moa /app
 
-USER moltbot
+USER moa
 
 # Environment defaults (Railway injects PORT automatically)
 ENV NODE_ENV=production \

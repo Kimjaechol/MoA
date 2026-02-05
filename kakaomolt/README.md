@@ -1,8 +1,11 @@
-# KakaoMolt - AI 통합 카카오톡 챗봇
+# MoA (Master of AI) - 모든 AI, 하나의 비서
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-카카오톡 채널을 통해 다양한 AI 서비스를 제공하는 Moltbot 플러그인입니다. 법률 상담, 날씨/일정 조회, AI 이미지/음악 생성 등 풍부한 기능을 제공합니다.
+카카오톡 채널을 통해 다양한 AI 서비스를 제공하는 MoA 플러그인입니다. 법률 상담, 날씨/일정 조회, AI 이미지/음악 생성 등 풍부한 기능을 제공합니다.
+
+> **MoA — Master of AI. Any OS. Any Platform.**
+> 모든 AI를 모아, 당신의 손 안에.
 
 ## 주요 기능
 
@@ -55,7 +58,7 @@
 
 ```
 ┌─────────────────┐     ┌──────────────────┐     ┌─────────────────┐
-│   카카오톡 앱    │────▶│  Kakao i 오픈빌더  │────▶│   KakaoMolt     │
+│   카카오톡 앱    │────▶│  Kakao i 오픈빌더  │────▶│     MoA         │
 │   (사용자)       │◀────│    (웹훅 전달)     │◀────│   (Railway)     │
 └─────────────────┘     └──────────────────┘     └────────┬────────┘
                                                           │
@@ -266,7 +269,7 @@ API키 등록 sk-ant-api03-xxxxxxxxx
 ## 프로젝트 구조
 
 ```
-kakaomolt/
+moa/  (extensions/kakao/)
 ├── index.ts                    # 메인 엔트리포인트
 ├── src/
 │   ├── api-client.ts           # Kakao API 클라이언트
@@ -343,5 +346,5 @@ MIT License - 자세한 내용은 [LICENSE](./LICENSE) 파일을 참조하세요
 
 ## 문의
 
-- GitHub Issues: [https://github.com/Kimjaechol/kakaomolt/issues](https://github.com/Kimjaechol/kakaomolt/issues)
+- GitHub Issues: [https://github.com/Kimjaechol/moltbot/issues](https://github.com/Kimjaechol/moltbot/issues)
 - LawCall 서비스: [https://lawcall.com](https://lawcall.com)
