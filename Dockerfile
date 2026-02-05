@@ -51,6 +51,6 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=15s --retries=3 \
 USER node
 
 # Start MoA (Master of AI) webhook server
-# Use direct path to tsx binary — do NOT use "node --import tsx" (unreliable in pnpm)
-# and do NOT rely on npm start (runs OpenClaw CLI, not MoA server)
-CMD ["./node_modules/.bin/tsx", "extensions/kakao/server.ts"]
+# ENTRYPOINT is used instead of CMD because Railway overrides CMD with npm start
+# which runs the OpenClaw CLI. ENTRYPOINT cannot be overridden by Railway.
+ENTRYPOINT ["./node_modules/.bin/tsx", "extensions/kakao/server.ts"]
