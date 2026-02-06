@@ -81,6 +81,21 @@ export {
 // API server
 export { handleRelayRequest } from "./relay-server.js";
 
+// Device status monitoring
+export {
+  checkConnectionAlerts,
+  formatDeviceStatusDetail,
+  formatDeviceStatusSummary,
+  getDetailedDeviceStatus,
+  getDeviceActivityLog,
+  getDeviceStatusById,
+  getOnlineDevices,
+  logDeviceActivity,
+  type ConnectionAlert,
+  type DeviceActivity,
+  type DeviceStatus,
+} from "./device-status.js";
+
 // Types
 export type {
   CommandPayload,

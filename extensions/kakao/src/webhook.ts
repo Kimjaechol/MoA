@@ -35,6 +35,11 @@ import {
   formatMultiDeviceResult,
   getTwinMoAStatus,
   formatTwinMoAStatus,
+  // Device status monitoring
+  getDetailedDeviceStatus,
+  formatDeviceStatusSummary,
+  formatDeviceStatusDetail,
+  getDeviceStatusById,
 } from "./relay/index.js";
 import {
   // Installer & Subscription
@@ -446,7 +451,7 @@ export function extractKakaoUserInfo(request: KakaoIncomingMessage): {
 
 interface MoltbotCommand {
   isCommand: boolean;
-  type?: "tools" | "channels" | "bridge" | "status" | "memory" | "help" | "install" | "subscribe" | "subscribe_status" | "relay" | "relay_multi" | "relay_register" | "relay_devices" | "relay_remove" | "relay_status" | "relay_confirm" | "relay_reject" | "relay_result";
+  type?: "tools" | "channels" | "bridge" | "status" | "memory" | "help" | "install" | "subscribe" | "subscribe_status" | "device_status" | "device_detail" | "relay" | "relay_multi" | "relay_register" | "relay_devices" | "relay_remove" | "relay_status" | "relay_confirm" | "relay_reject" | "relay_result";
   args?: string[];
   bridgeCmd?: ReturnType<typeof parseBridgeCommand>;
   /** For relay commands: target device name */
@@ -535,6 +540,17 @@ function parseMoltbotCommand(message: string): MoltbotCommand {
   // Subscription status: /구독상태, /subscription
   if (/^[/\/](구독상태|subscription|나의구독)$/i.test(trimmed)) {
     return { isCommand: true, type: "subscribe_status" };
+  }
+
+  // Device status: /연결상태, /device-status
+  if (/^[/\/](연결상태|연결|device[-_]?status|connection)$/i.test(trimmed)) {
+    return { isCommand: true, type: "device_status" };
+  }
+
+  // Device detail: /기기상태 <name>, /device <name>
+  const deviceDetailMatch = trimmed.match(/^[/\/](기기상태|기기정보|device)\s+(.+)$/i);
+  if (deviceDetailMatch) {
+    return { isCommand: true, type: "device_detail", args: [deviceDetailMatch[2].trim()] };
   }
 
   // Relay commands: /원격, /기기등록, /기기, /기기삭제, /원격상태
@@ -748,12 +764,15 @@ async function handleMoltbotCommand(
 • \`@노트북 ls -la\` - 단일 기기 명령
 • \`@노트북,@태블릿 git pull\` - 다중 기기 동시 명령
 • \`@모두 df -h\` - 모든 온라인 기기에 명령
-• \`/기기\` - 내 쌍둥이 MoA 상태 보기
-• \`/기기등록\` - 새 기기 페어링 코드 발급
+
+**디바이스 관리**
+• \`/기기\` - 내 쌍둥이 MoA 목록
+• \`/연결상태\` - 실시간 연결 상태 (안정성 포함)
+• \`/기기상태 <이름>\` - 특정 기기 상세 정보
+• \`/기기등록\` - 새 기기 페어링 코드
 • \`/확인 <ID>\` - 위험 명령 승인
-• \`/거부 <ID>\` - 위험 명령 거부 (크레딧 환불)
+• \`/거부 <ID>\` - 명령 거부 (크레딧 환불)
 • \`/원격결과 <ID>\` - 실행 로그 확인
-• \`/원격상태\` - 최근 명령 이력
 
 **메모리 동기화**
 • \`/동기화 설정 <암호>\` - 동기화 시작
@@ -901,6 +920,92 @@ ${PLATFORM_INSTALLERS.map((p) => `${p.icon} ${p.displayName}`).join(" | ")}
       return {
         text: formatSubscriptionStatus(subscription),
         quickReplies: ["구독", "기기", "도움말"],
+      };
+    }
+
+    // ============================================
+    // Device Status Commands
+    // ============================================
+
+    case "device_status": {
+      // /연결상태 - 실시간 디바이스 상태 보기
+      const supabase = getSupabase();
+      const { data: statusUser } = await supabase
+        .from("lawcall_users")
+        .select("id")
+        .eq("kakao_user_id", userId)
+        .single();
+
+      if (!statusUser) {
+        return {
+          text: "등록된 기기가 없습니다. /기기등록 명령으로 먼저 기기를 등록해주세요.",
+          quickReplies: ["기기등록", "설치"],
+        };
+      }
+
+      const deviceStatuses = await getDetailedDeviceStatus(statusUser.id);
+
+      if (deviceStatuses.length === 0) {
+        return {
+          text: "등록된 기기가 없습니다.\n\n/설치 명령으로 다른 기기에 MoA를 설치하세요.",
+          quickReplies: ["설치", "기기등록"],
+        };
+      }
+
+      const statusText = formatDeviceStatusSummary(deviceStatuses);
+
+      // Quick replies for online devices
+      const quickReplies: string[] = [];
+      for (const d of deviceStatuses) {
+        if (d.isOnline) {
+          quickReplies.push(`@${d.deviceName} `);
+        }
+      }
+      quickReplies.push("기기등록", "설치");
+
+      return { text: statusText, quickReplies: quickReplies.slice(0, 10) };
+    }
+
+    case "device_detail": {
+      // /기기상태 <name> - 특정 기기 상세 상태
+      const deviceName = cmd.args?.[0];
+      if (!deviceName) {
+        return {
+          text: "사용법: /기기상태 <기기명>\n\n예시: /기기상태 노트북",
+          quickReplies: ["연결상태", "기기"],
+        };
+      }
+
+      const supabase = getSupabase();
+      const { data: detailUser } = await supabase
+        .from("lawcall_users")
+        .select("id")
+        .eq("kakao_user_id", userId)
+        .single();
+
+      if (!detailUser) {
+        return { text: "사용자 정보를 찾을 수 없습니다." };
+      }
+
+      // Find device by name
+      const allDevices = await getDetailedDeviceStatus(detailUser.id);
+      const device = allDevices.find(
+        (d) => d.deviceName.toLowerCase() === deviceName.toLowerCase()
+      );
+
+      if (!device) {
+        const deviceNames = allDevices.map((d) => d.deviceName).join(", ");
+        return {
+          text: `"${deviceName}" 기기를 찾을 수 없습니다.\n\n등록된 기기: ${deviceNames || "없음"}`,
+          quickReplies: ["연결상태", "기기"],
+        };
+      }
+
+      const detailText = formatDeviceStatusDetail(device);
+
+      return {
+        text: detailText,
+        quickReplies: [`@${device.deviceName} `, "연결상태", "기기"],
       };
     }
 

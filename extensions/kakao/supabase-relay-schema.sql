@@ -360,3 +360,87 @@ CREATE POLICY "Service role full access on moa_payments"
 CREATE POLICY "Service role full access on moa_daily_usage"
   ON moa_daily_usage FOR ALL USING (auth.role() = 'service_role');
 
+-- ============================================
+-- Device Activity Log (연결/명령 이벤트 로깅)
+-- ============================================
+CREATE TABLE IF NOT EXISTS moa_device_activity (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  device_id UUID NOT NULL REFERENCES relay_devices(id) ON DELETE CASCADE,
+  type TEXT NOT NULL CHECK (type IN ('connect', 'disconnect', 'command_start', 'command_end', 'heartbeat', 'error')),
+  message TEXT NOT NULL,
+  metadata JSONB DEFAULT '{}',
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_moa_device_activity_device ON moa_device_activity(device_id);
+CREATE INDEX IF NOT EXISTS idx_moa_device_activity_type ON moa_device_activity(type);
+CREATE INDEX IF NOT EXISTS idx_moa_device_activity_created ON moa_device_activity(created_at DESC);
+
+-- Auto-cleanup old activity logs (keep 7 days)
+CREATE OR REPLACE FUNCTION cleanup_old_device_activity()
+RETURNS INTEGER AS $$
+DECLARE
+  deleted_count INTEGER;
+BEGIN
+  DELETE FROM moa_device_activity
+  WHERE created_at < NOW() - INTERVAL '7 days';
+  GET DIAGNOSTICS deleted_count = ROW_COUNT;
+  RETURN deleted_count;
+END;
+$$ LANGUAGE plpgsql;
+
+-- ============================================
+-- MoA Memory Storage (쌍둥이 MoA 기억 동기화)
+-- ============================================
+CREATE TABLE IF NOT EXISTS moa_memory (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  user_id TEXT NOT NULL,                     -- Hashed kakao user ID
+  type TEXT NOT NULL CHECK (type IN ('conversation', 'preference', 'knowledge', 'command_pattern')),
+  key TEXT NOT NULL,                         -- Unique key within user's memory
+  content JSONB NOT NULL,                    -- Memory content
+  importance INTEGER NOT NULL DEFAULT 50 CHECK (importance >= 0 AND importance <= 100),
+  source_device_id UUID REFERENCES relay_devices(id) ON DELETE SET NULL,
+  version INTEGER NOT NULL DEFAULT 1,        -- For conflict resolution
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  last_accessed_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  UNIQUE(user_id, key)
+);
+
+CREATE INDEX IF NOT EXISTS idx_moa_memory_user ON moa_memory(user_id);
+CREATE INDEX IF NOT EXISTS idx_moa_memory_type ON moa_memory(user_id, type);
+CREATE INDEX IF NOT EXISTS idx_moa_memory_updated ON moa_memory(updated_at DESC);
+CREATE INDEX IF NOT EXISTS idx_moa_memory_importance ON moa_memory(user_id, importance DESC);
+
+-- ============================================
+-- Sync Events (동기화 이력)
+-- ============================================
+CREATE TABLE IF NOT EXISTS moa_sync_events (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  user_id TEXT NOT NULL,
+  device_id UUID REFERENCES relay_devices(id) ON DELETE SET NULL,
+  uploaded INTEGER NOT NULL DEFAULT 0,
+  downloaded INTEGER NOT NULL DEFAULT 0,
+  conflicts_resolved INTEGER NOT NULL DEFAULT 0,
+  synced_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_moa_sync_events_user ON moa_sync_events(user_id);
+CREATE INDEX IF NOT EXISTS idx_moa_sync_events_device ON moa_sync_events(device_id);
+
+-- ============================================
+-- RLS for activity and memory tables
+-- ============================================
+ALTER TABLE moa_device_activity ENABLE ROW LEVEL SECURITY;
+ALTER TABLE moa_memory ENABLE ROW LEVEL SECURITY;
+ALTER TABLE moa_sync_events ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "Service role full access on moa_device_activity"
+  ON moa_device_activity FOR ALL USING (auth.role() = 'service_role');
+
+CREATE POLICY "Service role full access on moa_memory"
+  ON moa_memory FOR ALL USING (auth.role() = 'service_role');
+
+CREATE POLICY "Service role full access on moa_sync_events"
+  ON moa_sync_events FOR ALL USING (auth.role() = 'service_role');
+
