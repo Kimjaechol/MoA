@@ -340,10 +340,12 @@ export interface PaymentRecord {
   userId: string;
   orderId: string;
   paymentKey: string;
-  provider: "toss" | "kakao";
+  provider: "toss" | "kakao" | "stripe";
   amount: number;
   status: "pending" | "completed" | "failed" | "refunded";
   planType: PlanType;
+  /** 통화 (Stripe용) */
+  currency?: string;
 }
 
 /**
@@ -354,7 +356,7 @@ export async function updateSubscriptionStatus(
   plan: PlanType,
   paymentInfo: {
     paymentKey?: string;
-    provider: "toss" | "kakao";
+    provider: "toss" | "kakao" | "stripe";
   },
 ): Promise<{ success: boolean; error?: string }> {
   if (!isSupabaseConfigured()) {

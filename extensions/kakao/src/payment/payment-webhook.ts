@@ -1,7 +1,7 @@
 /**
  * 결제 웹훅 핸들러
  *
- * 토스페이먼츠와 카카오페이의 결제 콜백 처리
+ * 토스페이먼츠, 카카오페이, Stripe의 결제 콜백 처리
  * - 결제 승인 콜백
  * - 정기 결제 콜백
  * - 웹훅 알림
@@ -11,6 +11,13 @@ import type { IncomingMessage, ServerResponse } from "node:http";
 import { parse as parseUrl } from "node:url";
 import { confirmPayment, verifyWebhookSignature } from "./toss-payments.js";
 import { approvePayment } from "./kakao-pay.js";
+import {
+  getCheckoutSession,
+  getPaymentIntent,
+  getSubscription,
+  verifyWebhookSignature as verifyStripeWebhook,
+  type StripeWebhookEvent,
+} from "./stripe-payments.js";
 import {
   updateSubscriptionStatus,
   getUserSubscription,
@@ -24,7 +31,7 @@ import {
 
 export interface PaymentCallbackParams {
   /** 결제 수단 */
-  provider: "toss" | "kakao";
+  provider: "toss" | "kakao" | "stripe";
   /** 결제 성공 여부 */
   success: boolean;
   /** 에러 코드 */
@@ -40,6 +47,10 @@ export interface PaymentCallbackParams {
   // Kakao specific
   pgToken?: string;
   tid?: string;
+
+  // Stripe specific
+  sessionId?: string;
+  paymentIntentId?: string;
 }
 
 export interface WebhookPayload {
@@ -283,6 +294,235 @@ async function handleTossWebhook(
 }
 
 // ============================================
+// Stripe Handlers
+// ============================================
+
+/**
+ * Stripe Checkout Session 완료 콜백 처리
+ */
+async function handleStripeSuccess(
+  params: URLSearchParams,
+  logger?: Pick<Console, "log" | "error">
+): Promise<{ success: boolean; message: string; redirectUrl?: string }> {
+  const sessionId = params.get("session_id");
+
+  if (!sessionId) {
+    return {
+      success: false,
+      message: "Session ID is required.",
+    };
+  }
+
+  logger?.log(`[Payment] Stripe success callback: sessionId=${sessionId}`);
+
+  // 세션 조회
+  const sessionResult = await getCheckoutSession(sessionId);
+  if (!sessionResult.success || !sessionResult.session) {
+    return {
+      success: false,
+      message: sessionResult.error?.message ?? "Failed to retrieve session.",
+    };
+  }
+
+  const session = sessionResult.session;
+
+  // 세션 상태 확인
+  if (session.status !== "complete") {
+    return {
+      success: false,
+      message: "Payment is not complete.",
+    };
+  }
+
+  // 주문 정보 파싱 (metadata에서 또는 세션 저장소에서)
+  const storedSession = stripePaymentSessions.get(sessionId);
+  if (storedSession) {
+    // 구독 상태 업데이트
+    await updateSubscriptionStatus(storedSession.userId, storedSession.planType as "basic" | "pro" | "enterprise", {
+      paymentKey: session.subscriptionId ?? session.paymentIntentId,
+      provider: "stripe",
+    });
+
+    // 결제 기록
+    await recordPayment({
+      userId: storedSession.userId,
+      orderId: sessionId,
+      paymentKey: session.subscriptionId ?? session.paymentIntentId ?? sessionId,
+      provider: "stripe",
+      amount: storedSession.amount,
+      status: "completed",
+      planType: storedSession.planType as "basic" | "pro" | "enterprise",
+    });
+
+    // 세션 정리
+    stripePaymentSessions.delete(sessionId);
+  }
+
+  return {
+    success: true,
+    message: "Payment completed successfully!",
+    redirectUrl: `/payment/complete?orderId=${sessionId}`,
+  };
+}
+
+/**
+ * Stripe 결제 취소 콜백 처리
+ */
+function handleStripeCancel(
+  params: URLSearchParams,
+  logger?: Pick<Console, "log" | "error">
+): { success: boolean; message: string; redirectUrl?: string } {
+  const sessionId = params.get("session_id");
+
+  logger?.log(`[Payment] Stripe cancel callback: sessionId=${sessionId}`);
+
+  // 세션 정리
+  if (sessionId) {
+    stripePaymentSessions.delete(sessionId);
+  }
+
+  return {
+    success: false,
+    message: "Payment was cancelled.",
+    redirectUrl: `/payment/cancel?orderId=${sessionId}`,
+  };
+}
+
+/**
+ * Stripe 웹훅 처리
+ */
+async function handleStripeWebhook(
+  payload: string,
+  signature: string,
+  logger?: Pick<Console, "log" | "error">
+): Promise<{ success: boolean; message: string }> {
+  // 서명 검증
+  const verification = verifyStripeWebhook(payload, signature);
+  if (!verification.valid) {
+    logger?.error(`[Payment] Stripe webhook verification failed: ${verification.error}`);
+    return {
+      success: false,
+      message: verification.error ?? "Invalid signature",
+    };
+  }
+
+  const event = verification.event!;
+  logger?.log(`[Payment] Stripe webhook: ${event.type}`);
+
+  try {
+    switch (event.type) {
+      case "checkout.session.completed": {
+        const session = event.data.object as {
+          id: string;
+          customer?: string;
+          subscription?: string;
+          payment_intent?: string;
+          metadata?: Record<string, string>;
+        };
+
+        // 메타데이터에서 사용자 정보 추출
+        const userId = session.metadata?.userId;
+        const planType = session.metadata?.planType as "basic" | "pro" | "enterprise" | undefined;
+
+        if (userId && planType) {
+          await updateSubscriptionStatus(userId, planType, {
+            paymentKey: session.subscription ?? session.payment_intent,
+            provider: "stripe",
+          });
+        }
+        break;
+      }
+
+      case "invoice.payment_succeeded": {
+        // 구독 갱신 성공
+        const invoice = event.data.object as {
+          subscription?: string;
+          customer?: string;
+          amount_paid: number;
+          metadata?: Record<string, string>;
+        };
+        logger?.log(`[Payment] Subscription renewed: ${invoice.subscription}`);
+        break;
+      }
+
+      case "invoice.payment_failed": {
+        // 구독 갱신 실패
+        const invoice = event.data.object as {
+          subscription?: string;
+          customer?: string;
+          metadata?: Record<string, string>;
+        };
+        logger?.log(`[Payment] Subscription payment failed: ${invoice.subscription}`);
+        // TODO: 사용자에게 알림 발송
+        break;
+      }
+
+      case "customer.subscription.deleted": {
+        // 구독 취소됨
+        const subscription = event.data.object as {
+          id: string;
+          customer?: string;
+          metadata?: Record<string, string>;
+        };
+        logger?.log(`[Payment] Subscription cancelled: ${subscription.id}`);
+        break;
+      }
+
+      case "customer.subscription.updated": {
+        // 구독 업데이트 (플랜 변경 등)
+        const subscription = event.data.object as {
+          id: string;
+          status: string;
+          cancel_at_period_end: boolean;
+          metadata?: Record<string, string>;
+        };
+        logger?.log(`[Payment] Subscription updated: ${subscription.id}, status: ${subscription.status}`);
+        break;
+      }
+
+      default:
+        logger?.log(`[Payment] Unhandled Stripe event: ${event.type}`);
+    }
+
+    return {
+      success: true,
+      message: "OK",
+    };
+  } catch (error) {
+    logger?.error("[Payment] Error processing Stripe webhook:", error);
+    return {
+      success: false,
+      message: "Webhook processing failed",
+    };
+  }
+}
+
+// Stripe 결제 세션 저장소
+const stripePaymentSessions = new Map<
+  string,
+  { userId: string; amount: number; planType: string; currency: string }
+>();
+
+/**
+ * Stripe 결제 세션 저장 (외부에서 사용)
+ */
+export function saveStripePaymentSession(
+  sessionId: string,
+  session: { userId: string; amount: number; planType: string; currency: string }
+): void {
+  stripePaymentSessions.set(sessionId, session);
+}
+
+/**
+ * Stripe 결제 세션 조회
+ */
+export function getStripePaymentSession(
+  sessionId: string
+): { userId: string; amount: number; planType: string; currency: string } | undefined {
+  return stripePaymentSessions.get(sessionId);
+}
+
+// ============================================
 // Main Request Handler
 // ============================================
 
@@ -359,7 +599,38 @@ export function handlePaymentRequest(
         return;
       }
 
+      // Stripe 콜백
+      if (pathname === "/payment/stripe/success") {
+        const result = await handleStripeSuccess(params, logger);
+        if (result.redirectUrl) {
+          res.writeHead(302, { Location: result.redirectUrl });
+          res.end();
+        } else {
+          sendHtml(200, generateResultPage(result.success, result.message));
+        }
+        return;
+      }
+
+      if (pathname === "/payment/stripe/cancel") {
+        const result = handleStripeCancel(params, logger);
+        sendHtml(200, generateResultPage(false, result.message));
+        return;
+      }
+
       // 웹훅 엔드포인트
+      if (pathname === "/payment/webhook/stripe" && req.method === "POST") {
+        let body = "";
+        req.on("data", (chunk) => {
+          body += chunk.toString();
+        });
+        req.on("end", async () => {
+          const signature = req.headers["stripe-signature"] as string ?? "";
+          const result = await handleStripeWebhook(body, signature, logger);
+          sendJson(result.success ? 200 : 400, result);
+        });
+        return;
+      }
+
       if (pathname === "/payment/webhook/toss" && req.method === "POST") {
         let body = "";
         req.on("data", (chunk) => {
