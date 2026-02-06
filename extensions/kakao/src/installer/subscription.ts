@@ -71,7 +71,7 @@ export const SUBSCRIPTION_PLANS: Record<PlanType, SubscriptionPlan> = {
     type: "basic",
     name: "Basic",
     nameKo: "베이직",
-    price: 11000, // ₩11,000 (약 $11)
+    price: 12100, // ₩12,100 ($11 × 1,100원)
     priceUsd: 1100, // $11.00 (센트 단위)
     features: {
       maxDevices: 2,
@@ -87,7 +87,7 @@ export const SUBSCRIPTION_PLANS: Record<PlanType, SubscriptionPlan> = {
     type: "pro",
     name: "Pro",
     nameKo: "프로",
-    price: 22000, // ₩22,000 (약 $22)
+    price: 24200, // ₩24,200 ($22 × 1,100원)
     priceUsd: 2200, // $22.00 (센트 단위)
     features: {
       maxDevices: 5,
@@ -103,7 +103,7 @@ export const SUBSCRIPTION_PLANS: Record<PlanType, SubscriptionPlan> = {
     type: "enterprise",
     name: "Enterprise",
     nameKo: "엔터프라이즈",
-    price: 220000, // ₩220,000 (약 $220)
+    price: 242000, // ₩242,000 ($220 × 1,100원)
     priceUsd: 22000, // $220.00 (센트 단위)
     features: {
       maxDevices: 10,
@@ -409,16 +409,16 @@ export const CREDIT_PACKAGES: CreditPackage[] = [
     name: "1,000 Credits",
     nameKo: "1,000 크레딧",
     credits: 1000,
-    priceKrw: 5000,
-    priceUsd: 500,
+    priceKrw: 5500, // ₩5,500 ($5 × 1,100원)
+    priceUsd: 500, // $5.00 (센트 단위)
   },
   {
     id: "credits_5000",
     name: "5,000 Credits",
     nameKo: "5,000 크레딧",
     credits: 5000,
-    priceKrw: 22000,
-    priceUsd: 2200,
+    priceKrw: 24200, // ₩24,200 ($22 × 1,100원)
+    priceUsd: 2200, // $22.00 (센트 단위)
     bonus: 500, // 10% 보너스
   },
   {
@@ -426,8 +426,8 @@ export const CREDIT_PACKAGES: CreditPackage[] = [
     name: "10,000 Credits",
     nameKo: "10,000 크레딧",
     credits: 10000,
-    priceKrw: 40000,
-    priceUsd: 4000,
+    priceKrw: 44000, // ₩44,000 ($40 × 1,100원)
+    priceUsd: 4000, // $40.00 (센트 단위)
     bonus: 1500, // 15% 보너스
   },
   {
@@ -435,8 +435,8 @@ export const CREDIT_PACKAGES: CreditPackage[] = [
     name: "50,000 Credits",
     nameKo: "50,000 크레딧",
     credits: 50000,
-    priceKrw: 180000,
-    priceUsd: 18000,
+    priceKrw: 198000, // ₩198,000 ($180 × 1,100원)
+    priceUsd: 18000, // $180.00 (센트 단위)
     bonus: 10000, // 20% 보너스
   },
 ];
