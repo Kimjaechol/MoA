@@ -106,14 +106,14 @@ export const SUBSCRIPTION_PLANS: Record<PlanType, SubscriptionPlan> = {
     price: 220000, // ₩220,000 (약 $220)
     priceUsd: 22000, // $220.00 (센트 단위)
     features: {
-      maxDevices: 999,
+      maxDevices: 10,
       commandsPerDay: 99999,
       memorySync: true,
       prioritySupport: true,
       customIntegration: true,
     },
-    description: "기업용 무제한",
-    descriptionEn: "Unlimited for enterprises",
+    description: "기업용 (10대, 무제한 명령)",
+    descriptionEn: "For enterprises (10 devices, unlimited commands)",
   },
 };
 
@@ -333,7 +333,7 @@ export function formatPlanComparison(): string {
     if (plan.type === "beta") continue; // 베타는 표시 안함
 
     const priceText = plan.price === 0 ? "무료 (30일)" : `₩${plan.price.toLocaleString()}/월`;
-    const deviceText = plan.features.maxDevices >= 999 ? "무제한" : `${plan.features.maxDevices}대`;
+    const deviceText = `${plan.features.maxDevices}대`;
     const commandText = plan.features.commandsPerDay >= 99999 ? "무제한" : `${plan.features.commandsPerDay}회`;
 
     lines.push(`**${plan.nameKo}** - ${priceText}`);
@@ -368,7 +368,7 @@ export function formatPlanComparisonEn(): string {
     if (plan.type === "beta") continue;
 
     const priceText = plan.priceUsd === 0 ? "Free (30 days)" : `$${(plan.priceUsd / 100).toFixed(0)}/mo`;
-    const deviceText = plan.features.maxDevices >= 999 ? "Unlimited" : `${plan.features.maxDevices}`;
+    const deviceText = `${plan.features.maxDevices}`;
     const commandText = plan.features.commandsPerDay >= 99999 ? "Unlimited" : `${plan.features.commandsPerDay}`;
 
     lines.push(`**${plan.name}** - ${priceText}`);
