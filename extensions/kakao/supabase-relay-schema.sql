@@ -444,3 +444,120 @@ CREATE POLICY "Service role full access on moa_memory"
 CREATE POLICY "Service role full access on moa_sync_events"
   ON moa_sync_events FOR ALL USING (auth.role() = 'service_role');
 
+-- ============================================
+-- LLM Credits System (LLM API 크레딧)
+-- ============================================
+CREATE TABLE IF NOT EXISTS moa_credits (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  user_id TEXT NOT NULL UNIQUE,               -- Hashed kakao user ID
+  balance INTEGER NOT NULL DEFAULT 0,         -- 현재 크레딧 잔액
+  total_purchased INTEGER NOT NULL DEFAULT 0, -- 총 구매한 크레딧
+  total_used INTEGER NOT NULL DEFAULT 0,      -- 총 사용한 크레딧
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_moa_credits_user ON moa_credits(user_id);
+
+-- ============================================
+-- Credit History (크레딧 변동 이력)
+-- ============================================
+CREATE TABLE IF NOT EXISTS moa_credit_history (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  user_id TEXT NOT NULL,
+  amount INTEGER NOT NULL,                    -- 변동량 (+구매, -사용)
+  type TEXT NOT NULL CHECK (type IN ('purchase', 'usage', 'bonus', 'refund', 'admin')),
+  reason TEXT NOT NULL,                       -- 변동 사유
+  balance_after INTEGER NOT NULL,             -- 변동 후 잔액
+  model TEXT,                                 -- LLM 모델 (사용 시)
+  tokens_used INTEGER,                        -- 토큰 사용량 (사용 시)
+  order_id TEXT,                              -- 주문 ID (구매 시)
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_moa_credit_history_user ON moa_credit_history(user_id);
+CREATE INDEX IF NOT EXISTS idx_moa_credit_history_type ON moa_credit_history(type);
+CREATE INDEX IF NOT EXISTS idx_moa_credit_history_created ON moa_credit_history(created_at DESC);
+
+-- ============================================
+-- Credit Purchases (크레딧 구매 기록)
+-- ============================================
+CREATE TABLE IF NOT EXISTS moa_credit_purchases (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  user_id TEXT NOT NULL,
+  package_id TEXT NOT NULL,                   -- 패키지 ID (credits_1000, credits_5000 등)
+  credits_purchased INTEGER NOT NULL,         -- 구매한 크레딧
+  bonus_credits INTEGER NOT NULL DEFAULT 0,   -- 보너스 크레딧
+  amount INTEGER NOT NULL,                    -- 결제 금액
+  currency TEXT NOT NULL DEFAULT 'KRW',       -- 통화 (KRW, USD)
+  provider TEXT NOT NULL,                     -- 결제사 (toss, kakao, stripe)
+  payment_key TEXT,                           -- 결제 키
+  order_id TEXT NOT NULL UNIQUE,              -- 주문 ID
+  status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'completed', 'failed', 'refunded')),
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_moa_credit_purchases_user ON moa_credit_purchases(user_id);
+CREATE INDEX IF NOT EXISTS idx_moa_credit_purchases_order ON moa_credit_purchases(order_id);
+CREATE INDEX IF NOT EXISTS idx_moa_credit_purchases_status ON moa_credit_purchases(status);
+
+-- Add credit-related columns to moa_subscriptions (if not exist)
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns
+                 WHERE table_name = 'moa_subscriptions' AND column_name = 'payment_key') THEN
+    ALTER TABLE moa_subscriptions ADD COLUMN payment_key TEXT;
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns
+                 WHERE table_name = 'moa_subscriptions' AND column_name = 'monthly_price') THEN
+    ALTER TABLE moa_subscriptions ADD COLUMN monthly_price INTEGER;
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns
+                 WHERE table_name = 'moa_subscriptions' AND column_name = 'cancelled_at') THEN
+    ALTER TABLE moa_subscriptions ADD COLUMN cancelled_at TIMESTAMPTZ;
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns
+                 WHERE table_name = 'moa_subscriptions' AND column_name = 'cancel_reason') THEN
+    ALTER TABLE moa_subscriptions ADD COLUMN cancel_reason TEXT;
+  END IF;
+END
+$$;
+
+-- Add columns to moa_payments for Stripe/global payments
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns
+                 WHERE table_name = 'moa_payments' AND column_name = 'order_id') THEN
+    ALTER TABLE moa_payments ADD COLUMN order_id TEXT;
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns
+                 WHERE table_name = 'moa_payments' AND column_name = 'payment_key') THEN
+    ALTER TABLE moa_payments ADD COLUMN payment_key TEXT;
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns
+                 WHERE table_name = 'moa_payments' AND column_name = 'provider') THEN
+    ALTER TABLE moa_payments ADD COLUMN provider TEXT;
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns
+                 WHERE table_name = 'moa_payments' AND column_name = 'plan_type') THEN
+    ALTER TABLE moa_payments ADD COLUMN plan_type TEXT;
+  END IF;
+END
+$$;
+
+-- ============================================
+-- RLS for credit tables
+-- ============================================
+ALTER TABLE moa_credits ENABLE ROW LEVEL SECURITY;
+ALTER TABLE moa_credit_history ENABLE ROW LEVEL SECURITY;
+ALTER TABLE moa_credit_purchases ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "Service role full access on moa_credits"
+  ON moa_credits FOR ALL USING (auth.role() = 'service_role');
+
+CREATE POLICY "Service role full access on moa_credit_history"
+  ON moa_credit_history FOR ALL USING (auth.role() = 'service_role');
+
+CREATE POLICY "Service role full access on moa_credit_purchases"
+  ON moa_credit_purchases FOR ALL USING (auth.role() = 'service_role');
+
