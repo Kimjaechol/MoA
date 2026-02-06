@@ -29,6 +29,12 @@ import {
   getRelayBillingConfig,
   confirmCommand,
   rejectCommand,
+  // Multi-device direct command
+  parseDirectCommand,
+  sendMultiDeviceCommand,
+  formatMultiDeviceResult,
+  getTwinMoAStatus,
+  formatTwinMoAStatus,
 } from "./relay/index.js";
 
 export interface KakaoWebhookOptions {
@@ -431,11 +437,13 @@ export function extractKakaoUserInfo(request: KakaoIncomingMessage): {
 
 interface MoltbotCommand {
   isCommand: boolean;
-  type?: "tools" | "channels" | "bridge" | "status" | "memory" | "help" | "relay" | "relay_register" | "relay_devices" | "relay_remove" | "relay_status" | "relay_confirm" | "relay_reject" | "relay_result";
+  type?: "tools" | "channels" | "bridge" | "status" | "memory" | "help" | "relay" | "relay_multi" | "relay_register" | "relay_devices" | "relay_remove" | "relay_status" | "relay_confirm" | "relay_reject" | "relay_result";
   args?: string[];
   bridgeCmd?: ReturnType<typeof parseBridgeCommand>;
   /** For relay commands: target device name */
   relayDevice?: string;
+  /** For multi-device commands: target device names */
+  relayDevices?: string[];
   /** For relay commands: the command text to send */
   relayCommand?: string;
 }
@@ -445,6 +453,30 @@ interface MoltbotCommand {
  */
 function parseMoltbotCommand(message: string): MoltbotCommand {
   const trimmed = message.trim();
+
+  // Check for @ prefix direct command (쌍둥이 MoA 직접 호출)
+  // Formats: @노트북 ls -la, @노트북,@태블릿 git pull, @모두 df -h
+  if (trimmed.startsWith("@")) {
+    const parsed = parseDirectCommand(trimmed);
+    if (parsed) {
+      if (parsed.targetDevices.length === 1 && !parsed.isAllDevices) {
+        // Single device: use existing relay type
+        return {
+          isCommand: true,
+          type: "relay",
+          relayDevice: parsed.targetDevices[0],
+          relayCommand: parsed.command,
+        };
+      }
+      // Multiple devices or @모두: use new relay_multi type
+      return {
+        isCommand: true,
+        type: "relay_multi",
+        relayDevices: parsed.targetDevices,
+        relayCommand: parsed.command,
+      };
+    }
+  }
 
   // Check for bridge command first
   const bridgeCmd = parseBridgeCommand(trimmed);
@@ -686,15 +718,16 @@ async function handleMoltbotCommand(
       return {
         text: `📖 **MoA 명령어 도움말**
 
-**원격 제어 (Relay)**
+**쌍둥이 MoA 직접 호출**
+• \`@노트북 ls -la\` - 단일 기기 명령
+• \`@노트북,@태블릿 git pull\` - 다중 기기 동시 명령
+• \`@모두 df -h\` - 모든 온라인 기기에 명령
+• \`/기기\` - 내 쌍둥이 MoA 상태 보기
 • \`/기기등록\` - 새 기기 페어링 코드 발급
-• \`/기기\` - 등록된 기기 목록
-• \`/원격 <기기명> <명령>\` - 원격 명령 전송
 • \`/확인 <ID>\` - 위험 명령 승인
 • \`/거부 <ID>\` - 위험 명령 거부 (크레딧 환불)
-• \`/원격결과 <ID>\` - 실행 로그 및 결과 확인
-• \`/기기삭제 <기기명>\` - 기기 등록 해제
-• \`/원격상태\` - 원격 명령 이력
+• \`/원격결과 <ID>\` - 실행 로그 확인
+• \`/원격상태\` - 최근 명령 이력
 
 **메모리 동기화**
 • \`/동기화 설정 <암호>\` - 동기화 시작
@@ -773,6 +806,51 @@ async function handleMoltbotCommand(
       };
     }
 
+    case "relay_multi": {
+      // @노트북,@태블릿 git pull OR @모두 df -h (multi-device command)
+      if (!cmd.relayDevices || !cmd.relayCommand) {
+        return {
+          text: "사용법:\n• @노트북,@태블릿 git pull (다중 기기)\n• @모두 df -h (모든 온라인 기기)",
+          quickReplies: ["기기", "기기등록"],
+        };
+      }
+
+      // Get Supabase user ID for billing
+      const supabase = getSupabase();
+      const { data: multiUser } = await supabase
+        .from("lawcall_users")
+        .select("id")
+        .eq("kakao_user_id", userId)
+        .single();
+
+      if (!multiUser) {
+        return { text: "사용자 정보를 찾을 수 없습니다. 먼저 메시지를 보내 계정을 활성화해주세요." };
+      }
+
+      const multiResult = await sendMultiDeviceCommand({
+        userId: multiUser.id,
+        targetDeviceNames: cmd.relayDevices,
+        commandText: cmd.relayCommand,
+      });
+
+      const resultText = formatMultiDeviceResult(multiResult, cmd.relayCommand);
+
+      // Build quick replies with command IDs for successful results
+      const quickReplies: string[] = [];
+      for (const r of multiResult.results) {
+        if (r.success && r.commandId) {
+          if (r.confirmationRequired) {
+            quickReplies.push(`확인 ${r.commandId.slice(0, 8)}`);
+          } else {
+            quickReplies.push(`원격결과 ${r.commandId.slice(0, 8)}`);
+          }
+        }
+      }
+      quickReplies.push("기기");
+
+      return { text: resultText, quickReplies: quickReplies.slice(0, 10) }; // KakaoTalk max 10 quick replies
+    }
+
     case "relay_register": {
       // /기기등록 — generate pairing code
       const supabase = getSupabase();
@@ -807,7 +885,7 @@ async function handleMoltbotCommand(
     }
 
     case "relay_devices": {
-      // /기기 — list registered devices
+      // /기기 — list registered devices (쌍둥이 MoA 상태)
       const supabase = getSupabase();
       const { data: devUser } = await supabase
         .from("lawcall_users")
@@ -819,27 +897,27 @@ async function handleMoltbotCommand(
         return { text: "등록된 기기가 없습니다. /기기등록 명령으로 먼저 기기를 등록해주세요.", quickReplies: ["기기등록"] };
       }
 
-      const devices = await listUserDevices(devUser.id);
+      const twinStatus = await getTwinMoAStatus(devUser.id);
 
-      if (devices.length === 0) {
+      if (twinStatus.totalDevices === 0) {
         return {
-          text: "등록된 기기가 없습니다.\n\n/기기등록 명령으로 기기를 등록해주세요.",
+          text: "등록된 기기가 없습니다.\n\n/기기등록 명령으로 기기를 등록해주세요.\n\n각 기기에 moltbot을 설치하면 모두 동일한 기억을 공유하는 쌍둥이 MoA가 됩니다!",
           quickReplies: ["기기등록"],
         };
       }
 
-      let text = `📱 **등록된 기기 (${devices.length}개)**\n\n`;
-      for (const d of devices) {
-        const status = d.isOnline ? "🟢 온라인" : "🔴 오프라인";
-        const lastSeen = d.lastSeenAt
-          ? `마지막 접속: ${formatTimeAgo(d.lastSeenAt)}`
-          : "접속 기록 없음";
-        text += `**${d.deviceName}** (${d.deviceType})\n`;
-        text += `${status} | ${d.platform ?? "알 수 없음"} | ${lastSeen}\n\n`;
-      }
-      text += `\n사용법: /원격 <기기명> <명령>`;
+      const text = formatTwinMoAStatus(twinStatus);
 
-      return { text, quickReplies: ["기기등록", "원격상태"] };
+      // Generate quick replies for online devices
+      const quickReplies: string[] = [];
+      for (const d of twinStatus.devices) {
+        if (d.isOnline) {
+          quickReplies.push(`@${d.name} `);
+        }
+      }
+      quickReplies.push("기기등록", "원격상태");
+
+      return { text, quickReplies: quickReplies.slice(0, 10) };
     }
 
     case "relay_remove": {
