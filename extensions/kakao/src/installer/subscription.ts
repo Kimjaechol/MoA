@@ -19,7 +19,10 @@ export interface SubscriptionPlan {
   type: PlanType;
   name: string;
   nameKo: string;
-  price: number; // 월 가격 (원)
+  /** 월 가격 (원) */
+  price: number;
+  /** 월 가격 (USD 센트 단위) */
+  priceUsd: number;
   features: {
     maxDevices: number;
     commandsPerDay: number;
@@ -28,6 +31,7 @@ export interface SubscriptionPlan {
     customIntegration: boolean;
   };
   description: string;
+  descriptionEn: string;
 }
 
 export const SUBSCRIPTION_PLANS: Record<PlanType, SubscriptionPlan> = {
@@ -36,6 +40,7 @@ export const SUBSCRIPTION_PLANS: Record<PlanType, SubscriptionPlan> = {
     name: "Free Trial",
     nameKo: "무료 체험",
     price: 0,
+    priceUsd: 0,
     features: {
       maxDevices: 2,
       commandsPerDay: 50,
@@ -44,62 +49,71 @@ export const SUBSCRIPTION_PLANS: Record<PlanType, SubscriptionPlan> = {
       customIntegration: false,
     },
     description: "30일 무료 체험",
+    descriptionEn: "30-day free trial",
   },
   beta: {
     type: "beta",
     name: "Beta",
     nameKo: "베타",
     price: 0,
+    priceUsd: 0,
     features: {
-      maxDevices: 5,
-      commandsPerDay: 200,
+      maxDevices: 2,
+      commandsPerDay: 50,
       memorySync: true,
       prioritySupport: false,
       customIntegration: false,
     },
     description: "베타 기간 무료 사용",
+    descriptionEn: "Free during beta period",
   },
   basic: {
     type: "basic",
     name: "Basic",
     nameKo: "베이직",
-    price: 9900,
+    price: 12100, // ₩12,100 ($11 × 1,100원)
+    priceUsd: 1100, // $11.00 (센트 단위)
     features: {
-      maxDevices: 3,
+      maxDevices: 2,
       commandsPerDay: 100,
       memorySync: true,
       prioritySupport: false,
       customIntegration: false,
     },
     description: "개인 사용자용",
+    descriptionEn: "For personal use",
   },
   pro: {
     type: "pro",
     name: "Pro",
     nameKo: "프로",
-    price: 29900,
+    price: 24200, // ₩24,200 ($22 × 1,100원)
+    priceUsd: 2200, // $22.00 (센트 단위)
     features: {
-      maxDevices: 10,
+      maxDevices: 5,
       commandsPerDay: 500,
       memorySync: true,
       prioritySupport: true,
       customIntegration: false,
     },
     description: "전문가/소규모 팀용",
+    descriptionEn: "For professionals and small teams",
   },
   enterprise: {
     type: "enterprise",
     name: "Enterprise",
     nameKo: "엔터프라이즈",
-    price: 99000,
+    price: 242000, // ₩242,000 ($220 × 1,100원)
+    priceUsd: 22000, // $220.00 (센트 단위)
     features: {
-      maxDevices: 999,
-      commandsPerDay: 9999,
+      maxDevices: 10,
+      commandsPerDay: 99999,
       memorySync: true,
       prioritySupport: true,
       customIntegration: true,
     },
-    description: "기업용 무제한",
+    description: "기업용 (10대, 무제한 명령)",
+    descriptionEn: "For enterprises (10 devices, unlimited commands)",
   },
 };
 
@@ -306,7 +320,7 @@ export function formatSubscriptionStatus(subscription: UserSubscription): string
 }
 
 /**
- * 플랜 비교 표 생성
+ * 플랜 비교 표 생성 (한국어)
  */
 export function formatPlanComparison(): string {
   const lines: string[] = [];
@@ -318,16 +332,307 @@ export function formatPlanComparison(): string {
   for (const plan of Object.values(SUBSCRIPTION_PLANS)) {
     if (plan.type === "beta") continue; // 베타는 표시 안함
 
-    const priceText = plan.price === 0 ? "무료" : `${plan.price.toLocaleString()}원/월`;
+    const priceText = plan.price === 0 ? "무료 (30일)" : `₩${plan.price.toLocaleString()}/월`;
+    const deviceText = `${plan.features.maxDevices}대`;
+    const commandText = plan.features.commandsPerDay >= 99999 ? "무제한" : `${plan.features.commandsPerDay}회`;
+
     lines.push(`**${plan.nameKo}** - ${priceText}`);
     lines.push(`   ${plan.description}`);
-    lines.push(`   • 디바이스 ${plan.features.maxDevices}대`);
-    lines.push(`   • 하루 ${plan.features.commandsPerDay}회`);
+    lines.push(`   • 디바이스 ${deviceText}`);
+    lines.push(`   • 하루 ${commandText}`);
+    if (plan.features.prioritySupport) {
+      lines.push(`   • 우선 지원 ✅`);
+    }
     lines.push("");
   }
 
+  lines.push("⚡ MoA 제공 LLM API 사용 시 크레딧 선구매 필요");
+  lines.push("");
   lines.push("구독 시작: /구독 <플랜명>");
   lines.push("예: /구독 베이직");
+
+  return lines.join("\n");
+}
+
+/**
+ * 플랜 비교 표 생성 (영어/글로벌)
+ */
+export function formatPlanComparisonEn(): string {
+  const lines: string[] = [];
+
+  lines.push("📋 **MoA Pricing Plans**");
+  lines.push("━━━━━━━━━━━━━━━━━━━━━━━━");
+  lines.push("");
+
+  for (const plan of Object.values(SUBSCRIPTION_PLANS)) {
+    if (plan.type === "beta") continue;
+
+    const priceText = plan.priceUsd === 0 ? "Free (30 days)" : `$${(plan.priceUsd / 100).toFixed(0)}/mo`;
+    const deviceText = `${plan.features.maxDevices}`;
+    const commandText = plan.features.commandsPerDay >= 99999 ? "Unlimited" : `${plan.features.commandsPerDay}`;
+
+    lines.push(`**${plan.name}** - ${priceText}`);
+    lines.push(`   ${plan.descriptionEn}`);
+    lines.push(`   • Devices: ${deviceText}`);
+    lines.push(`   • Commands/day: ${commandText}`);
+    if (plan.features.prioritySupport) {
+      lines.push(`   • Priority support ✅`);
+    }
+    lines.push("");
+  }
+
+  lines.push("⚡ LLM API usage requires pre-purchased credits");
+  lines.push("");
+  lines.push("Subscribe: /subscribe <plan>");
+  lines.push("Example: /subscribe basic");
+
+  return lines.join("\n");
+}
+
+// ============================================
+// LLM 크레딧 시스템
+// ============================================
+
+export interface CreditPackage {
+  id: string;
+  name: string;
+  nameKo: string;
+  credits: number;
+  priceKrw: number;
+  priceUsd: number; // 센트 단위
+  bonus?: number; // 보너스 크레딧
+}
+
+export const CREDIT_PACKAGES: CreditPackage[] = [
+  {
+    id: "credits_1000",
+    name: "1,000 Credits",
+    nameKo: "1,000 크레딧",
+    credits: 1000,
+    priceKrw: 5500, // ₩5,500 ($5 × 1,100원)
+    priceUsd: 500, // $5.00 (센트 단위)
+  },
+  {
+    id: "credits_5000",
+    name: "5,000 Credits",
+    nameKo: "5,000 크레딧",
+    credits: 5000,
+    priceKrw: 24200, // ₩24,200 ($22 × 1,100원)
+    priceUsd: 2200, // $22.00 (센트 단위)
+    bonus: 500, // 10% 보너스
+  },
+  {
+    id: "credits_10000",
+    name: "10,000 Credits",
+    nameKo: "10,000 크레딧",
+    credits: 10000,
+    priceKrw: 44000, // ₩44,000 ($40 × 1,100원)
+    priceUsd: 4000, // $40.00 (센트 단위)
+    bonus: 1500, // 15% 보너스
+  },
+  {
+    id: "credits_50000",
+    name: "50,000 Credits",
+    nameKo: "50,000 크레딧",
+    credits: 50000,
+    priceKrw: 198000, // ₩198,000 ($180 × 1,100원)
+    priceUsd: 18000, // $180.00 (센트 단위)
+    bonus: 10000, // 20% 보너스
+  },
+];
+
+// LLM 모델별 크레딧 소비량
+export const LLM_CREDIT_COSTS: Record<string, { input: number; output: number }> = {
+  "gpt-4o": { input: 1, output: 3 }, // 1K 토큰당
+  "gpt-4o-mini": { input: 0.1, output: 0.3 },
+  "claude-3-5-sonnet": { input: 1.2, output: 3.6 },
+  "claude-3-5-haiku": { input: 0.3, output: 0.9 },
+  "gemini-2.0-flash": { input: 0.1, output: 0.3 },
+};
+
+export interface UserCredits {
+  userId: string;
+  balance: number;
+  totalPurchased: number;
+  totalUsed: number;
+  lastUpdated: Date;
+}
+
+/**
+ * 사용자 크레딧 조회
+ */
+export async function getUserCredits(kakaoUserId: string): Promise<UserCredits | null> {
+  if (!isSupabaseConfigured()) return null;
+
+  const supabase = getSupabase();
+  const hashedId = hashUserId(kakaoUserId);
+
+  const { data } = await supabase
+    .from("moa_credits")
+    .select("*")
+    .eq("user_id", hashedId)
+    .single();
+
+  if (!data) {
+    return {
+      userId: hashedId,
+      balance: 0,
+      totalPurchased: 0,
+      totalUsed: 0,
+      lastUpdated: new Date(),
+    };
+  }
+
+  return {
+    userId: data.user_id,
+    balance: data.balance,
+    totalPurchased: data.total_purchased,
+    totalUsed: data.total_used,
+    lastUpdated: new Date(data.updated_at),
+  };
+}
+
+/**
+ * 크레딧 추가 (구매 시)
+ */
+export async function addCredits(
+  kakaoUserId: string,
+  amount: number,
+  reason: string
+): Promise<{ success: boolean; newBalance?: number; error?: string }> {
+  if (!isSupabaseConfigured()) {
+    return { success: false, error: "서버 설정 오류" };
+  }
+
+  const supabase = getSupabase();
+  const hashedId = hashUserId(kakaoUserId);
+
+  // 현재 잔액 조회
+  const current = await getUserCredits(kakaoUserId);
+  const newBalance = (current?.balance ?? 0) + amount;
+
+  const { error } = await supabase
+    .from("moa_credits")
+    .upsert({
+      user_id: hashedId,
+      balance: newBalance,
+      total_purchased: (current?.totalPurchased ?? 0) + amount,
+      total_used: current?.totalUsed ?? 0,
+      updated_at: new Date().toISOString(),
+    }, { onConflict: "user_id" });
+
+  if (error) {
+    return { success: false, error: error.message };
+  }
+
+  // 크레딧 변동 기록
+  await supabase.from("moa_credit_history").insert({
+    user_id: hashedId,
+    amount,
+    type: "purchase",
+    reason,
+    balance_after: newBalance,
+    created_at: new Date().toISOString(),
+  });
+
+  return { success: true, newBalance };
+}
+
+/**
+ * 크레딧 차감 (LLM 사용 시)
+ */
+export async function deductCredits(
+  kakaoUserId: string,
+  amount: number,
+  reason: string
+): Promise<{ success: boolean; newBalance?: number; error?: string }> {
+  if (!isSupabaseConfigured()) {
+    return { success: false, error: "서버 설정 오류" };
+  }
+
+  const supabase = getSupabase();
+  const hashedId = hashUserId(kakaoUserId);
+
+  // 현재 잔액 조회
+  const current = await getUserCredits(kakaoUserId);
+  if (!current || current.balance < amount) {
+    return { success: false, error: "크레딧이 부족합니다." };
+  }
+
+  const newBalance = current.balance - amount;
+
+  const { error } = await supabase
+    .from("moa_credits")
+    .update({
+      balance: newBalance,
+      total_used: current.totalUsed + amount,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("user_id", hashedId);
+
+  if (error) {
+    return { success: false, error: error.message };
+  }
+
+  // 크레딧 변동 기록
+  await supabase.from("moa_credit_history").insert({
+    user_id: hashedId,
+    amount: -amount,
+    type: "usage",
+    reason,
+    balance_after: newBalance,
+    created_at: new Date().toISOString(),
+  });
+
+  return { success: true, newBalance };
+}
+
+/**
+ * 크레딧 패키지 비교 표시 (한국어)
+ */
+export function formatCreditPackages(): string {
+  const lines: string[] = [];
+
+  lines.push("💎 **MoA 크레딧 패키지**");
+  lines.push("━━━━━━━━━━━━━━━━━━━━━━━━━");
+  lines.push("");
+  lines.push("MoA 제공 LLM API 사용을 위한 크레딧");
+  lines.push("");
+
+  for (const pkg of CREDIT_PACKAGES) {
+    const bonusText = pkg.bonus ? ` (+${pkg.bonus.toLocaleString()} 보너스!)` : "";
+    lines.push(`📦 **${pkg.nameKo}** - ₩${pkg.priceKrw.toLocaleString()}`);
+    lines.push(`   ${pkg.credits.toLocaleString()} 크레딧${bonusText}`);
+    lines.push("");
+  }
+
+  lines.push("구매: /크레딧구매 <패키지명>");
+  lines.push("예: /크레딧구매 5000");
+
+  return lines.join("\n");
+}
+
+/**
+ * 크레딧 패키지 비교 표시 (영어)
+ */
+export function formatCreditPackagesEn(): string {
+  const lines: string[] = [];
+
+  lines.push("💎 **MoA Credit Packages**");
+  lines.push("━━━━━━━━━━━━━━━━━━━━━━━━━━");
+  lines.push("");
+  lines.push("Credits for MoA-provided LLM APIs");
+  lines.push("");
+
+  for (const pkg of CREDIT_PACKAGES) {
+    const bonusText = pkg.bonus ? ` (+${pkg.bonus.toLocaleString()} bonus!)` : "";
+    lines.push(`📦 **${pkg.name}** - $${(pkg.priceUsd / 100).toFixed(0)}`);
+    lines.push(`   ${pkg.credits.toLocaleString()} credits${bonusText}`);
+    lines.push("");
+  }
+
+  lines.push("Purchase: /buy-credits <package>");
+  lines.push("Example: /buy-credits 5000");
 
   return lines.join("\n");
 }

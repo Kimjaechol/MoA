@@ -30,6 +30,7 @@ export {
   checkSubscriptionLimits,
   createOrUpdateSubscription,
   formatPlanComparison,
+  formatPlanComparisonEn,
   formatSubscriptionStatus,
   generatePaymentUrl,
   getPaymentHistory,
@@ -42,6 +43,19 @@ export {
   type PlanType,
   type SubscriptionPlan,
   type UserSubscription,
+} from "./subscription.js";
+
+// 크레딧 시스템
+export {
+  addCredits,
+  CREDIT_PACKAGES,
+  deductCredits,
+  formatCreditPackages,
+  formatCreditPackagesEn,
+  getUserCredits,
+  LLM_CREDIT_COSTS,
+  type CreditPackage,
+  type UserCredits,
 } from "./subscription.js";
 
 // 웹 설치 페이지
