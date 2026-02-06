@@ -331,3 +331,182 @@ export function formatPlanComparison(): string {
 
   return lines.join("\n");
 }
+
+// ============================================
+// 결제 처리
+// ============================================
+
+export interface PaymentRecord {
+  userId: string;
+  orderId: string;
+  paymentKey: string;
+  provider: "toss" | "kakao";
+  amount: number;
+  status: "pending" | "completed" | "failed" | "refunded";
+  planType: PlanType;
+}
+
+/**
+ * 구독 상태 업데이트 (결제 완료 후)
+ */
+export async function updateSubscriptionStatus(
+  kakaoUserId: string,
+  plan: PlanType,
+  paymentInfo: {
+    paymentKey?: string;
+    provider: "toss" | "kakao";
+  },
+): Promise<{ success: boolean; error?: string }> {
+  if (!isSupabaseConfigured()) {
+    return { success: false, error: "서버 설정 오류" };
+  }
+
+  const supabase = getSupabase();
+  const hashedId = hashUserId(kakaoUserId);
+  const selectedPlan = SUBSCRIPTION_PLANS[plan];
+
+  // 다음 결제일 계산 (1개월 후)
+  const nextPaymentDate = new Date();
+  nextPaymentDate.setMonth(nextPaymentDate.getMonth() + 1);
+
+  const subscriptionData = {
+    user_id: hashedId,
+    plan,
+    status: "active",
+    start_date: new Date().toISOString(),
+    end_date: nextPaymentDate.toISOString(),
+    trial_ends_at: null, // 유료 전환 시 체험판 해제
+    auto_renew: true,
+    payment_method: paymentInfo.provider,
+    payment_key: paymentInfo.paymentKey,
+    monthly_price: selectedPlan.price,
+    updated_at: new Date().toISOString(),
+  };
+
+  const { error } = await supabase
+    .from("moa_subscriptions")
+    .upsert(subscriptionData, { onConflict: "user_id" });
+
+  if (error) {
+    return { success: false, error: error.message };
+  }
+
+  return { success: true };
+}
+
+/**
+ * 결제 기록 저장
+ */
+export async function recordPayment(record: PaymentRecord): Promise<{ success: boolean; error?: string }> {
+  if (!isSupabaseConfigured()) {
+    return { success: false, error: "서버 설정 오류" };
+  }
+
+  const supabase = getSupabase();
+  const hashedId = hashUserId(record.userId);
+
+  const paymentData = {
+    user_id: hashedId,
+    order_id: record.orderId,
+    payment_key: record.paymentKey,
+    provider: record.provider,
+    amount: record.amount,
+    status: record.status,
+    plan_type: record.planType,
+    created_at: new Date().toISOString(),
+  };
+
+  const { error } = await supabase.from("moa_payments").insert(paymentData);
+
+  if (error) {
+    return { success: false, error: error.message };
+  }
+
+  return { success: true };
+}
+
+/**
+ * 결제 내역 조회
+ */
+export async function getPaymentHistory(
+  kakaoUserId: string,
+  limit = 10,
+): Promise<PaymentRecord[]> {
+  if (!isSupabaseConfigured()) return [];
+
+  const supabase = getSupabase();
+  const hashedId = hashUserId(kakaoUserId);
+
+  const { data } = await supabase
+    .from("moa_payments")
+    .select("*")
+    .eq("user_id", hashedId)
+    .order("created_at", { ascending: false })
+    .limit(limit);
+
+  if (!data) return [];
+
+  return data.map((row) => ({
+    userId: row.user_id,
+    orderId: row.order_id,
+    paymentKey: row.payment_key,
+    provider: row.provider,
+    amount: row.amount,
+    status: row.status,
+    planType: row.plan_type,
+  }));
+}
+
+/**
+ * 결제 URL 생성
+ */
+export function generatePaymentUrl(params: {
+  userId: string;
+  plan: PlanType;
+  provider: "toss" | "kakao";
+}): { orderId: string; returnUrl: string } {
+  const plan = SUBSCRIPTION_PLANS[params.plan];
+  const timestamp = Date.now();
+  const orderId = `moa_sub_${hashUserId(params.userId).slice(0, 8)}_${params.plan}_${timestamp}`;
+
+  const baseUrl = process.env.MOA_BASE_URL ?? "https://moa.example.com";
+  const successPath = params.provider === "toss" ? "/payment/toss/success" : "/payment/kakao/success";
+  const failPath = params.provider === "toss" ? "/payment/toss/fail" : "/payment/kakao/fail";
+
+  return {
+    orderId,
+    returnUrl: `${baseUrl}${successPath}?orderId=${orderId}`,
+  };
+}
+
+/**
+ * 구독 취소
+ */
+export async function cancelSubscription(
+  kakaoUserId: string,
+  reason?: string,
+): Promise<{ success: boolean; error?: string }> {
+  if (!isSupabaseConfigured()) {
+    return { success: false, error: "서버 설정 오류" };
+  }
+
+  const supabase = getSupabase();
+  const hashedId = hashUserId(kakaoUserId);
+
+  const { error } = await supabase
+    .from("moa_subscriptions")
+    .update({
+      status: "cancelled",
+      auto_renew: false,
+      cancelled_at: new Date().toISOString(),
+      cancel_reason: reason,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("user_id", hashedId);
+
+  if (error) {
+    return { success: false, error: error.message };
+  }
+
+  return { success: true };
+}

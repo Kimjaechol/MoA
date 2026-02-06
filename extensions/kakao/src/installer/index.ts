@@ -26,13 +26,19 @@ export {
 
 // 구독 서비스
 export {
+  cancelSubscription,
   checkSubscriptionLimits,
   createOrUpdateSubscription,
   formatPlanComparison,
   formatSubscriptionStatus,
+  generatePaymentUrl,
+  getPaymentHistory,
   getUserSubscription,
   isBetaPeriod,
+  recordPayment,
   SUBSCRIPTION_PLANS,
+  updateSubscriptionStatus,
+  type PaymentRecord,
   type PlanType,
   type SubscriptionPlan,
   type UserSubscription,
@@ -40,3 +46,26 @@ export {
 
 // 웹 설치 페이지
 export { generateInstallPage, handleInstallRequest } from "./install-page.js";
+
+// 모바일 앱 설정
+export {
+  ANDROID_CONFIG,
+  detectMobilePlatform,
+  generateAndroidIntent,
+  generateAppleAppSiteAssociation,
+  generateAssetLinks,
+  generateDeepLink,
+  generateFlutterConfig,
+  generateIOSSmartBanner,
+  generateIOSUniversalLink,
+  generateMobileInstallPage,
+  generateQRCodeData,
+  generateReactNativeConfig,
+  generateUniversalLink,
+  getMobileAppConfig,
+  IOS_CONFIG,
+  UNIVERSAL_LINK_DOMAIN,
+  type DeepLinkParams,
+  type MobileAppConfig,
+  type QRCodeData,
+} from "./mobile-config.js";
