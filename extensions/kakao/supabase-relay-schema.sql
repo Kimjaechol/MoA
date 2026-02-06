@@ -257,3 +257,106 @@ CREATE POLICY "Service role full access on relay_commands"
 
 CREATE POLICY "Service role full access on relay_usage"
   ON relay_usage FOR ALL USING (auth.role() = 'service_role');
+
+-- ============================================
+-- MoA Subscriptions (유료 구독 서비스)
+-- ============================================
+CREATE TABLE IF NOT EXISTS moa_subscriptions (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  user_id TEXT NOT NULL UNIQUE,              -- Hashed kakao user ID
+  plan TEXT NOT NULL DEFAULT 'free_trial' CHECK (plan IN ('free_trial', 'beta', 'basic', 'pro', 'enterprise')),
+  status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'expired', 'cancelled', 'past_due')),
+  start_date TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  end_date TIMESTAMPTZ,                      -- NULL for beta/unlimited
+  trial_ends_at TIMESTAMPTZ,                 -- When free trial ends
+  auto_renew BOOLEAN NOT NULL DEFAULT false,
+  payment_method TEXT,                       -- Payment method identifier
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_moa_subscriptions_user ON moa_subscriptions(user_id);
+CREATE INDEX IF NOT EXISTS idx_moa_subscriptions_status ON moa_subscriptions(status) WHERE status = 'active';
+
+-- ============================================
+-- Payment History (결제 이력)
+-- ============================================
+CREATE TABLE IF NOT EXISTS moa_payments (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  subscription_id UUID REFERENCES moa_subscriptions(id) ON DELETE SET NULL,
+  user_id TEXT NOT NULL,
+  amount INTEGER NOT NULL,                   -- 결제 금액 (원)
+  currency TEXT NOT NULL DEFAULT 'KRW',
+  payment_method TEXT,                       -- 결제 수단 (카드, 카카오페이 등)
+  payment_provider TEXT,                     -- 결제사 (토스, 아임포트 등)
+  transaction_id TEXT,                       -- 외부 결제사 거래 ID
+  status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'completed', 'failed', 'refunded')),
+  description TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_moa_payments_user ON moa_payments(user_id);
+CREATE INDEX IF NOT EXISTS idx_moa_payments_subscription ON moa_payments(subscription_id);
+
+-- ============================================
+-- Daily Usage Tracking (일일 사용량 추적)
+-- ============================================
+CREATE TABLE IF NOT EXISTS moa_daily_usage (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  user_id TEXT NOT NULL,
+  date DATE NOT NULL DEFAULT CURRENT_DATE,
+  commands_sent INTEGER NOT NULL DEFAULT 0,
+  devices_active INTEGER NOT NULL DEFAULT 0,
+  memory_syncs INTEGER NOT NULL DEFAULT 0,
+  UNIQUE(user_id, date)
+);
+
+CREATE INDEX IF NOT EXISTS idx_moa_daily_usage_user_date ON moa_daily_usage(user_id, date);
+
+-- Increment daily usage
+CREATE OR REPLACE FUNCTION increment_daily_usage(
+  p_user_id TEXT,
+  p_command_count INTEGER DEFAULT 1
+)
+RETURNS VOID AS $$
+BEGIN
+  INSERT INTO moa_daily_usage (user_id, date, commands_sent)
+  VALUES (p_user_id, CURRENT_DATE, p_command_count)
+  ON CONFLICT (user_id, date)
+  DO UPDATE SET commands_sent = moa_daily_usage.commands_sent + p_command_count;
+END;
+$$ LANGUAGE plpgsql;
+
+-- Check daily limit
+CREATE OR REPLACE FUNCTION check_daily_limit(
+  p_user_id TEXT,
+  p_daily_limit INTEGER
+)
+RETURNS BOOLEAN AS $$
+DECLARE
+  current_count INTEGER;
+BEGIN
+  SELECT COALESCE(commands_sent, 0) INTO current_count
+  FROM moa_daily_usage
+  WHERE user_id = p_user_id AND date = CURRENT_DATE;
+
+  RETURN COALESCE(current_count, 0) < p_daily_limit;
+END;
+$$ LANGUAGE plpgsql;
+
+-- ============================================
+-- RLS for new tables
+-- ============================================
+ALTER TABLE moa_subscriptions ENABLE ROW LEVEL SECURITY;
+ALTER TABLE moa_payments ENABLE ROW LEVEL SECURITY;
+ALTER TABLE moa_daily_usage ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "Service role full access on moa_subscriptions"
+  ON moa_subscriptions FOR ALL USING (auth.role() = 'service_role');
+
+CREATE POLICY "Service role full access on moa_payments"
+  ON moa_payments FOR ALL USING (auth.role() = 'service_role');
+
+CREATE POLICY "Service role full access on moa_daily_usage"
+  ON moa_daily_usage FOR ALL USING (auth.role() = 'service_role');
+

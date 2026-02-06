@@ -36,6 +36,15 @@ import {
   getTwinMoAStatus,
   formatTwinMoAStatus,
 } from "./relay/index.js";
+import {
+  // Installer & Subscription
+  DEFAULT_INSTALLER_CONFIG,
+  PLATFORM_INSTALLERS,
+  getUserSubscription,
+  formatSubscriptionStatus,
+  formatPlanComparison,
+  isBetaPeriod,
+} from "./installer/index.js";
 
 export interface KakaoWebhookOptions {
   account: ResolvedKakaoAccount;
@@ -437,7 +446,7 @@ export function extractKakaoUserInfo(request: KakaoIncomingMessage): {
 
 interface MoltbotCommand {
   isCommand: boolean;
-  type?: "tools" | "channels" | "bridge" | "status" | "memory" | "help" | "relay" | "relay_multi" | "relay_register" | "relay_devices" | "relay_remove" | "relay_status" | "relay_confirm" | "relay_reject" | "relay_result";
+  type?: "tools" | "channels" | "bridge" | "status" | "memory" | "help" | "install" | "subscribe" | "subscribe_status" | "relay" | "relay_multi" | "relay_register" | "relay_devices" | "relay_remove" | "relay_status" | "relay_confirm" | "relay_reject" | "relay_result";
   args?: string[];
   bridgeCmd?: ReturnType<typeof parseBridgeCommand>;
   /** For relay commands: target device name */
@@ -509,6 +518,23 @@ function parseMoltbotCommand(message: string): MoltbotCommand {
   // Help command: /도움말, /help
   if (/^[/\/](도움말|help)$/i.test(trimmed)) {
     return { isCommand: true, type: "help" };
+  }
+
+  // Install command: /설치, /install
+  if (/^[/\/](설치|install)$/i.test(trimmed)) {
+    return { isCommand: true, type: "install" };
+  }
+
+  // Subscribe command: /구독, /subscribe [plan]
+  const subscribeMatch = trimmed.match(/^[/\/](구독|subscribe)(\s+(.+))?$/i);
+  if (subscribeMatch) {
+    const planArg = subscribeMatch[3]?.trim();
+    return { isCommand: true, type: "subscribe", args: planArg ? [planArg] : [] };
+  }
+
+  // Subscription status: /구독상태, /subscription
+  if (/^[/\/](구독상태|subscription|나의구독)$/i.test(trimmed)) {
+    return { isCommand: true, type: "subscribe_status" };
   }
 
   // Relay commands: /원격, /기기등록, /기기, /기기삭제, /원격상태
@@ -749,10 +775,132 @@ async function handleMoltbotCommand(
 **상태 확인**
 • \`/상태\` - Moltbot 상태 확인
 
-**결제**
+**결제 & 구독**
 • \`잔액\` - 크레딧 확인
-• \`충전\` - 크레딧 충전`,
-        quickReplies: ["기기", "기기등록", "원격상태", "도구"],
+• \`충전\` - 크레딧 충전
+• \`/구독\` - 구독 플랜 보기
+• \`/구독상태\` - 내 구독 확인
+
+**설치**
+• \`/설치\` - 다른 기기에 MoA 설치`,
+        quickReplies: ["기기", "설치", "구독", "도움말"],
+      };
+    }
+
+    // ============================================
+    // Install & Subscription Commands
+    // ============================================
+
+    case "install": {
+      // /설치 - 설치 링크 제공 (페어링 코드 포함)
+      const supabase = getSupabase();
+      let installUserId: string;
+
+      const { data: existingUser } = await supabase
+        .from("lawcall_users")
+        .select("id")
+        .eq("kakao_user_id", userId)
+        .single();
+
+      if (existingUser) {
+        installUserId = existingUser.id;
+      } else {
+        const { data: newUser } = await supabase
+          .from("lawcall_users")
+          .insert({ kakao_user_id: userId })
+          .select("id")
+          .single();
+        if (!newUser) {
+          return { text: "사용자 등록에 실패했습니다." };
+        }
+        installUserId = newUser.id;
+      }
+
+      // 페어링 코드 생성
+      const codeResult = await generatePairingCode(installUserId);
+      if ("error" in codeResult) {
+        return { text: codeResult.error };
+      }
+
+      const installUrl = `${DEFAULT_INSTALLER_CONFIG.installPageUrl}?code=${codeResult.code}`;
+      const betaText = isBetaPeriod() ? "🎉 베타 기간 무료!" : "";
+
+      return {
+        text: `📲 **MoA 설치하기**
+━━━━━━━━━━━━━━━━━━━━━━
+${betaText}
+
+🔗 **원클릭 설치 링크**
+${installUrl}
+
+📝 **페어링 코드**
+\`${codeResult.code}\`
+(10분간 유효)
+
+💻 **지원 플랫폼**
+${PLATFORM_INSTALLERS.map((p) => `${p.icon} ${p.displayName}`).join(" | ")}
+
+설치 후 페어링 코드를 입력하면 자동으로 연결됩니다!`,
+        quickReplies: ["기기", "구독", "도움말"],
+      };
+    }
+
+    case "subscribe": {
+      // /구독 [plan] - 구독 플랜 보기 또는 구독
+      const planArg = cmd.args?.[0];
+
+      if (!planArg) {
+        // 플랜 목록 표시
+        return {
+          text: formatPlanComparison(),
+          quickReplies: ["구독 베이직", "구독 프로", "구독상태"],
+        };
+      }
+
+      // 플랜 구독 (결제 연동 필요 - 추후 구현)
+      const planMap: Record<string, string> = {
+        베이직: "basic",
+        basic: "basic",
+        프로: "pro",
+        pro: "pro",
+        엔터프라이즈: "enterprise",
+        enterprise: "enterprise",
+      };
+
+      const planType = planMap[planArg.toLowerCase()];
+      if (!planType) {
+        return {
+          text: `알 수 없는 플랜: ${planArg}\n\n사용 가능한 플랜: 베이직, 프로, 엔터프라이즈`,
+          quickReplies: ["구독 베이직", "구독 프로", "구독상태"],
+        };
+      }
+
+      // TODO: 결제 연동 (토스페이먼츠, 카카오페이 등)
+      return {
+        text: `💳 **${planArg} 구독 신청**
+
+결제 시스템 준비 중입니다.
+베타 기간 동안은 무료로 이용하실 수 있습니다!
+
+문의: support@lawith.com`,
+        quickReplies: ["구독상태", "기기", "도움말"],
+      };
+    }
+
+    case "subscribe_status": {
+      // /구독상태 - 내 구독 정보 표시
+      const subscription = await getUserSubscription(userId);
+
+      if (!subscription) {
+        return {
+          text: "구독 정보를 찾을 수 없습니다. 먼저 MoA를 설치해주세요.",
+          quickReplies: ["설치", "구독"],
+        };
+      }
+
+      return {
+        text: formatSubscriptionStatus(subscription),
+        quickReplies: ["구독", "기기", "도움말"],
       };
     }
 
