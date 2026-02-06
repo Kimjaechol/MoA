@@ -234,6 +234,142 @@ export interface Database {
         };
         Update: never;
       };
+      // Relay system tables
+      relay_pairing_codes: {
+        Row: {
+          id: string;
+          user_id: string;
+          code: string;
+          expires_at: string;
+          used: boolean;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          user_id: string;
+          code: string;
+          expires_at: string;
+          used?: boolean;
+          created_at?: string;
+        };
+        Update: {
+          used?: boolean;
+        };
+      };
+      relay_devices: {
+        Row: {
+          id: string;
+          user_id: string;
+          device_token: string;
+          device_name: string;
+          device_type: string;
+          platform: string | null;
+          last_seen_at: string | null;
+          is_online: boolean;
+          capabilities: string[];
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          user_id: string;
+          device_token: string;
+          device_name: string;
+          device_type?: string;
+          platform?: string | null;
+          last_seen_at?: string | null;
+          is_online?: boolean;
+          capabilities?: string[];
+          created_at?: string;
+        };
+        Update: {
+          device_name?: string;
+          device_type?: string;
+          platform?: string | null;
+          last_seen_at?: string | null;
+          is_online?: boolean;
+          capabilities?: string[];
+        };
+      };
+      relay_commands: {
+        Row: {
+          id: string;
+          user_id: string;
+          target_device_id: string;
+          encrypted_command: string;
+          iv: string;
+          auth_tag: string;
+          status: string;
+          priority: number;
+          risk_level: string | null;
+          safety_warnings: string[];
+          command_preview: string | null;
+          execution_log: Record<string, unknown>[];
+          encrypted_result: string | null;
+          result_iv: string | null;
+          result_auth_tag: string | null;
+          result_summary: string | null;
+          credits_charged: number;
+          created_at: string;
+          delivered_at: string | null;
+          completed_at: string | null;
+          expires_at: string;
+        };
+        Insert: {
+          id?: string;
+          user_id: string;
+          target_device_id: string;
+          encrypted_command: string;
+          iv: string;
+          auth_tag: string;
+          status?: string;
+          priority?: number;
+          risk_level?: string | null;
+          safety_warnings?: string[];
+          command_preview?: string | null;
+          execution_log?: Record<string, unknown>[];
+          encrypted_result?: string | null;
+          result_iv?: string | null;
+          result_auth_tag?: string | null;
+          result_summary?: string | null;
+          credits_charged?: number;
+          created_at?: string;
+          delivered_at?: string | null;
+          completed_at?: string | null;
+          expires_at?: string;
+        };
+        Update: {
+          status?: string;
+          risk_level?: string | null;
+          safety_warnings?: string[];
+          command_preview?: string | null;
+          execution_log?: Record<string, unknown>[];
+          encrypted_result?: string | null;
+          result_iv?: string | null;
+          result_auth_tag?: string | null;
+          result_summary?: string | null;
+          delivered_at?: string | null;
+          completed_at?: string | null;
+        };
+      };
+      relay_usage: {
+        Row: {
+          id: string;
+          user_id: string;
+          command_id: string | null;
+          credits_used: number;
+          action: string;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          user_id: string;
+          command_id?: string | null;
+          credits_used: number;
+          action: string;
+          created_at?: string;
+        };
+        Update: never;
+      };
     };
   };
 }

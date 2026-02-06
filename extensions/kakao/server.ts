@@ -15,6 +15,8 @@ import { createServer, type IncomingMessage, type ServerResponse } from "node:ht
 import { startKakaoWebhook } from "./src/webhook.js";
 import { resolveKakaoAccount, getDefaultKakaoConfig } from "./src/config.js";
 import type { ResolvedKakaoAccount } from "./src/types.js";
+import { handleRelayRequest } from "./src/relay/index.js";
+import { handleInstallRequest } from "./src/installer/index.js";
 
 const PORT = parseInt(process.env.PORT ?? process.env.KAKAO_WEBHOOK_PORT ?? "8788", 10);
 const HOST = process.env.HOST ?? "0.0.0.0";
@@ -107,9 +109,18 @@ async function main() {
       path: WEBHOOK_PATH,
       onMessage: defaultOnMessage,
       logger: console,
+      // Mount install page and relay API routes on the same server
+      requestInterceptor: (req, res) => {
+        // Try install page first (/install)
+        if (handleInstallRequest(req, res)) return true;
+        // Then try relay API (/api/relay/*)
+        return handleRelayRequest(req, res, console);
+      },
     });
 
     console.log(`[MoA] Webhook server started at ${webhook.url}`);
+    console.log(`[MoA] Install page: http://${HOST === "0.0.0.0" ? "localhost" : HOST}:${PORT}/install`);
+    console.log(`[MoA] Relay API: http://${HOST === "0.0.0.0" ? "localhost" : HOST}:${PORT}/api/relay/*`);
     console.log(`[MoA] Health check: http://${HOST === "0.0.0.0" ? "localhost" : HOST}:${PORT}/health`);
 
     // Graceful shutdown

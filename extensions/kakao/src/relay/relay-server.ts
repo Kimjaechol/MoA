@@ -1,0 +1,367 @@
+/**
+ * Relay API Server Routes
+ *
+ * HTTP API endpoints for device-side communication:
+ * - POST /api/relay/pair     — Complete device pairing with code
+ * - GET  /api/relay/poll     — Poll for pending commands (long-polling)
+ * - POST /api/relay/result   — Submit command execution result
+ * - POST /api/relay/heartbeat — Device heartbeat
+ * - GET  /api/relay/devices  — List user's devices (requires auth)
+ * - DELETE /api/relay/device — Remove a device
+ * - POST /api/relay/progress — Device sends execution progress update
+ *
+ * All device endpoints require Authorization: Bearer <device_token>
+ */
+
+import type { IncomingMessage, ServerResponse } from "node:http";
+import { authenticateDevice, completePairing, updateHeartbeat, listUserDevices, removeDevice } from "./device-auth.js";
+import { decryptPayload, appendExecutionLog } from "./relay-handler.js";
+import { getSupabase, isSupabaseConfigured } from "../supabase.js";
+import type { PairRequest, ResultSubmission } from "./types.js";
+
+const LONG_POLL_TIMEOUT_MS = 30_000; // 30 seconds
+const POLL_INTERVAL_MS = 2_000; // Check every 2 seconds during long-poll
+
+/**
+ * Handle relay API requests. Returns true if the request was handled.
+ */
+export async function handleRelayRequest(
+  req: IncomingMessage,
+  res: ServerResponse,
+  logger: { info: (msg: string) => void; warn: (msg: string) => void; error: (msg: string) => void },
+): Promise<boolean> {
+  const url = req.url ?? "";
+
+  if (!url.startsWith("/api/relay/")) return false;
+
+  // CORS headers for device clients
+  res.setHeader("Access-Control-Allow-Origin", "*");
+  res.setHeader("Access-Control-Allow-Methods", "GET, POST, DELETE, OPTIONS");
+  res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
+
+  if (req.method === "OPTIONS") {
+    res.writeHead(204);
+    res.end();
+    return true;
+  }
+
+  const path = url.split("?")[0];
+
+  try {
+    switch (path) {
+      case "/api/relay/pair":
+        if (req.method === "POST") {
+          await handlePair(req, res, logger);
+          return true;
+        }
+        break;
+      case "/api/relay/poll":
+        if (req.method === "GET") {
+          await handlePoll(req, res, logger);
+          return true;
+        }
+        break;
+      case "/api/relay/result":
+        if (req.method === "POST") {
+          await handleResult(req, res, logger);
+          return true;
+        }
+        break;
+      case "/api/relay/heartbeat":
+        if (req.method === "POST") {
+          await handleHeartbeat(req, res, logger);
+          return true;
+        }
+        break;
+      case "/api/relay/devices":
+        if (req.method === "GET") {
+          await handleListDevices(req, res, logger);
+          return true;
+        }
+        break;
+      case "/api/relay/device":
+        if (req.method === "DELETE") {
+          await handleRemoveDevice(req, res, logger);
+          return true;
+        }
+        break;
+      case "/api/relay/progress":
+        if (req.method === "POST") {
+          await handleProgress(req, res, logger);
+          return true;
+        }
+        break;
+    }
+
+    // Unknown relay endpoint
+    sendJSON(res, 404, { error: "Not Found" });
+    return true;
+  } catch (err) {
+    logger.error(`[relay] API error: ${err}`);
+    sendJSON(res, 500, { error: "Internal Server Error" });
+    return true;
+  }
+}
+
+// ============================================
+// Route Handlers
+// ============================================
+
+/**
+ * POST /api/relay/pair
+ * Body: { code: string, device: DeviceRegistration }
+ */
+async function handlePair(req: IncomingMessage, res: ServerResponse, logger: ReturnType<typeof console>) {
+  const body = await readBody<PairRequest>(req);
+  if (!body?.code || !body?.device?.deviceName) {
+    sendJSON(res, 400, { error: "code and device.deviceName are required" });
+    return;
+  }
+
+  const result = await completePairing(body.code, body.device);
+
+  if (result.success) {
+    logger.info(`[relay] Device paired: ${body.device.deviceName}`);
+    sendJSON(res, 200, {
+      success: true,
+      deviceToken: result.deviceToken,
+      deviceId: result.deviceId,
+    });
+  } else {
+    sendJSON(res, 400, { success: false, error: result.error });
+  }
+}
+
+/**
+ * GET /api/relay/poll
+ * Header: Authorization: Bearer <device_token>
+ * Supports long-polling: waits up to 30s for pending commands.
+ */
+async function handlePoll(req: IncomingMessage, res: ServerResponse, logger: ReturnType<typeof console>) {
+  const device = await authFromHeader(req);
+  if (!device) {
+    sendJSON(res, 401, { error: "Invalid or missing device token" });
+    return;
+  }
+
+  if (!isSupabaseConfigured()) {
+    sendJSON(res, 200, { commands: [] });
+    return;
+  }
+
+  const supabase = getSupabase();
+  const startTime = Date.now();
+
+  // Long-polling loop: check for commands, wait if none
+  while (Date.now() - startTime < LONG_POLL_TIMEOUT_MS) {
+    const { data } = await supabase.rpc("claim_relay_commands", {
+      p_device_token: device.deviceToken,
+      p_limit: 10,
+    });
+
+    if (data && data.length > 0) {
+      logger.info(`[relay] Delivering ${data.length} command(s) to ${device.deviceName}`);
+      sendJSON(res, 200, {
+        commands: data.map((cmd: Record<string, unknown>) => ({
+          commandId: cmd.command_id,
+          encryptedCommand: cmd.encrypted_command,
+          iv: cmd.iv,
+          authTag: cmd.auth_tag,
+          priority: cmd.priority,
+          createdAt: cmd.created_at,
+        })),
+      });
+      return;
+    }
+
+    // Wait before next check
+    await sleep(POLL_INTERVAL_MS);
+  }
+
+  // Timeout — return empty
+  sendJSON(res, 200, { commands: [] });
+}
+
+/**
+ * POST /api/relay/result
+ * Header: Authorization: Bearer <device_token>
+ * Body: ResultSubmission
+ */
+async function handleResult(req: IncomingMessage, res: ServerResponse, logger: ReturnType<typeof console>) {
+  const device = await authFromHeader(req);
+  if (!device) {
+    sendJSON(res, 401, { error: "Invalid or missing device token" });
+    return;
+  }
+
+  const body = await readBody<ResultSubmission>(req);
+  if (!body?.commandId) {
+    sendJSON(res, 400, { error: "commandId is required" });
+    return;
+  }
+
+  if (!isSupabaseConfigured()) {
+    sendJSON(res, 200, { success: true });
+    return;
+  }
+
+  const supabase = getSupabase();
+
+  const { data: success } = await supabase.rpc("submit_relay_result", {
+    p_command_id: body.commandId,
+    p_device_token: device.deviceToken,
+    p_encrypted_result: body.encryptedResult ?? "",
+    p_result_iv: body.resultIv ?? "",
+    p_result_auth_tag: body.resultAuthTag ?? "",
+    p_result_summary: body.resultSummary ?? "",
+    p_status: body.status ?? "completed",
+  });
+
+  if (success) {
+    logger.info(`[relay] Result received for command ${body.commandId} from ${device.deviceName}`);
+    sendJSON(res, 200, { success: true });
+  } else {
+    sendJSON(res, 404, { success: false, error: "Command not found or not owned by device" });
+  }
+}
+
+/**
+ * POST /api/relay/heartbeat
+ * Header: Authorization: Bearer <device_token>
+ */
+async function handleHeartbeat(req: IncomingMessage, res: ServerResponse, _logger: ReturnType<typeof console>) {
+  const device = await authFromHeader(req);
+  if (!device) {
+    sendJSON(res, 401, { error: "Invalid or missing device token" });
+    return;
+  }
+
+  const pendingCommands = await updateHeartbeat(device.deviceToken);
+
+  sendJSON(res, 200, {
+    ok: true,
+    pendingCommands,
+  });
+}
+
+/**
+ * GET /api/relay/devices
+ * Header: Authorization: Bearer <device_token>
+ * Returns all devices belonging to the same user.
+ */
+async function handleListDevices(req: IncomingMessage, res: ServerResponse, _logger: ReturnType<typeof console>) {
+  const device = await authFromHeader(req);
+  if (!device) {
+    sendJSON(res, 401, { error: "Invalid or missing device token" });
+    return;
+  }
+
+  const devices = await listUserDevices(device.userId);
+
+  sendJSON(res, 200, {
+    devices: devices.map((d) => ({
+      id: d.id,
+      deviceName: d.deviceName,
+      deviceType: d.deviceType,
+      platform: d.platform,
+      isOnline: d.isOnline,
+      lastSeenAt: d.lastSeenAt?.toISOString() ?? null,
+      capabilities: d.capabilities,
+    })),
+  });
+}
+
+/**
+ * DELETE /api/relay/device?name=<device_name>
+ * Header: Authorization: Bearer <device_token>
+ */
+async function handleRemoveDevice(req: IncomingMessage, res: ServerResponse, logger: ReturnType<typeof console>) {
+  const device = await authFromHeader(req);
+  if (!device) {
+    sendJSON(res, 401, { error: "Invalid or missing device token" });
+    return;
+  }
+
+  const url = new URL(req.url ?? "", "http://localhost");
+  const name = url.searchParams.get("name");
+
+  if (!name) {
+    sendJSON(res, 400, { error: "name query parameter required" });
+    return;
+  }
+
+  const removed = await removeDevice(device.userId, name);
+  if (removed) {
+    logger.info(`[relay] Device removed: ${name}`);
+    sendJSON(res, 200, { success: true });
+  } else {
+    sendJSON(res, 404, { success: false, error: "Device not found" });
+  }
+}
+
+/**
+ * POST /api/relay/progress
+ * Header: Authorization: Bearer <device_token>
+ * Body: { commandId: string, event: string, message: string, data?: string }
+ *
+ * Allows devices to send real-time execution progress updates.
+ * Users can view these via /원격결과 <id> in KakaoTalk.
+ */
+async function handleProgress(req: IncomingMessage, res: ServerResponse, logger: ReturnType<typeof console>) {
+  const device = await authFromHeader(req);
+  if (!device) {
+    sendJSON(res, 401, { error: "Invalid or missing device token" });
+    return;
+  }
+
+  const body = await readBody<{ commandId: string; event: string; message: string; data?: string }>(req);
+  if (!body?.commandId || !body?.event || !body?.message) {
+    sendJSON(res, 400, { error: "commandId, event, and message are required" });
+    return;
+  }
+
+  const success = await appendExecutionLog(body.commandId, device.deviceToken, {
+    event: body.event,
+    message: body.message,
+    data: body.data,
+  });
+
+  if (success) {
+    logger.info(`[relay] Progress update for ${body.commandId}: ${body.event}`);
+    sendJSON(res, 200, { success: true });
+  } else {
+    sendJSON(res, 404, { success: false, error: "Command not found or not owned by device" });
+  }
+}
+
+// ============================================
+// Helpers
+// ============================================
+
+async function authFromHeader(req: IncomingMessage) {
+  const authHeader = req.headers.authorization;
+  if (!authHeader?.startsWith("Bearer ")) return null;
+  const token = authHeader.slice(7);
+  return authenticateDevice(token);
+}
+
+async function readBody<T>(req: IncomingMessage): Promise<T | null> {
+  let body = "";
+  for await (const chunk of req) {
+    body += chunk;
+  }
+  try {
+    return JSON.parse(body) as T;
+  } catch {
+    return null;
+  }
+}
+
+function sendJSON(res: ServerResponse, status: number, data: unknown) {
+  res.writeHead(status, { "Content-Type": "application/json" });
+  res.end(JSON.stringify(data));
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}

@@ -17,6 +17,34 @@ import {
   parseBridgeCommand,
   type MoltbotAgentIntegration,
 } from "./moltbot/index.js";
+import {
+  generatePairingCode,
+  listUserDevices,
+  removeDevice,
+  sendRelayCommand,
+  getRecentCommands,
+  getCommandResult,
+  getExecutionLog,
+  getRelayUsageStats,
+  getRelayBillingConfig,
+  confirmCommand,
+  rejectCommand,
+  // Multi-device direct command
+  parseDirectCommand,
+  sendMultiDeviceCommand,
+  formatMultiDeviceResult,
+  getTwinMoAStatus,
+  formatTwinMoAStatus,
+} from "./relay/index.js";
+import {
+  // Installer & Subscription
+  DEFAULT_INSTALLER_CONFIG,
+  PLATFORM_INSTALLERS,
+  getUserSubscription,
+  formatSubscriptionStatus,
+  formatPlanComparison,
+  isBetaPeriod,
+} from "./installer/index.js";
 
 export interface KakaoWebhookOptions {
   account: ResolvedKakaoAccount;
@@ -41,6 +69,8 @@ export interface KakaoWebhookOptions {
   };
   /** Optional Moltbot agent integration for tools, channels, and memory */
   moltbotAgent?: MoltbotAgentIntegration;
+  /** Optional request interceptor — called before webhook handling. Return true to indicate the request was handled. */
+  requestInterceptor?: (req: IncomingMessage, res: ServerResponse) => Promise<boolean>;
 }
 
 /**
@@ -62,6 +92,7 @@ export async function startKakaoWebhook(opts: KakaoWebhookOptions): Promise<{
     onError,
     logger = console,
     moltbotAgent,
+    requestInterceptor,
   } = opts;
 
   const apiClient = createKakaoApiClient(account);
@@ -73,6 +104,12 @@ export async function startKakaoWebhook(opts: KakaoWebhookOptions): Promise<{
       res.writeHead(200, { "Content-Type": "text/plain" });
       res.end("ok");
       return;
+    }
+
+    // Request interceptor (e.g., relay API routes)
+    if (requestInterceptor) {
+      const handled = await requestInterceptor(req, res);
+      if (handled) return;
     }
 
     // Only accept POST to webhook path
@@ -409,9 +446,15 @@ export function extractKakaoUserInfo(request: KakaoIncomingMessage): {
 
 interface MoltbotCommand {
   isCommand: boolean;
-  type?: "tools" | "channels" | "bridge" | "status" | "memory" | "help";
+  type?: "tools" | "channels" | "bridge" | "status" | "memory" | "help" | "install" | "subscribe" | "subscribe_status" | "relay" | "relay_multi" | "relay_register" | "relay_devices" | "relay_remove" | "relay_status" | "relay_confirm" | "relay_reject" | "relay_result";
   args?: string[];
   bridgeCmd?: ReturnType<typeof parseBridgeCommand>;
+  /** For relay commands: target device name */
+  relayDevice?: string;
+  /** For multi-device commands: target device names */
+  relayDevices?: string[];
+  /** For relay commands: the command text to send */
+  relayCommand?: string;
 }
 
 /**
@@ -419,6 +462,30 @@ interface MoltbotCommand {
  */
 function parseMoltbotCommand(message: string): MoltbotCommand {
   const trimmed = message.trim();
+
+  // Check for @ prefix direct command (쌍둥이 MoA 직접 호출)
+  // Formats: @노트북 ls -la, @노트북,@태블릿 git pull, @모두 df -h
+  if (trimmed.startsWith("@")) {
+    const parsed = parseDirectCommand(trimmed);
+    if (parsed) {
+      if (parsed.targetDevices.length === 1 && !parsed.isAllDevices) {
+        // Single device: use existing relay type
+        return {
+          isCommand: true,
+          type: "relay",
+          relayDevice: parsed.targetDevices[0],
+          relayCommand: parsed.command,
+        };
+      }
+      // Multiple devices or @모두: use new relay_multi type
+      return {
+        isCommand: true,
+        type: "relay_multi",
+        relayDevices: parsed.targetDevices,
+        relayCommand: parsed.command,
+      };
+    }
+  }
 
   // Check for bridge command first
   const bridgeCmd = parseBridgeCommand(trimmed);
@@ -451,6 +518,74 @@ function parseMoltbotCommand(message: string): MoltbotCommand {
   // Help command: /도움말, /help
   if (/^[/\/](도움말|help)$/i.test(trimmed)) {
     return { isCommand: true, type: "help" };
+  }
+
+  // Install command: /설치, /install
+  if (/^[/\/](설치|install)$/i.test(trimmed)) {
+    return { isCommand: true, type: "install" };
+  }
+
+  // Subscribe command: /구독, /subscribe [plan]
+  const subscribeMatch = trimmed.match(/^[/\/](구독|subscribe)(\s+(.+))?$/i);
+  if (subscribeMatch) {
+    const planArg = subscribeMatch[3]?.trim();
+    return { isCommand: true, type: "subscribe", args: planArg ? [planArg] : [] };
+  }
+
+  // Subscription status: /구독상태, /subscription
+  if (/^[/\/](구독상태|subscription|나의구독)$/i.test(trimmed)) {
+    return { isCommand: true, type: "subscribe_status" };
+  }
+
+  // Relay commands: /원격, /기기등록, /기기, /기기삭제, /원격상태
+  // /원격 <device_name> <command>
+  const relayMatch = trimmed.match(/^[/\/](원격|remote)\s+(\S+)\s+(.+)$/is);
+  if (relayMatch) {
+    return {
+      isCommand: true,
+      type: "relay",
+      relayDevice: relayMatch[2],
+      relayCommand: relayMatch[3],
+    };
+  }
+
+  // /기기등록, /register-device
+  if (/^[/\/](기기등록|register[-_]?device)$/i.test(trimmed)) {
+    return { isCommand: true, type: "relay_register" };
+  }
+
+  // /기기, /devices — list devices
+  if (/^[/\/](기기|기기목록|devices?)$/i.test(trimmed)) {
+    return { isCommand: true, type: "relay_devices" };
+  }
+
+  // /기기삭제 <name>, /remove-device <name>
+  const removeMatch = trimmed.match(/^[/\/](기기삭제|remove[-_]?device)\s+(.+)$/i);
+  if (removeMatch) {
+    return { isCommand: true, type: "relay_remove", args: [removeMatch[2].trim()] };
+  }
+
+  // /원격상태, /relay-status
+  if (/^[/\/](원격상태|relay[-_]?status)$/i.test(trimmed)) {
+    return { isCommand: true, type: "relay_status" };
+  }
+
+  // /확인 <id_prefix> — confirm a dangerous command
+  const confirmMatch = trimmed.match(/^[/\/](확인|confirm)\s+(\S+)$/i);
+  if (confirmMatch) {
+    return { isCommand: true, type: "relay_confirm", args: [confirmMatch[2]] };
+  }
+
+  // /거부 <id_prefix> — reject a dangerous command
+  const rejectMatch = trimmed.match(/^[/\/](거부|reject|취소)\s+(\S+)$/i);
+  if (rejectMatch) {
+    return { isCommand: true, type: "relay_reject", args: [rejectMatch[2]] };
+  }
+
+  // /원격결과 <id_prefix> — view execution log and result
+  const resultMatch = trimmed.match(/^[/\/](원격결과|relay[-_]?result|결과)\s+(\S+)$/i);
+  if (resultMatch) {
+    return { isCommand: true, type: "relay_result", args: [resultMatch[2]] };
   }
 
   return { isCommand: false };
@@ -607,7 +742,18 @@ async function handleMoltbotCommand(
 
     case "help": {
       return {
-        text: `📖 **KakaoMolt 명령어 도움말**
+        text: `📖 **MoA 명령어 도움말**
+
+**쌍둥이 MoA 직접 호출**
+• \`@노트북 ls -la\` - 단일 기기 명령
+• \`@노트북,@태블릿 git pull\` - 다중 기기 동시 명령
+• \`@모두 df -h\` - 모든 온라인 기기에 명령
+• \`/기기\` - 내 쌍둥이 MoA 상태 보기
+• \`/기기등록\` - 새 기기 페어링 코드 발급
+• \`/확인 <ID>\` - 위험 명령 승인
+• \`/거부 <ID>\` - 위험 명령 거부 (크레딧 환불)
+• \`/원격결과 <ID>\` - 실행 로그 확인
+• \`/원격상태\` - 최근 명령 이력
 
 **메모리 동기화**
 • \`/동기화 설정 <암호>\` - 동기화 시작
@@ -629,11 +775,506 @@ async function handleMoltbotCommand(
 **상태 확인**
 • \`/상태\` - Moltbot 상태 확인
 
-**결제**
+**결제 & 구독**
 • \`잔액\` - 크레딧 확인
-• \`충전\` - 크레딧 충전`,
-        quickReplies: ["도구", "채널", "상태", "동기화"],
+• \`충전\` - 크레딧 충전
+• \`/구독\` - 구독 플랜 보기
+• \`/구독상태\` - 내 구독 확인
+
+**설치**
+• \`/설치\` - 다른 기기에 MoA 설치`,
+        quickReplies: ["기기", "설치", "구독", "도움말"],
       };
+    }
+
+    // ============================================
+    // Install & Subscription Commands
+    // ============================================
+
+    case "install": {
+      // /설치 - 설치 링크 제공 (페어링 코드 포함)
+      const supabase = getSupabase();
+      let installUserId: string;
+
+      const { data: existingUser } = await supabase
+        .from("lawcall_users")
+        .select("id")
+        .eq("kakao_user_id", userId)
+        .single();
+
+      if (existingUser) {
+        installUserId = existingUser.id;
+      } else {
+        const { data: newUser } = await supabase
+          .from("lawcall_users")
+          .insert({ kakao_user_id: userId })
+          .select("id")
+          .single();
+        if (!newUser) {
+          return { text: "사용자 등록에 실패했습니다." };
+        }
+        installUserId = newUser.id;
+      }
+
+      // 페어링 코드 생성
+      const codeResult = await generatePairingCode(installUserId);
+      if ("error" in codeResult) {
+        return { text: codeResult.error };
+      }
+
+      const installUrl = `${DEFAULT_INSTALLER_CONFIG.installPageUrl}?code=${codeResult.code}`;
+      const betaText = isBetaPeriod() ? "🎉 베타 기간 무료!" : "";
+
+      return {
+        text: `📲 **MoA 설치하기**
+━━━━━━━━━━━━━━━━━━━━━━
+${betaText}
+
+🔗 **원클릭 설치 링크**
+${installUrl}
+
+📝 **페어링 코드**
+\`${codeResult.code}\`
+(10분간 유효)
+
+💻 **지원 플랫폼**
+${PLATFORM_INSTALLERS.map((p) => `${p.icon} ${p.displayName}`).join(" | ")}
+
+설치 후 페어링 코드를 입력하면 자동으로 연결됩니다!`,
+        quickReplies: ["기기", "구독", "도움말"],
+      };
+    }
+
+    case "subscribe": {
+      // /구독 [plan] - 구독 플랜 보기 또는 구독
+      const planArg = cmd.args?.[0];
+
+      if (!planArg) {
+        // 플랜 목록 표시
+        return {
+          text: formatPlanComparison(),
+          quickReplies: ["구독 베이직", "구독 프로", "구독상태"],
+        };
+      }
+
+      // 플랜 구독 (결제 연동 필요 - 추후 구현)
+      const planMap: Record<string, string> = {
+        베이직: "basic",
+        basic: "basic",
+        프로: "pro",
+        pro: "pro",
+        엔터프라이즈: "enterprise",
+        enterprise: "enterprise",
+      };
+
+      const planType = planMap[planArg.toLowerCase()];
+      if (!planType) {
+        return {
+          text: `알 수 없는 플랜: ${planArg}\n\n사용 가능한 플랜: 베이직, 프로, 엔터프라이즈`,
+          quickReplies: ["구독 베이직", "구독 프로", "구독상태"],
+        };
+      }
+
+      // TODO: 결제 연동 (토스페이먼츠, 카카오페이 등)
+      return {
+        text: `💳 **${planArg} 구독 신청**
+
+결제 시스템 준비 중입니다.
+베타 기간 동안은 무료로 이용하실 수 있습니다!
+
+문의: support@lawith.com`,
+        quickReplies: ["구독상태", "기기", "도움말"],
+      };
+    }
+
+    case "subscribe_status": {
+      // /구독상태 - 내 구독 정보 표시
+      const subscription = await getUserSubscription(userId);
+
+      if (!subscription) {
+        return {
+          text: "구독 정보를 찾을 수 없습니다. 먼저 MoA를 설치해주세요.",
+          quickReplies: ["설치", "구독"],
+        };
+      }
+
+      return {
+        text: formatSubscriptionStatus(subscription),
+        quickReplies: ["구독", "기기", "도움말"],
+      };
+    }
+
+    // ============================================
+    // Relay Commands
+    // ============================================
+
+    case "relay": {
+      // /원격 <device_name> <command>
+      if (!cmd.relayDevice || !cmd.relayCommand) {
+        return {
+          text: "사용법: /원격 <기기명> <명령>\n\n예시:\n/원격 노트북 ls ~/Desktop\n/원격 사무실PC 파일읽기 ~/memo.txt",
+          quickReplies: ["기기", "기기등록", "원격상태"],
+        };
+      }
+
+      // Get Supabase user ID for billing
+      const supabase = getSupabase();
+      const { data: relayUser } = await supabase
+        .from("lawcall_users")
+        .select("id")
+        .eq("kakao_user_id", userId)
+        .single();
+
+      if (!relayUser) {
+        return { text: "사용자 정보를 찾을 수 없습니다. 먼저 메시지를 보내 계정을 활성화해주세요." };
+      }
+
+      const result = await sendRelayCommand({
+        userId: relayUser.id,
+        targetDeviceName: cmd.relayDevice,
+        commandText: cmd.relayCommand,
+      });
+
+      if (!result.success) {
+        return { text: result.error ?? "명령 전송에 실패했습니다.", quickReplies: ["기기", "기기등록"] };
+      }
+
+      // If the command requires confirmation (dangerous command detected)
+      if (result.confirmationRequired && result.safetyWarning) {
+        return {
+          text: result.safetyWarning,
+          quickReplies: [`확인 ${result.commandId?.slice(0, 8)}`, `거부 ${result.commandId?.slice(0, 8)}`, "기기"],
+        };
+      }
+
+      const config = getRelayBillingConfig();
+      return {
+        text: `"${cmd.relayDevice}" 기기로 명령을 전송했습니다.\n\n명령: ${cmd.relayCommand.slice(0, 100)}\n비용: ${config.commandCost} 크레딧\n\n실행 상태 확인: /원격결과 ${result.commandId?.slice(0, 8)}`,
+        quickReplies: [`원격결과 ${result.commandId?.slice(0, 8)}`, "원격상태", "기기"],
+      };
+    }
+
+    case "relay_multi": {
+      // @노트북,@태블릿 git pull OR @모두 df -h (multi-device command)
+      if (!cmd.relayDevices || !cmd.relayCommand) {
+        return {
+          text: "사용법:\n• @노트북,@태블릿 git pull (다중 기기)\n• @모두 df -h (모든 온라인 기기)",
+          quickReplies: ["기기", "기기등록"],
+        };
+      }
+
+      // Get Supabase user ID for billing
+      const supabase = getSupabase();
+      const { data: multiUser } = await supabase
+        .from("lawcall_users")
+        .select("id")
+        .eq("kakao_user_id", userId)
+        .single();
+
+      if (!multiUser) {
+        return { text: "사용자 정보를 찾을 수 없습니다. 먼저 메시지를 보내 계정을 활성화해주세요." };
+      }
+
+      const multiResult = await sendMultiDeviceCommand({
+        userId: multiUser.id,
+        targetDeviceNames: cmd.relayDevices,
+        commandText: cmd.relayCommand,
+      });
+
+      const resultText = formatMultiDeviceResult(multiResult, cmd.relayCommand);
+
+      // Build quick replies with command IDs for successful results
+      const quickReplies: string[] = [];
+      for (const r of multiResult.results) {
+        if (r.success && r.commandId) {
+          if (r.confirmationRequired) {
+            quickReplies.push(`확인 ${r.commandId.slice(0, 8)}`);
+          } else {
+            quickReplies.push(`원격결과 ${r.commandId.slice(0, 8)}`);
+          }
+        }
+      }
+      quickReplies.push("기기");
+
+      return { text: resultText, quickReplies: quickReplies.slice(0, 10) }; // KakaoTalk max 10 quick replies
+    }
+
+    case "relay_register": {
+      // /기기등록 — generate pairing code
+      const supabase = getSupabase();
+      const { data: regUser } = await supabase
+        .from("lawcall_users")
+        .select("id")
+        .eq("kakao_user_id", userId)
+        .single();
+
+      if (!regUser) {
+        // Create user first
+        const { data: newUser } = await supabase
+          .from("lawcall_users")
+          .insert({ kakao_user_id: userId })
+          .select("id")
+          .single();
+        if (!newUser) {
+          return { text: "사용자 등록에 실패했습니다." };
+        }
+        const codeResult = await generatePairingCode(newUser.id);
+        if ("error" in codeResult) {
+          return { text: codeResult.error };
+        }
+        return formatPairingCodeResponse(codeResult.code, codeResult.expiresAt);
+      }
+
+      const codeResult = await generatePairingCode(regUser.id);
+      if ("error" in codeResult) {
+        return { text: codeResult.error };
+      }
+      return formatPairingCodeResponse(codeResult.code, codeResult.expiresAt);
+    }
+
+    case "relay_devices": {
+      // /기기 — list registered devices (쌍둥이 MoA 상태)
+      const supabase = getSupabase();
+      const { data: devUser } = await supabase
+        .from("lawcall_users")
+        .select("id")
+        .eq("kakao_user_id", userId)
+        .single();
+
+      if (!devUser) {
+        return { text: "등록된 기기가 없습니다. /기기등록 명령으로 먼저 기기를 등록해주세요.", quickReplies: ["기기등록"] };
+      }
+
+      const twinStatus = await getTwinMoAStatus(devUser.id);
+
+      if (twinStatus.totalDevices === 0) {
+        return {
+          text: "등록된 기기가 없습니다.\n\n/기기등록 명령으로 기기를 등록해주세요.\n\n각 기기에 moltbot을 설치하면 모두 동일한 기억을 공유하는 쌍둥이 MoA가 됩니다!",
+          quickReplies: ["기기등록"],
+        };
+      }
+
+      const text = formatTwinMoAStatus(twinStatus);
+
+      // Generate quick replies for online devices
+      const quickReplies: string[] = [];
+      for (const d of twinStatus.devices) {
+        if (d.isOnline) {
+          quickReplies.push(`@${d.name} `);
+        }
+      }
+      quickReplies.push("기기등록", "원격상태");
+
+      return { text, quickReplies: quickReplies.slice(0, 10) };
+    }
+
+    case "relay_remove": {
+      // /기기삭제 <name>
+      const deviceName = cmd.args?.[0];
+      if (!deviceName) {
+        return { text: "사용법: /기기삭제 <기기명>\n\n예시: /기기삭제 노트북" };
+      }
+
+      const supabase = getSupabase();
+      const { data: rmUser } = await supabase
+        .from("lawcall_users")
+        .select("id")
+        .eq("kakao_user_id", userId)
+        .single();
+
+      if (!rmUser) {
+        return { text: "등록된 기기가 없습니다." };
+      }
+
+      const removed = await removeDevice(rmUser.id, deviceName);
+      if (removed) {
+        return { text: `"${deviceName}" 기기가 삭제되었습니다.`, quickReplies: ["기기"] };
+      }
+      return { text: `"${deviceName}" 기기를 찾을 수 없습니다.`, quickReplies: ["기기"] };
+    }
+
+    case "relay_status": {
+      // /원격상태 — recent relay commands
+      const supabase = getSupabase();
+      const { data: statusUser } = await supabase
+        .from("lawcall_users")
+        .select("id")
+        .eq("kakao_user_id", userId)
+        .single();
+
+      if (!statusUser) {
+        return { text: "사용 이력이 없습니다.", quickReplies: ["기기등록"] };
+      }
+
+      const [recentCmds, stats] = await Promise.all([
+        getRecentCommands(statusUser.id, 5),
+        getRelayUsageStats(statusUser.id),
+      ]);
+
+      let text = `📊 **원격 명령 현황**\n\n`;
+      text += `총 명령: ${stats.totalCommands}회 | 오늘: ${stats.commandsToday}회\n`;
+      text += `사용 크레딧: ${stats.totalCreditsUsed}\n\n`;
+
+      if (recentCmds.length > 0) {
+        text += `**최근 명령:**\n`;
+        for (const c of recentCmds) {
+          const statusIcon = {
+            pending: "⏳", awaiting_confirmation: "🔐", delivered: "📤", executing: "⚙️",
+            completed: "✅", failed: "❌", expired: "⏰", cancelled: "🚫",
+          }[c.status] ?? "❓";
+          const preview = c.commandPreview ? ` \`${c.commandPreview.slice(0, 30)}\`` : "";
+          const riskBadge = c.riskLevel === "high" ? " ⚠️" : "";
+          text += `${statusIcon}${riskBadge} ${c.deviceName}:${preview} ${c.summary?.slice(0, 30) ?? c.status} (${formatTimeAgo(c.createdAt)})\n`;
+          if (c.status === "awaiting_confirmation") {
+            text += `   → /확인 ${c.id.slice(0, 8)} 또는 /거부 ${c.id.slice(0, 8)}\n`;
+          } else if (c.status === "completed" || c.status === "executing") {
+            text += `   → /원격결과 ${c.id.slice(0, 8)}\n`;
+          }
+        }
+      } else {
+        text += "최근 명령 이력이 없습니다.";
+      }
+
+      return { text, quickReplies: ["기기", "기기등록"] };
+    }
+
+    // ============================================
+    // Confirmation & Monitoring Commands
+    // ============================================
+
+    case "relay_confirm": {
+      // /확인 <id_prefix> — approve a dangerous command
+      const idPrefix = cmd.args?.[0];
+      if (!idPrefix) {
+        return { text: "사용법: /확인 <명령ID>\n\n/원격상태에서 확인 대기 중인 명령의 ID를 확인하세요." };
+      }
+
+      const supabase = getSupabase();
+      const { data: cfmUser } = await supabase
+        .from("lawcall_users")
+        .select("id")
+        .eq("kakao_user_id", userId)
+        .single();
+
+      if (!cfmUser) {
+        return { text: "사용자 정보를 찾을 수 없습니다." };
+      }
+
+      const cfmResult = await confirmCommand(idPrefix, cfmUser.id);
+      if (!cfmResult.success) {
+        return { text: cfmResult.error ?? "확인 처리에 실패했습니다.", quickReplies: ["원격상태"] };
+      }
+
+      return {
+        text: `✅ 명령이 승인되었습니다.\n\n명령: \`${cfmResult.commandPreview?.slice(0, 100) ?? "알 수 없음"}\`\n\n기기로 전송 중입니다. 결과 확인: /원격결과 ${cfmResult.commandId?.slice(0, 8)}`,
+        quickReplies: [`원격결과 ${cfmResult.commandId?.slice(0, 8)}`, "원격상태"],
+      };
+    }
+
+    case "relay_reject": {
+      // /거부 <id_prefix> — reject a dangerous command
+      const idPrefix = cmd.args?.[0];
+      if (!idPrefix) {
+        return { text: "사용법: /거부 <명령ID>" };
+      }
+
+      const supabase = getSupabase();
+      const { data: rejUser } = await supabase
+        .from("lawcall_users")
+        .select("id")
+        .eq("kakao_user_id", userId)
+        .single();
+
+      if (!rejUser) {
+        return { text: "사용자 정보를 찾을 수 없습니다." };
+      }
+
+      const rejResult = await rejectCommand(idPrefix, rejUser.id);
+      if (!rejResult.success) {
+        return { text: rejResult.error ?? "거부 처리에 실패했습니다.", quickReplies: ["원격상태"] };
+      }
+
+      const refundMsg = rejResult.refundedCredits
+        ? `\n${rejResult.refundedCredits} 크레딧이 환불되었습니다.`
+        : "";
+      return {
+        text: `🚫 명령이 취소되었습니다.${refundMsg}`,
+        quickReplies: ["원격상태", "기기"],
+      };
+    }
+
+    case "relay_result": {
+      // /원격결과 <id_prefix> — view execution log
+      const idPrefix = cmd.args?.[0];
+      if (!idPrefix) {
+        return { text: "사용법: /원격결과 <명령ID>\n\n/원격상태에서 명령 ID를 확인하세요." };
+      }
+
+      const supabase = getSupabase();
+      const { data: resUser } = await supabase
+        .from("lawcall_users")
+        .select("id")
+        .eq("kakao_user_id", userId)
+        .single();
+
+      if (!resUser) {
+        return { text: "사용자 정보를 찾을 수 없습니다." };
+      }
+
+      // Find command by prefix
+      const { data: cmds } = await supabase
+        .from("relay_commands")
+        .select("id")
+        .eq("user_id", resUser.id)
+        .like("id", `${idPrefix}%`)
+        .limit(1);
+
+      if (!cmds || cmds.length === 0) {
+        return { text: "명령을 찾을 수 없습니다.", quickReplies: ["원격상태"] };
+      }
+
+      const execLog = await getExecutionLog(cmds[0].id, resUser.id);
+      const statusLabel = {
+        pending: "⏳ 대기 중", awaiting_confirmation: "🔐 확인 대기", delivered: "📤 전달됨",
+        executing: "⚙️ 실행 중", completed: "✅ 완료", failed: "❌ 실패",
+        expired: "⏰ 만료", cancelled: "🚫 취소",
+      }[execLog.status] ?? execLog.status;
+
+      let text = `📋 **명령 실행 상세**\n\n`;
+      text += `상태: ${statusLabel}\n`;
+      if (execLog.riskLevel) {
+        const riskLabel = { low: "🟢 안전", medium: "🟡 주의", high: "🟠 위험" }[execLog.riskLevel] ?? execLog.riskLevel;
+        text += `위험도: ${riskLabel}\n`;
+      }
+      if (execLog.commandPreview) {
+        text += `명령: \`${execLog.commandPreview.slice(0, 100)}\`\n`;
+      }
+
+      // Show execution log
+      if (execLog.log.length > 0) {
+        text += `\n**실행 로그:**\n`;
+        for (const entry of execLog.log.slice(-10)) {
+          const time = new Date(entry.timestamp);
+          const timeStr = `${time.getHours().toString().padStart(2, "0")}:${time.getMinutes().toString().padStart(2, "0")}:${time.getSeconds().toString().padStart(2, "0")}`;
+          text += `[${timeStr}] ${entry.message}\n`;
+          if (entry.data) {
+            text += `  ${entry.data.slice(0, 200)}\n`;
+          }
+        }
+      }
+
+      // Show result if completed
+      if (execLog.summary) {
+        text += `\n**결과:**\n${execLog.summary.slice(0, 500)}`;
+      }
+      if (execLog.result?.output) {
+        text += `\n**출력:**\n\`\`\`\n${execLog.result.output.slice(0, 500)}\n\`\`\``;
+      }
+      if (execLog.result?.error) {
+        text += `\n**오류:**\n${execLog.result.error.slice(0, 300)}`;
+      }
+
+      return { text, quickReplies: ["원격상태", "기기"] };
     }
 
     default:
@@ -641,4 +1282,24 @@ async function handleMoltbotCommand(
         text: "알 수 없는 명령입니다. /도움말을 입력해주세요.",
       };
   }
+}
+
+// ============================================
+// Relay Helpers
+// ============================================
+
+function formatPairingCodeResponse(code: string, expiresAt: Date): { text: string; quickReplies?: string[] } {
+  const minutes = Math.ceil((expiresAt.getTime() - Date.now()) / 60000);
+  return {
+    text: `🔗 **기기 페어링 코드**\n\n코드: **${code}**\n만료: ${minutes}분 후\n\n등록할 기기에서 다음 명령을 실행하세요:\n\nmoltbot relay pair --code ${code} --name "기기이름"\n\n또는 API로 직접 등록:\nPOST /api/relay/pair\n{"code": "${code}", "device": {"deviceName": "기기이름", "deviceType": "laptop"}}`,
+    quickReplies: ["기기", "도움말"],
+  };
+}
+
+function formatTimeAgo(date: Date): string {
+  const seconds = Math.floor((Date.now() - date.getTime()) / 1000);
+  if (seconds < 60) return "방금 전";
+  if (seconds < 3600) return `${Math.floor(seconds / 60)}분 전`;
+  if (seconds < 86400) return `${Math.floor(seconds / 3600)}시간 전`;
+  return `${Math.floor(seconds / 86400)}일 전`;
 }
