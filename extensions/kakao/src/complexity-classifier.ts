@@ -338,8 +338,8 @@ export function buildPremiumModelNotification(
 
   const suggestedModels = [
     { provider: "anthropic", model: "claude-opus-4-5-20251101", displayName: "Claude Opus 4.5" },
-    { provider: "openai", model: "gpt-4o", displayName: "OpenAI GPT-4o" },
-    { provider: "google", model: "gemini-2.0-pro", displayName: "Gemini 2.0 Pro" },
+    { provider: "openai", model: "gpt-5.2", displayName: "OpenAI GPT-5.2" },
+    { provider: "google", model: "gemini-3-pro-preview", displayName: "Gemini 3 Pro" },
   ];
 
   const modelNames = suggestedModels.map(m => `"${m.displayName}"`).join(", ");
@@ -444,8 +444,8 @@ export function getRecommendedModels(tier: SuggestedModelTier): Array<{
     case "premium":
       return [
         { provider: "anthropic", model: "claude-opus-4-5-20251101", displayName: "Claude Opus 4.5", isFree: false },
-        { provider: "openai", model: "gpt-4o", displayName: "GPT-4o", isFree: false },
-        { provider: "anthropic", model: "claude-sonnet-4-20250514", displayName: "Claude Sonnet 4", isFree: false },
+        { provider: "openai", model: "gpt-5.2", displayName: "GPT-5.2", isFree: false },
+        { provider: "google", model: "gemini-3-pro-preview", displayName: "Gemini 3 Pro", isFree: false },
       ];
 
     case "local":

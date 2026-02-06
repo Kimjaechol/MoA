@@ -805,8 +805,8 @@ async function routeChatWithTier(
     ],
     premium: [
       { provider: "anthropic", model: "claude-opus-4-5-20251101" },
-      { provider: "openai", model: "gpt-4o" },
-      { provider: "anthropic", model: "claude-sonnet-4-20250514" },
+      { provider: "openai", model: "gpt-5.2" },
+      { provider: "google", model: "gemini-3-pro-preview" },
     ],
     local: [], // 로컬은 별도 처리
   };
