@@ -27,8 +27,12 @@ const WEBHOOK_PATH = process.env.KAKAO_WEBHOOK_PATH ?? "/kakao/webhook";
 /** MoA install page URL — auto-detected from Railway or configurable via env */
 function getInstallUrl(): string {
   if (process.env.MOA_INSTALL_URL) return process.env.MOA_INSTALL_URL;
-  const domain = process.env.RAILWAY_PUBLIC_DOMAIN;
-  if (domain) return `https://${domain}/install`;
+  // Railway auto-sets RAILWAY_PUBLIC_DOMAIN (just the hostname, no protocol)
+  const railwayDomain = process.env.RAILWAY_PUBLIC_DOMAIN;
+  if (railwayDomain) return `https://${railwayDomain}/install`;
+  // Fallback: construct from PORT env (Railway also sets PORT)
+  const port = process.env.PORT;
+  if (port) return `https://openclaw-production-2e2e.up.railway.app/install`;
   return `http://localhost:${PORT}/install`;
 }
 
