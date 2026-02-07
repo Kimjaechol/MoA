@@ -10,7 +10,7 @@ import {
   getCreditStatusMessage,
 } from "./billing-handler.js";
 import { handleSyncCommand, isSyncCommand, type SyncCommandContext } from "./sync/index.js";
-import { getSupabase } from "./supabase.js";
+import { getSupabase, isSupabaseConfigured } from "./supabase.js";
 import {
   formatChannelList,
   formatToolList,
@@ -173,8 +173,10 @@ export async function startKakaoWebhook(opts: KakaoWebhookOptions): Promise<{
     }
 
     try {
-      // Step 0: Check for sync commands (/동기화, /sync)
-      if (isSyncCommand(utterance)) {
+      const supabaseReady = isSupabaseConfigured();
+
+      // Step 0: Check for sync commands (/동기화, /sync) — requires Supabase
+      if (supabaseReady && isSyncCommand(utterance)) {
         // Get or create user in Supabase
         const supabase = getSupabase();
         let supabaseUserId: string;
@@ -223,64 +225,71 @@ export async function startKakaoWebhook(opts: KakaoWebhookOptions): Promise<{
         return;
       }
 
-      // Step 0.5: Check for Moltbot-specific commands
+      // Step 0.5: Check for Moltbot-specific commands — requires Supabase for relay/install/subscribe
       const moltbotCmd = parseMoltbotCommand(utterance);
       if (moltbotCmd.isCommand) {
-        const moltbotResult = await handleMoltbotCommand(
-          moltbotCmd,
-          userId,
-          moltbotAgent,
-          logger,
-        );
-        const response = apiClient.buildSkillResponse(
-          moltbotResult.text,
-          moltbotResult.quickReplies,
-        );
-        res.writeHead(200, { "Content-Type": "application/json" });
-        res.end(JSON.stringify(response));
-        logger.info(`[kakao] Handled Moltbot command for ${userId.slice(0, 8)}...`);
-        return;
-      }
-
-      // Step 1: Check for billing commands (잔액, 충전, API키 등록 등)
-      const billingCmd = await handleBillingCommand(userId, utterance);
-      if (billingCmd.handled) {
-        let response: KakaoSkillResponse;
-        if (billingCmd.paymentUrl) {
-          // Build response with payment link button
-          response = apiClient.buildTextWithButtonResponse(
-            billingCmd.response ?? "",
-            "결제하기",
-            billingCmd.paymentUrl,
-            billingCmd.quickReplies,
+        // Some moltbot commands (tools, channels, help, status) work without Supabase
+        const supabaseFreeCommands = new Set(["tools", "channels", "help", "status", "bridge"]);
+        if (supabaseReady || supabaseFreeCommands.has(moltbotCmd.type ?? "")) {
+          const moltbotResult = await handleMoltbotCommand(
+            moltbotCmd,
+            userId,
+            moltbotAgent,
+            logger,
           );
-        } else {
-          response = apiClient.buildSkillResponse(
-            billingCmd.response ?? "",
-            billingCmd.quickReplies,
+          const response = apiClient.buildSkillResponse(
+            moltbotResult.text,
+            moltbotResult.quickReplies,
           );
+          res.writeHead(200, { "Content-Type": "application/json" });
+          res.end(JSON.stringify(response));
+          logger.info(`[kakao] Handled Moltbot command for ${userId.slice(0, 8)}...`);
+          return;
         }
-        res.writeHead(200, { "Content-Type": "application/json" });
-        res.end(JSON.stringify(response));
-        logger.info(`[kakao] Handled billing command for ${userId.slice(0, 8)}...`);
-        return;
       }
 
-      // Step 2: Pre-billing check (verify credits or custom API key)
-      const billingCheck = await preBillingCheck(userId);
-      if (billingCheck.handled) {
-        const response = apiClient.buildSkillResponse(
-          billingCheck.response ?? "",
-          billingCheck.quickReplies,
-        );
-        res.writeHead(200, { "Content-Type": "application/json" });
-        res.end(JSON.stringify(response));
-        logger.info(`[kakao] Billing check failed for ${userId.slice(0, 8)}...: insufficient credits`);
-        return;
+      // Step 1 & 2: Billing checks — only when Supabase is configured
+      let usedPlatformKey = true;
+      if (supabaseReady) {
+        // Step 1: Check for billing commands (잔액, 충전, API키 등록 등)
+        const billingCmd = await handleBillingCommand(userId, utterance);
+        if (billingCmd.handled) {
+          let response: KakaoSkillResponse;
+          if (billingCmd.paymentUrl) {
+            response = apiClient.buildTextWithButtonResponse(
+              billingCmd.response ?? "",
+              "결제하기",
+              billingCmd.paymentUrl,
+              billingCmd.quickReplies,
+            );
+          } else {
+            response = apiClient.buildSkillResponse(
+              billingCmd.response ?? "",
+              billingCmd.quickReplies,
+            );
+          }
+          res.writeHead(200, { "Content-Type": "application/json" });
+          res.end(JSON.stringify(response));
+          logger.info(`[kakao] Handled billing command for ${userId.slice(0, 8)}...`);
+          return;
+        }
+
+        // Step 2: Pre-billing check (verify credits or custom API key)
+        const billingCheck = await preBillingCheck(userId);
+        if (billingCheck.handled) {
+          const response = apiClient.buildSkillResponse(
+            billingCheck.response ?? "",
+            billingCheck.quickReplies,
+          );
+          res.writeHead(200, { "Content-Type": "application/json" });
+          res.end(JSON.stringify(response));
+          logger.info(`[kakao] Billing check failed for ${userId.slice(0, 8)}...: insufficient credits`);
+          return;
+        }
+        usedPlatformKey = !billingCheck.billingCheck?.useCustomKey;
       }
 
-      // Step 3: Call the message handler (this will route to Moltbot agent)
-      const usedPlatformKey = !billingCheck.billingCheck?.useCustomKey;
+      // Step 3: Call the message handler (AI agent)
       const result = await onMessage({
         userId,
         userType,
@@ -290,23 +299,26 @@ export async function startKakaoWebhook(opts: KakaoWebhookOptions): Promise<{
         timestamp: Date.now(),
       });
 
-      // Step 4: Post-billing deduct (if using platform API key)
-      // Estimate tokens: ~4 chars per token for Korean
-      const estimatedInputTokens = Math.ceil(utterance.length / 4);
-      const estimatedOutputTokens = Math.ceil(result.text.length / 4);
-      const model = process.env.OPENCLAW_MODEL ?? "claude-3-5-haiku-20241022";
+      // Step 4 & 5: Post-billing deduct — only when Supabase is configured
+      let finalText = result.text;
+      let creditsUsed = 0;
+      if (supabaseReady) {
+        const estimatedInputTokens = Math.ceil(utterance.length / 4);
+        const estimatedOutputTokens = Math.ceil(result.text.length / 4);
+        const model = process.env.OPENCLAW_MODEL ?? "claude-3-5-haiku-20241022";
 
-      const billingResult = await postBillingDeduct(
-        userId,
-        model,
-        estimatedInputTokens,
-        estimatedOutputTokens,
-        usedPlatformKey,
-      );
+        const billingResult = await postBillingDeduct(
+          userId,
+          model,
+          estimatedInputTokens,
+          estimatedOutputTokens,
+          usedPlatformKey,
+        );
+        creditsUsed = billingResult.creditsUsed;
 
-      // Step 5: Append credit status to response (if charged)
-      const creditMessage = await getCreditStatusMessage(userId, billingResult.creditsUsed, usedPlatformKey);
-      const finalText = result.text + creditMessage;
+        const creditMessage = await getCreditStatusMessage(userId, billingResult.creditsUsed, usedPlatformKey);
+        finalText = result.text + creditMessage;
+      }
 
       // Check if this is a legal question and add consultation button
       let response: KakaoSkillResponse;
@@ -328,7 +340,7 @@ export async function startKakaoWebhook(opts: KakaoWebhookOptions): Promise<{
       res.end(JSON.stringify(response));
 
       logger.info(
-        `[kakao] Sent response to ${userId.slice(0, 8)}...: "${result.text.slice(0, 50)}${result.text.length > 50 ? "..." : ""}" (credits: -${billingResult.creditsUsed})`,
+        `[kakao] Sent response to ${userId.slice(0, 8)}...: "${result.text.slice(0, 50)}${result.text.length > 50 ? "..." : ""}"${supabaseReady ? ` (credits: -${creditsUsed})` : ""}`,
       );
     } catch (err) {
       logger.error(`[kakao] Error processing message: ${err}`);
