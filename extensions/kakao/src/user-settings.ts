@@ -20,7 +20,8 @@ export type LLMProvider =
   | "google"     // Gemini
   | "groq"       // Groq (Llama, Mixtral)
   | "together"   // Together AI
-  | "openrouter"; // OpenRouter (multi-model)
+  | "openrouter" // OpenRouter (multi-model)
+  | "local";     // Local SLM (Ollama)
 
 export interface ProviderInfo {
   id: LLMProvider;
