@@ -1,0 +1,404 @@
+/**
+ * MoA SLM Integration - Embedded Installation Flow
+ *
+ * This module integrates SLM installation into the MoA agent setup.
+ * The installation happens silently in the background during agent initialization.
+ *
+ * Features:
+ * - Silent background installation during first run
+ * - Progress reporting for UI feedback
+ * - Graceful degradation if installation fails
+ * - Device-aware model selection (skip Tier 2 on low-memory devices)
+ */
+
+import {
+  installMoaSLM,
+  checkMoaSLMStatus,
+  healthCheck,
+  autoRecover,
+  startOllamaServer,
+  isOllamaRunning,
+  type InstallProgress,
+  type ProgressCallback,
+} from "./ollama-installer.js";
+import {
+  routeSLM,
+  shouldSkipTier2,
+  getSLMInfo,
+  preloadTier2,
+  type SLMRequest,
+  type SLMRouterResult,
+} from "./slm-router.js";
+
+// ============================================
+// Types
+// ============================================
+
+export interface MoAAgentConfig {
+  kakaoUserId: string;
+  deviceType: "mobile" | "desktop" | "tablet";
+  enableOfflineMode: boolean;
+  enablePrivacyMode: boolean; // Force local processing for sensitive data
+  skipTier2Install?: boolean;
+}
+
+export interface MoAAgentStatus {
+  initialized: boolean;
+  slmReady: boolean;
+  tier1Available: boolean;
+  tier2Available: boolean;
+  offlineModeEnabled: boolean;
+  lastHealthCheck?: Date;
+  error?: string;
+}
+
+export interface MoAInitResult {
+  success: boolean;
+  status: MoAAgentStatus;
+  message: string;
+}
+
+// ============================================
+// State
+// ============================================
+
+let agentStatus: MoAAgentStatus = {
+  initialized: false,
+  slmReady: false,
+  tier1Available: false,
+  tier2Available: false,
+  offlineModeEnabled: false,
+};
+
+let initializationPromise: Promise<MoAInitResult> | null = null;
+
+// ============================================
+// Initialization
+// ============================================
+
+/**
+ * Initialize MoA Agent with embedded SLM
+ *
+ * This should be called during agent first-run or app startup.
+ * The installation happens in the background without blocking the UI.
+ */
+export async function initializeMoAAgent(
+  config: MoAAgentConfig,
+  onProgress?: ProgressCallback,
+): Promise<MoAInitResult> {
+  // Prevent concurrent initialization
+  if (initializationPromise) {
+    return initializationPromise;
+  }
+
+  initializationPromise = doInitialize(config, onProgress);
+  const result = await initializationPromise;
+  initializationPromise = null;
+  return result;
+}
+
+async function doInitialize(
+  config: MoAAgentConfig,
+  onProgress?: ProgressCallback,
+): Promise<MoAInitResult> {
+  try {
+    onProgress?.({
+      phase: "checking",
+      message: "MoA 에이전트 초기화 중...",
+    });
+
+    // Determine if we should skip Tier 2
+    const skipTier2 = config.skipTier2Install ?? (
+      config.deviceType === "mobile" || shouldSkipTier2()
+    );
+
+    // Install SLM models
+    const installSuccess = await installMoaSLM(onProgress, {
+      skipTier2,
+    });
+
+    if (!installSuccess) {
+      // Installation failed, but we can still work with cloud
+      agentStatus = {
+        initialized: true,
+        slmReady: false,
+        tier1Available: false,
+        tier2Available: false,
+        offlineModeEnabled: false,
+        error: "로컬 AI 설치 실패",
+      };
+
+      return {
+        success: false,
+        status: agentStatus,
+        message: "로컬 AI 설치에 실패했습니다. 클라우드 AI를 사용합니다.",
+      };
+    }
+
+    // Check final status
+    const slmStatus = await checkMoaSLMStatus();
+
+    // Preload Tier 2 on desktop for faster first response
+    if (!skipTier2 && slmStatus.tier2Ready) {
+      preloadTier2().catch(() => {
+        // Ignore preload errors
+      });
+    }
+
+    agentStatus = {
+      initialized: true,
+      slmReady: slmStatus.tier1Ready,
+      tier1Available: slmStatus.tier1Ready,
+      tier2Available: slmStatus.tier2Ready,
+      offlineModeEnabled: config.enableOfflineMode,
+      lastHealthCheck: new Date(),
+    };
+
+    onProgress?.({
+      phase: "ready",
+      message: "MoA 에이전트 준비 완료",
+    });
+
+    return {
+      success: true,
+      status: agentStatus,
+      message: slmStatus.tier2Ready
+        ? "MoA 에이전트가 완전히 준비되었습니다. (Tier 1 + Tier 2)"
+        : "MoA 에이전트가 준비되었습니다. (Tier 1 전용)",
+    };
+  } catch (error) {
+    agentStatus = {
+      initialized: true,
+      slmReady: false,
+      tier1Available: false,
+      tier2Available: false,
+      offlineModeEnabled: false,
+      error: error instanceof Error ? error.message : "초기화 실패",
+    };
+
+    return {
+      success: false,
+      status: agentStatus,
+      message: "MoA 에이전트 초기화에 실패했습니다.",
+    };
+  }
+}
+
+/**
+ * Background initialization (non-blocking)
+ *
+ * Use this for silent installation that doesn't block the main flow.
+ */
+export function initializeMoAAgentBackground(
+  config: MoAAgentConfig,
+  onProgress?: ProgressCallback,
+  onComplete?: (result: MoAInitResult) => void,
+): void {
+  initializeMoAAgent(config, onProgress).then(result => {
+    onComplete?.(result);
+  }).catch(error => {
+    onComplete?.({
+      success: false,
+      status: {
+        initialized: false,
+        slmReady: false,
+        tier1Available: false,
+        tier2Available: false,
+        offlineModeEnabled: false,
+        error: error instanceof Error ? error.message : "Unknown error",
+      },
+      message: "백그라운드 초기화 실패",
+    });
+  });
+}
+
+// ============================================
+// Agent Status
+// ============================================
+
+/**
+ * Get current agent status
+ */
+export function getMoAAgentStatus(): MoAAgentStatus {
+  return { ...agentStatus };
+}
+
+/**
+ * Perform health check and update status
+ */
+export async function performHealthCheck(): Promise<MoAAgentStatus> {
+  const health = await healthCheck();
+
+  agentStatus = {
+    ...agentStatus,
+    slmReady: health.healthy,
+    tier1Available: health.tier1Loaded,
+    tier2Available: health.tier2Available,
+    lastHealthCheck: new Date(),
+  };
+
+  return agentStatus;
+}
+
+/**
+ * Attempt to recover if SLM is not healthy
+ */
+export async function attemptRecovery(): Promise<boolean> {
+  const recovered = await autoRecover();
+
+  if (recovered) {
+    await performHealthCheck();
+  }
+
+  return recovered;
+}
+
+// ============================================
+// Processing
+// ============================================
+
+/**
+ * Process message through MoA SLM
+ *
+ * This is the main entry point for local SLM processing.
+ * It handles:
+ * - Health check and auto-recovery
+ * - Smart routing between Tier 1 and Tier 2
+ * - Fallback to cloud when local fails
+ */
+export async function processThroughSLM(
+  userMessage: string,
+  request: SLMRequest,
+  options?: {
+    forceLocal?: boolean;
+    forceTier?: 1 | 2;
+  },
+): Promise<SLMRouterResult> {
+  // Check if initialized
+  if (!agentStatus.initialized) {
+    return {
+      success: false,
+      error: "MoA 에이전트가 초기화되지 않았습니다",
+      shouldRouteToCloud: true,
+    };
+  }
+
+  // Check SLM availability
+  if (!agentStatus.slmReady) {
+    // Attempt recovery
+    const recovered = await attemptRecovery();
+    if (!recovered) {
+      return {
+        success: false,
+        error: "로컬 AI를 사용할 수 없습니다",
+        shouldRouteToCloud: true,
+      };
+    }
+  }
+
+  // Route through SLM
+  return routeSLM(userMessage, request, {
+    forceLocal: options?.forceLocal ?? agentStatus.offlineModeEnabled,
+    forceTier: options?.forceTier,
+  });
+}
+
+// ============================================
+// Utility
+// ============================================
+
+/**
+ * Get human-readable SLM info for display
+ */
+export async function getDisplayInfo(): Promise<{
+  status: string;
+  tier1: string;
+  tier2: string;
+  recommendation: string;
+}> {
+  const info = await getSLMInfo();
+
+  const statusEmoji = info.serverRunning ? "🟢" : "🔴";
+  const tier1Emoji = info.tier1.status === "ready" ? "✅" : "❌";
+  const tier2Emoji =
+    info.tier2.status === "ready" ? "✅" :
+    info.tier2.status === "skipped" ? "⏭️" : "❌";
+
+  return {
+    status: `${statusEmoji} ${info.serverRunning ? "실행 중" : "정지됨"}`,
+    tier1: `${tier1Emoji} ${info.tier1.model} (${info.tier1.status === "ready" ? "준비됨" : "미설치"})`,
+    tier2: `${tier2Emoji} ${info.tier2.model} (${
+      info.tier2.status === "ready" ? "준비됨" :
+      info.tier2.status === "skipped" ? "건너뜀 (메모리 부족)" : "미설치"
+    })`,
+    recommendation: info.tier1.status === "ready"
+      ? "로컬 AI가 준비되어 개인정보 보호 및 오프라인 사용이 가능합니다."
+      : "로컬 AI를 설치하면 개인정보를 외부로 전송하지 않고 처리할 수 있습니다.",
+  };
+}
+
+/**
+ * Format initialization progress for KakaoTalk message
+ */
+export function formatProgressForKakao(progress: InstallProgress): string {
+  switch (progress.phase) {
+    case "checking":
+      return `🔍 ${progress.message}`;
+    case "installing-ollama":
+      return `⬇️ ${progress.message}`;
+    case "pulling-model":
+      if (progress.progress !== undefined) {
+        const bar = createProgressBar(progress.progress);
+        return `📦 ${progress.model}\n${bar} ${progress.progress}%`;
+      }
+      return `📦 ${progress.message}`;
+    case "ready":
+      return `✅ ${progress.message}`;
+    case "error":
+      return `❌ ${progress.message}\n${progress.error || ""}`;
+    default:
+      return progress.message;
+  }
+}
+
+function createProgressBar(percent: number): string {
+  const filled = Math.round(percent / 10);
+  const empty = 10 - filled;
+  return "█".repeat(filled) + "░".repeat(empty);
+}
+
+/**
+ * Check if running in low-memory environment
+ */
+export function isLowMemoryEnvironment(): boolean {
+  return shouldSkipTier2();
+}
+
+/**
+ * Get recommended configuration based on device
+ */
+export function getRecommendedConfig(deviceType: "mobile" | "desktop" | "tablet"): Partial<MoAAgentConfig> {
+  switch (deviceType) {
+    case "mobile":
+      return {
+        deviceType: "mobile",
+        skipTier2Install: true, // Save storage on mobile
+        enableOfflineMode: false, // Cloud preferred on mobile
+        enablePrivacyMode: true, // Privacy important on mobile
+      };
+    case "tablet":
+      return {
+        deviceType: "tablet",
+        skipTier2Install: shouldSkipTier2(),
+        enableOfflineMode: false,
+        enablePrivacyMode: true,
+      };
+    case "desktop":
+      return {
+        deviceType: "desktop",
+        skipTier2Install: false, // Full capability on desktop
+        enableOfflineMode: false, // Cloud preferred for quality
+        enablePrivacyMode: true,
+      };
+  }
+}

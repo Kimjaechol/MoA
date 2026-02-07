@@ -31,6 +31,11 @@ import {
   maskSensitiveData,
   type PrivacyResult,
 } from "./privacy-classifier.js";
+import {
+  processThroughSLM,
+  getMoAAgentStatus,
+  type SLMRequest,
+} from "./slm/index.js";
 
 // ============================================
 // Types
@@ -713,11 +718,51 @@ export async function smartRouteChat(
 
   // 4. 로컬 처리가 필요한 경우 (민감 정보)
   if (analysis.requiresLocalProcessing) {
+    // Try to process through local SLM
+    const agentStatus = getMoAAgentStatus();
+
+    if (agentStatus.slmReady) {
+      // Convert request to SLM format
+      const slmRequest: SLMRequest = {
+        messages: request.messages.map(m => ({
+          role: m.role,
+          content: m.content,
+        })),
+        maxTokens: request.maxTokens,
+        temperature: request.temperature,
+      };
+
+      const slmResult = await processThroughSLM(userMessage, slmRequest, {
+        forceLocal: true, // Force local for privacy
+      });
+
+      if (slmResult.success && slmResult.response) {
+        return {
+          success: true,
+          response: {
+            content: slmResult.response.content,
+            model: slmResult.response.model,
+            provider: "local" as LLMProvider,
+            usage: {
+              inputTokens: slmResult.response.usage.promptTokens,
+              outputTokens: slmResult.response.usage.completionTokens,
+            },
+            isFallback: false,
+            isFree: true, // Local processing is free
+          },
+          analysis,
+          localProcessingRequired: true,
+          notificationMessage: `🔒 개인정보 보호를 위해 로컬 AI로 처리했습니다.\n${privacy.warningMessage || ""}`,
+        };
+      }
+    }
+
+    // Local SLM not available - warn user but allow cloud fallback with masking
     return {
       success: false,
       localProcessingRequired: true,
       analysis,
-      notificationMessage: privacy.warningMessage,
+      notificationMessage: `⚠️ 민감한 정보가 감지되었습니다.\n${privacy.warningMessage}\n\n로컬 AI가 준비되지 않아 처리할 수 없습니다.\n"MoA 설치"라고 입력하여 로컬 AI를 설치하세요.`,
       error: "LOCAL_PROCESSING_REQUIRED",
     };
   }
