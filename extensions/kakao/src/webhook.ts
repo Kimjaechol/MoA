@@ -66,7 +66,7 @@ export interface KakaoWebhookOptions {
     botId: string;
     blockId: string;
     timestamp: number;
-  }) => Promise<{ text: string; quickReplies?: string[] }>;
+  }) => Promise<{ text: string; quickReplies?: string[]; buttons?: Array<{ label: string; url: string }> }>;
   onError?: (error: Error) => void;
   logger?: {
     info: (msg: string) => void;
@@ -321,7 +321,17 @@ export async function startKakaoWebhook(opts: KakaoWebhookOptions): Promise<{
         finalText = result.text + creditMessage;
       }
 
-      const response = apiClient.buildSkillResponse(finalText, result.quickReplies);
+      // Build response — use button card if buttons are provided, otherwise simple text
+      let response: KakaoSkillResponse;
+      if (result.buttons && result.buttons.length > 0) {
+        response = apiClient.buildSkillResponseWithLinks(
+          finalText,
+          result.buttons,
+          result.quickReplies?.map(label => ({ label, messageText: label })),
+        );
+      } else {
+        response = apiClient.buildSkillResponse(finalText, result.quickReplies);
+      }
 
       res.writeHead(200, { "Content-Type": "application/json" });
       res.end(JSON.stringify(response));
