@@ -74,3 +74,38 @@ export {
   isLowMemoryEnvironment,
   getRecommendedConfig,
 } from "./moa-integration.js";
+
+// Auto-installer (원클릭 자동 설치)
+export {
+  // Types
+  type AutoInstallConfig,
+  type InstallStatus,
+  type InstallStep,
+  type InstallResult,
+  type DeviceProfile,
+  // Main installer
+  autoInstallSLM,
+  // Device detection
+  detectDevice,
+  // Formatting
+  formatInstallStatus,
+  formatInstallStatusForKakao,
+  formatInstallResult,
+} from "./auto-installer.js";
+
+// KakaoTalk handler (카카오톡 명령 처리)
+export {
+  // Types
+  type KakaoInstallSession,
+  type SLMCommand,
+  // Command handlers
+  handleInstallCommand,
+  handleInstallStart,
+  handleStatusCommand,
+  handleUninstallCommand,
+  // Intent detection
+  detectSLMCommand,
+  handleSLMCommand,
+  // Startup
+  checkAndInstallOnStartup,
+} from "./kakao-handler.js";
