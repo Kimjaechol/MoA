@@ -321,13 +321,17 @@ export async function startKakaoWebhook(opts: KakaoWebhookOptions): Promise<{
         finalText = result.text + creditMessage;
       }
 
-      // Build response — use button card if buttons are provided, otherwise simple text
+      // Build response — use simpleText + button card if buttons are provided, otherwise simple text
       let response: KakaoSkillResponse;
       if (result.buttons && result.buttons.length > 0) {
-        response = apiClient.buildSkillResponseWithLinks(
+        // Use buildTextWithButtonResponse: simpleText (full text) + basicCard (button only)
+        // This avoids basicCard description 400-char limit issues
+        const firstButton = result.buttons[0];
+        response = apiClient.buildTextWithButtonResponse(
           finalText,
-          result.buttons,
-          result.quickReplies?.map(label => ({ label, messageText: label })),
+          firstButton.label,
+          firstButton.url,
+          result.quickReplies,
         );
       } else {
         response = apiClient.buildSkillResponse(finalText, result.quickReplies);
