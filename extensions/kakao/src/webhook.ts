@@ -2,7 +2,8 @@ import { createServer, type IncomingMessage, type ServerResponse } from "node:ht
 import { randomBytes } from "node:crypto";
 import type { KakaoIncomingMessage, KakaoSkillResponse, ResolvedKakaoAccount } from "./types.js";
 import { createKakaoApiClient } from "./api-client.js";
-import { getConsultationButton, isLegalQuestion } from "./lawcall-router.js";
+// lawcall-router is available for legal consultation features when needed
+// import { getConsultationButton, isLegalQuestion } from "./lawcall-router.js";
 import {
   handleBillingCommand,
   preBillingCheck,
@@ -320,21 +321,7 @@ export async function startKakaoWebhook(opts: KakaoWebhookOptions): Promise<{
         finalText = result.text + creditMessage;
       }
 
-      // Check if this is a legal question and add consultation button
-      let response: KakaoSkillResponse;
-
-      if (isLegalQuestion(utterance) || isLegalQuestion(result.text)) {
-        const consultButton = getConsultationButton(utterance);
-        response = apiClient.buildTextWithButtonResponse(
-          finalText,
-          consultButton.label,
-          consultButton.url,
-          result.quickReplies,
-        );
-        logger.info(`[kakao] Detected legal question, added ${consultButton.category} link`);
-      } else {
-        response = apiClient.buildSkillResponse(finalText, result.quickReplies);
-      }
+      const response = apiClient.buildSkillResponse(finalText, result.quickReplies);
 
       res.writeHead(200, { "Content-Type": "application/json" });
       res.end(JSON.stringify(response));
