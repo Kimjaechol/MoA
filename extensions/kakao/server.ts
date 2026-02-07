@@ -24,6 +24,64 @@ const PORT = parseInt(process.env.PORT ?? process.env.KAKAO_WEBHOOK_PORT ?? "878
 const HOST = process.env.HOST ?? "0.0.0.0";
 const WEBHOOK_PATH = process.env.KAKAO_WEBHOOK_PATH ?? "/kakao/webhook";
 
+/** MoA install page URL — auto-detected from Railway or configurable via env */
+function getInstallUrl(): string {
+  if (process.env.MOA_INSTALL_URL) return process.env.MOA_INSTALL_URL;
+  const domain = process.env.RAILWAY_PUBLIC_DOMAIN;
+  if (domain) return `https://${domain}/install`;
+  return `http://localhost:${PORT}/install`;
+}
+
+// ============================================
+// MoA Welcome & Onboarding Messages
+// ============================================
+
+const MOA_WELCOME_MESSAGE = `MoA 어시스턴트 채널에 방문해주셔서 감사합니다!
+
+MoA(Master of AI)는 당신의 모든 기기를 하나의 AI로 연결하는 차세대 AI 에이전트입니다.
+
+1. MoA란?
+MoA는 노트북, 태블릿, 데스크탑 등 여러 기기에 설치되어 동일한 기억을 공유하는 AI 에이전트입니다. 한 기기에서 작업한 내용을 다른 기기에서도 이어서 할 수 있고, 카카오톡에서 명령을 보내면 연결된 기기에서 원격으로 실행됩니다.
+
+2. MoA의 핵심 기능
+- 쌍둥이 AI: 모든 기기가 같은 기억을 공유
+- 원격 제어: 카카오톡에서 기기에 명령 전송
+- AI 대화: 언제 어디서나 AI와 대화
+- 파일 관리: 기기 간 파일 확인 및 관리
+- 코드 실행: 원격으로 코드 작성 및 실행
+
+3. MoA 활용 방법
+- 외출 중 집 컴퓨터에 파일 확인 요청
+- 카카오톡으로 노트북에 코드 실행 지시
+- 여러 기기의 상태를 한눈에 확인
+- AI에게 일상적인 질문이나 업무 도움 요청
+
+4. MoA 사용 사례
+- "회사 컴퓨터에 있는 보고서 내용 알려줘"
+- "@노트북 git pull && npm run build"
+- "어제 작업한 프로젝트 진행상황 알려줘"
+- "오늘 일정 정리해줘"
+
+지금 바로 MoA를 설치하고 AI의 새로운 경험을 시작하세요!
+"설치" 라고 입력하시면 간편 설치를 안내해드립니다.`;
+
+const MOA_INSTALL_GUIDE = `MoA 설치는 아주 간단합니다!
+
+[1단계] 아래 링크를 클릭하세요
+설치 페이지에서 사용하시는 기기(Windows/Mac/Linux)를 선택하면 자동으로 설치가 시작됩니다.
+
+[2단계] 설치 완료 후 카카오톡으로 돌아와서 "기기등록" 이라고 입력하세요.
+페어링 코드가 발급됩니다.
+
+[3단계] 설치된 MoA에 페어링 코드를 입력하면 끝!
+이제 카카오톡에서 바로 기기를 제어할 수 있습니다.
+
+추가 기기도 같은 방법으로 등록하면 모든 기기가 하나의 AI로 연결됩니다!`;
+
+// ============================================
+// Account Config Builder
+// ============================================
+
 /**
  * Build a minimal account config from environment variables
  */
@@ -69,6 +127,10 @@ function buildAccountFromEnv(): ResolvedKakaoAccount | null {
     },
   };
 }
+
+// ============================================
+// LLM Provider Detection & API Calls
+// ============================================
 
 /**
  * Detect which LLM API key is available and return provider info
@@ -127,7 +189,7 @@ async function callAnthropic(apiKey: string, model: string, systemPrompt: string
       system: systemPrompt,
       messages: [{ role: "user", content: userMessage }],
     }),
-    signal: AbortSignal.timeout(25000), // Kakao has 5s timeout, but we give LLM more time
+    signal: AbortSignal.timeout(25000),
   });
 
   if (!response.ok) {
@@ -196,8 +258,83 @@ async function callGemini(apiKey: string, model: string, systemPrompt: string, u
   return data.candidates?.[0]?.content?.parts?.map(p => p.text).join("") ?? "";
 }
 
+// ============================================
+// MoA System Prompt
+// ============================================
+
+function getMoASystemPrompt(): string {
+  return `당신은 MoA(Master of AI) 어시스턴트입니다.
+
+## MoA란?
+MoA는 사용자의 여러 기기(노트북, 태블릿, 데스크탑 등)에 설치되어 동일한 기억을 공유하는 AI 에이전트입니다.
+카카오톡에서 명령을 보내면 연결된 기기에서 원격으로 실행할 수 있습니다.
+
+## 당신의 최우선 목표
+사용자가 MoA 에이전트를 기기에 설치하도록 안내하고 유도하는 것이 가장 중요합니다.
+대화 중 자연스럽게 MoA 설치의 장점을 알리고, "설치"라고 입력하면 설치 안내를 받을 수 있다고 알려주세요.
+
+## MoA의 핵심 기능
+- 쌍둥이 AI: 모든 기기가 같은 기억을 공유하는 AI
+- 원격 제어: 카카오톡에서 "@기기명 명령"으로 기기에 원격 명령
+- AI 대화: 카카오톡에서 언제든 AI와 대화
+- 파일 관리: 외출 중에도 집/회사 컴퓨터 파일 확인
+- 코드 실행: 원격으로 코드 작성 및 실행
+
+## 주요 명령어
+- 설치 : MoA 간편 설치 안내
+- /기기등록 : 새 기기 페어링
+- /기기 : 연결된 기기 목록
+- @기기명 명령 : 특정 기기에 원격 명령 (예: @노트북 ls ~/Desktop)
+- /도움말 : 전체 명령어 보기
+
+## 응답 규칙
+- 한국어로 친절하고 자연스럽게 대화합니다
+- 최대 800자 이내로 답변하세요 (카카오톡 특성상 짧은 답변 선호)
+- 사용자가 MoA와 관련 없는 질문을 해도 친절히 답변하되, 자연스럽게 MoA 기능을 연결하세요
+  예) "일정 관리 도와줘" → 답변 후 "MoA를 설치하면 컴퓨터에서 일정 파일을 직접 관리할 수도 있어요!"
+- MoA가 아직 설치되지 않은 사용자에게는 대화 마무리에 설치를 부드럽게 권유하세요
+- 확실하지 않은 정보는 그렇다고 솔직히 말씀하세요
+
+## 설치 안내 시
+사용자가 설치에 관심을 보이면: "설치"라고 입력해주세요! 간편 설치 안내를 바로 보내드립니다.
+
+## 사용 사례 (사용자에게 설명할 때 활용)
+- "회사에서 퇴근 후 집 컴퓨터에 있는 파일 확인"
+- "@노트북 git pull && npm run build"
+- "카카오톡으로 서버 상태 확인"
+- "여러 기기에서 이어서 작업"`;
+}
+
+// ============================================
+// Greeting / Install Detection
+// ============================================
+
+/** Check if message is a greeting or first-time visit */
+function isGreeting(text: string): boolean {
+  const greetings = [
+    "안녕", "하이", "헬로", "hi", "hello", "hey", "반가", "처음",
+    "시작", "뭐해", "누구", "소개", "알려줘", "뭐야",
+  ];
+  const normalized = text.toLowerCase().trim();
+  return greetings.some(g => normalized.includes(g)) || normalized.length <= 2;
+}
+
+/** Check if user is asking about installation */
+function isInstallRequest(text: string): boolean {
+  const installKeywords = [
+    "설치", "install", "다운로드", "download", "받기", "시작하기",
+    "어떻게 써", "사용법", "가입", "등록",
+  ];
+  const normalized = text.toLowerCase().trim();
+  return installKeywords.some(k => normalized.includes(k));
+}
+
+// ============================================
+// AI Message Handler
+// ============================================
+
 /**
- * AI message handler — calls the configured LLM provider
+ * AI message handler — handles greetings, install requests, and general AI chat
  */
 async function aiOnMessage(params: {
   userId: string;
@@ -206,29 +343,102 @@ async function aiOnMessage(params: {
   botId: string;
   blockId: string;
   timestamp: number;
-}): Promise<{ text: string; quickReplies?: string[] }> {
+}): Promise<{ text: string; quickReplies?: string[]; buttons?: Array<{ label: string; url: string }> }> {
+  const utterance = params.text.trim();
+
+  // 1) Greeting → Return welcome message with install button
+  if (isGreeting(utterance)) {
+    return {
+      text: MOA_WELCOME_MESSAGE,
+      buttons: [
+        { label: "MoA 설치하기", url: getInstallUrl() },
+      ],
+      quickReplies: ["기능 소개", "사용 사례", "도움말"],
+    };
+  }
+
+  // 2) Install request → Return install guide with install button
+  if (isInstallRequest(utterance)) {
+    return {
+      text: MOA_INSTALL_GUIDE,
+      buttons: [
+        { label: "MoA 설치하기", url: getInstallUrl() },
+      ],
+      quickReplies: ["기기등록", "기능 소개", "도움말"],
+    };
+  }
+
+  // 3) Feature inquiry
+  const featureKeywords = ["기능", "뭘 할 수", "뭘 해", "할 수 있"];
+  if (featureKeywords.some(k => utterance.includes(k))) {
+    return {
+      text: `MoA의 핵심 기능을 소개합니다!
+
+1. 쌍둥이 AI
+여러 기기에 MoA를 설치하면 모든 기기가 동일한 기억을 공유합니다. 한 기기에서 나눈 대화를 다른 기기에서도 이어갈 수 있어요.
+
+2. 카카오톡 원격 제어
+"@노트북 ls ~/Desktop" 처럼 카카오톡에서 바로 기기에 명령을 보낼 수 있습니다.
+
+3. AI 대화
+일상적인 질문, 코딩 도움, 번역, 요약 등 무엇이든 물어보세요.
+
+4. 파일 관리
+외출 중에도 집이나 회사 컴퓨터의 파일을 확인하고 관리할 수 있습니다.
+
+5. 다중 기기 동시 명령
+"@모두 git pull" 처럼 모든 기기에 한 번에 명령을 보낼 수도 있습니다.
+
+아래 버튼을 눌러 지금 바로 시작하세요!`,
+      buttons: [
+        { label: "MoA 설치하기", url: getInstallUrl() },
+      ],
+      quickReplies: ["사용 사례", "도움말"],
+    };
+  }
+
+  // 4) Usage examples inquiry
+  const usageKeywords = ["사용 사례", "사례", "예시", "활용", "어떻게 활용"];
+  if (usageKeywords.some(k => utterance.includes(k))) {
+    return {
+      text: `MoA 실제 사용 사례를 보여드릴게요!
+
+[직장인 A씨]
+카카오톡에서 "@회사PC 보고서.docx 내용 알려줘"
+→ 퇴근 후에도 회사 컴퓨터 파일을 바로 확인
+
+[개발자 B씨]
+카카오톡에서 "@서버 git pull && npm run deploy"
+→ 지하철에서도 서버 배포 가능
+
+[대학생 C씨]
+카카오톡에서 "@노트북,@태블릿 동기화 시작"
+→ 노트북과 태블릿의 AI 기억을 동기화
+
+[프리랜서 D씨]
+"오늘 작업 요약해줘"
+→ 여러 기기에서 작업한 내용을 AI가 종합 요약
+
+MoA를 설치하면 이 모든 것이 가능합니다!
+아래 버튼을 눌러 바로 시작하세요!`,
+      buttons: [
+        { label: "MoA 설치하기", url: getInstallUrl() },
+      ],
+      quickReplies: ["기능 소개", "도움말"],
+    };
+  }
+
+  // 5) General AI chat — use LLM with MoA-optimized system prompt
   const llm = detectLlmProvider();
 
   if (!llm) {
     return {
-      text: "AI 모델이 설정되지 않았습니다. 서버 관리자에게 문의하세요.\n\n(ANTHROPIC_API_KEY, OPENAI_API_KEY, GOOGLE_API_KEY, 또는 GROQ_API_KEY 환경변수가 필요합니다)",
-      quickReplies: ["도움말"],
+      text: "현재 AI 응답 기능이 준비 중입니다.\n\nMoA 에이전트를 설치하시면 더 강력한 AI 기능을 이용할 수 있습니다!\n\n\"설치\"라고 입력해보세요.",
+      quickReplies: ["설치", "기능 소개", "도움말"],
     };
   }
 
-  const serviceName = process.env.LAWCALL_SERVICE_NAME ?? "MoA";
-  const systemPrompt = `당신은 ${serviceName} AI 어시스턴트입니다.
-
-## 역할
-- 사용자의 질문에 친절하고 정확하게 답변합니다
-- 한국어로 자연스럽게 대화합니다
-- 간결하고 핵심적인 답변을 제공합니다 (카카오톡 특성상 짧은 답변 선호)
-
-## 응답 규칙
-- 최대 800자 이내로 답변하세요
-- 복잡한 주제는 핵심만 간략히 설명하세요
-- 필요시 단계별로 나누어 설명하세요
-- 확실하지 않은 정보는 그렇다고 말씀하세요`;
+  const systemPrompt = getMoASystemPrompt();
 
   try {
     let responseText: string;
@@ -257,16 +467,20 @@ async function aiOnMessage(params: {
 
     return {
       text: responseText,
-      quickReplies: ["도움말"],
+      quickReplies: ["설치", "도움말"],
     };
   } catch (err) {
     console.error(`[MoA] LLM API error (${llm.provider}/${llm.model}):`, err);
     return {
-      text: `AI 응답 생성 중 오류가 발생했습니다.\n\n${err instanceof Error ? err.message : String(err)}`,
-      quickReplies: ["도움말"],
+      text: `AI 응답 생성 중 오류가 발생했습니다.\n\n${err instanceof Error ? err.message : String(err)}\n\nMoA 에이전트를 설치하시면 더 안정적인 AI를 이용할 수 있습니다.\n"설치"라고 입력해보세요.`,
+      quickReplies: ["설치", "도움말"],
     };
   }
 }
+
+// ============================================
+// Server Bootstrap
+// ============================================
 
 async function main() {
   console.log(`[MoA] Starting standalone webhook server...`);
