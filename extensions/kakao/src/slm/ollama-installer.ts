@@ -55,20 +55,21 @@ export interface OllamaStatus {
 // ============================================
 
 // MoA SLM Models (2-Tier Architecture)
+// Q4_K_M quantization: optimal balance of quality and size
 export const SLM_MODELS: SLMModel[] = [
   {
     name: "moa-core",
-    ollamaName: "qwen3:0.6b",
+    ollamaName: "qwen3:0.6b-q4_K_M",  // Q4 quantized (~400MB)
     tier: 1,
-    sizeGB: 0.5,
+    sizeGB: 0.4,
     description: "Agent core - routing, intent classification, tool calling",
     alwaysLoaded: true,
   },
   {
     name: "moa-advanced",
-    ollamaName: "qwen3:4b",
+    ollamaName: "qwen3:4b-q4_K_M",  // Q4 quantized (~2.6GB)
     tier: 2,
-    sizeGB: 3.5,
+    sizeGB: 2.6,
     description: "Advanced processing - offline deep reasoning",
     alwaysLoaded: false,
   },

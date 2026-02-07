@@ -96,20 +96,20 @@ function Download-Models {
     Write-Host "[3/3] MoA SLM 모델 다운로드 중..." -ForegroundColor Yellow
     Write-Host ""
 
-    # Tier 1: Qwen3-0.6B
-    Write-Host "Tier 1: Qwen3-0.6B (에이전트 코어)" -ForegroundColor Blue
+    # Tier 1: Qwen3-0.6B - Q4_K_M quantized
+    Write-Host "Tier 1: Qwen3-0.6B-Q4 (에이전트 코어)" -ForegroundColor Blue
     Write-Host "  - 역할: 라우팅, 의도분류, 도구호출, 기본응답"
-    Write-Host "  - 크기: ~500MB (Q4 양자화)"
+    Write-Host "  - 크기: ~400MB (Q4_K_M 양자화)"
     Write-Host ""
 
     $models = ollama list 2>&1
-    if ($models -match "qwen3:0.6b") {
-        Write-Host "✓ qwen3:0.6b 이미 설치됨" -ForegroundColor Green
+    if ($models -match "qwen3:0.6b-q4_K_M") {
+        Write-Host "✓ qwen3:0.6b-q4_K_M 이미 설치됨" -ForegroundColor Green
     }
     else {
-        Write-Host "다운로드 중... (약 400MB)"
-        ollama pull qwen3:0.6b
-        Write-Host "✓ qwen3:0.6b 설치 완료" -ForegroundColor Green
+        Write-Host "다운로드 중... (약 400MB, Q4_K_M 양자화)"
+        ollama pull qwen3:0.6b-q4_K_M
+        Write-Host "✓ qwen3:0.6b-q4_K_M 설치 완료" -ForegroundColor Green
     }
 
     Write-Host ""
@@ -120,21 +120,22 @@ function Download-Models {
     if ($totalMemGB -lt 6) {
         Write-Host "⚠ 메모리 부족 (${totalMemGB}GB) - Tier 2 건너뜀" -ForegroundColor Yellow
         Write-Host "  Tier 2는 6GB 이상의 RAM이 필요합니다."
+        Write-Host "  나중에 'ollama pull qwen3:4b-q4_K_M'로 설치할 수 있습니다."
     }
     else {
-        # Tier 2: Qwen3-4B
-        Write-Host "Tier 2: Qwen3-4B (고급 처리)" -ForegroundColor Blue
+        # Tier 2: Qwen3-4B - Q4_K_M quantized
+        Write-Host "Tier 2: Qwen3-4B-Q4 (고급 처리)" -ForegroundColor Blue
         Write-Host "  - 역할: 오프라인 심층추론, 복잡한 대화"
-        Write-Host "  - 크기: ~3.5GB (Q4 양자화)"
+        Write-Host "  - 크기: ~2.6GB (Q4_K_M 양자화)"
         Write-Host ""
 
-        if ($models -match "qwen3:4b") {
-            Write-Host "✓ qwen3:4b 이미 설치됨" -ForegroundColor Green
+        if ($models -match "qwen3:4b-q4_K_M") {
+            Write-Host "✓ qwen3:4b-q4_K_M 이미 설치됨" -ForegroundColor Green
         }
         else {
-            Write-Host "다운로드 중... (약 2.6GB)"
-            ollama pull qwen3:4b
-            Write-Host "✓ qwen3:4b 설치 완료" -ForegroundColor Green
+            Write-Host "다운로드 중... (약 2.6GB, Q4_K_M 양자화)"
+            ollama pull qwen3:4b-q4_K_M
+            Write-Host "✓ qwen3:4b-q4_K_M 설치 완료" -ForegroundColor Green
         }
     }
 }
@@ -152,8 +153,8 @@ function Verify-Installation {
     ollama list
     Write-Host ""
 
-    Write-Host "빠른 테스트 (qwen3:0.6b)..."
-    $response = ollama run qwen3:0.6b "Say 'MoA ready' in Korean" 2>&1 | Select-Object -First 1
+    Write-Host "빠른 테스트 (qwen3:0.6b-q4_K_M)..."
+    $response = ollama run qwen3:0.6b-q4_K_M "Say 'MoA ready' in Korean" 2>&1 | Select-Object -First 1
 
     if ($response) {
         Write-Host "✓ 테스트 성공: $response" -ForegroundColor Green
@@ -185,12 +186,12 @@ function Main {
     Write-Host "================================"
     Write-Host "🎉 MoA 로컬 AI 설치 완료!" -ForegroundColor Green
     Write-Host ""
-    Write-Host "설치된 모델:"
-    Write-Host "  • Tier 1: qwen3:0.6b (~500MB) - 항시 실행"
-    Write-Host "  • Tier 2: qwen3:4b (~3.5GB) - 온디맨드"
+    Write-Host "설치된 모델 (Q4_K_M 양자화):"
+    Write-Host "  • Tier 1: qwen3:0.6b-q4_K_M (~400MB) - 항시 실행"
+    Write-Host "  • Tier 2: qwen3:4b-q4_K_M (~2.6GB) - 온디맨드"
     Write-Host ""
     Write-Host "수동 테스트:"
-    Write-Host "  ollama run qwen3:0.6b '안녕하세요'"
+    Write-Host "  ollama run qwen3:0.6b-q4_K_M '안녕하세요'"
     Write-Host ""
 }
 
