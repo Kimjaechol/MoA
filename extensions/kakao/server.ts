@@ -19,7 +19,6 @@ import { handleRelayRequest } from "./src/relay/index.js";
 import { handleInstallRequest } from "./src/installer/index.js";
 import { handlePaymentRequest } from "./src/payment/index.js";
 import { isSupabaseConfigured } from "./src/supabase.js";
-import { generateSystemPrompt } from "./src/lawcall-router.js";
 
 const PORT = parseInt(process.env.PORT ?? process.env.KAKAO_WEBHOOK_PORT ?? "8788", 10);
 const HOST = process.env.HOST ?? "0.0.0.0";
@@ -217,7 +216,19 @@ async function aiOnMessage(params: {
     };
   }
 
-  const systemPrompt = generateSystemPrompt();
+  const serviceName = process.env.LAWCALL_SERVICE_NAME ?? "MoA";
+  const systemPrompt = `당신은 ${serviceName} AI 어시스턴트입니다.
+
+## 역할
+- 사용자의 질문에 친절하고 정확하게 답변합니다
+- 한국어로 자연스럽게 대화합니다
+- 간결하고 핵심적인 답변을 제공합니다 (카카오톡 특성상 짧은 답변 선호)
+
+## 응답 규칙
+- 최대 800자 이내로 답변하세요
+- 복잡한 주제는 핵심만 간략히 설명하세요
+- 필요시 단계별로 나누어 설명하세요
+- 확실하지 않은 정보는 그렇다고 말씀하세요`;
 
   try {
     let responseText: string;
