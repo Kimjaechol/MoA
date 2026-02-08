@@ -61,6 +61,9 @@ export {
 // 웹 설치 페이지
 export { generateInstallPage, handleInstallRequest } from "./install-page.js";
 
+// 설치 스크립트 (동적 생성)
+export { getInstallScript } from "./install-scripts.js";
+
 // 모바일 앱 설정
 export {
   ANDROID_CONFIG,

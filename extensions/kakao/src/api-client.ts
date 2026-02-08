@@ -128,6 +128,8 @@ export class KakaoApiClient {
           } as KakaoSimpleText,
           {
             basicCard: {
+              title: buttonLabel.slice(0, 14),
+              description: " ",
               buttons: [
                 {
                   label: buttonLabel.slice(0, 14),

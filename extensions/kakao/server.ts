@@ -72,12 +72,8 @@ function getInstallUrl(): string {
   if (railwayDomain) {
     return `https://${railwayDomain}/install`;
   }
-  // Fallback: construct from PORT env (Railway also sets PORT)
-  const port = process.env.PORT;
-  if (port) {
-    return `https://openclaw-production-2e2e.up.railway.app/install`;
-  }
-  return `http://localhost:${PORT}/install`;
+  // Fallback: use the MoA domain
+  return `https://moa.lawith.kr/install`;
 }
 
 // ============================================

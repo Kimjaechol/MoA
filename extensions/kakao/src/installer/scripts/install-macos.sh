@@ -2,8 +2,8 @@
 # MoA (Master of AI) macOS Installer
 # Shell script for one-click installation
 #
-# Usage: curl -fsSL https://moa.example.com/install.sh | bash
-# With pairing code: curl -fsSL https://moa.example.com/install.sh | bash -s -- --code ABC123
+# Usage: curl -fsSL https://moa.lawith.kr/install.sh | bash
+# With pairing code: curl -fsSL https://moa.lawith.kr/install.sh | bash -s -- --code ABC123
 
 set -e
 
@@ -12,8 +12,8 @@ set -e
 # ============================================
 
 MOA_VERSION="1.0.0"
-MOA_DOWNLOAD_URL="https://github.com/example/moa/releases/download/v${MOA_VERSION}"
-MOA_API_URL="https://moa.example.com/api/relay"
+MOA_DOWNLOAD_URL="https://github.com/Kimjaechol/MoA/releases/download/v${MOA_VERSION}"
+MOA_API_URL="${MOA_API_URL:-https://moa.lawith.kr/api/relay}"
 INSTALL_DIR="${HOME}/.moa"
 CONFIG_DIR="${HOME}/.config/moa"
 PAIRING_CODE=""

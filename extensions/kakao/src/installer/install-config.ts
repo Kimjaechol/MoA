@@ -28,7 +28,7 @@ function getBaseUrl(): string {
   if (railwayDomain) {
     return `https://${railwayDomain}`;
   }
-  return "https://openclaw-production-2e2e.up.railway.app";
+  return "https://moa.lawith.kr";
 }
 
 export const DEFAULT_INSTALLER_CONFIG: InstallerConfig = {
@@ -62,7 +62,6 @@ function buildPlatformInstallers(): PlatformInstaller[] {
       displayName: "Windows",
       icon: "🪟",
       installCommand: `powershell -c "irm ${base}/install.ps1 | iex"`,
-      downloadUrl: `${base}/download/MoA-Setup.exe`,
       description: "Windows 10/11 64-bit",
     },
     {
@@ -70,7 +69,6 @@ function buildPlatformInstallers(): PlatformInstaller[] {
       displayName: "macOS",
       icon: "🍎",
       installCommand: `curl -fsSL ${base}/install.sh | bash`,
-      downloadUrl: `${base}/download/MoA.dmg`,
       description: "macOS 12+ (Apple Silicon / Intel)",
     },
     {
@@ -84,16 +82,15 @@ function buildPlatformInstallers(): PlatformInstaller[] {
       platform: "android",
       displayName: "Android",
       icon: "🤖",
-      downloadUrl: `${base}/download/MoA.apk`,
       appStoreUrl: "https://play.google.com/store/apps/details?id=com.lawith.moa",
-      description: "Android 10+",
+      description: "Android 10+ (출시 예정)",
     },
     {
       platform: "ios",
       displayName: "iOS",
       icon: "📱",
       appStoreUrl: "https://apps.apple.com/app/moa-ai-assistant/id0000000000",
-      description: "iOS 15+ (iPhone, iPad)",
+      description: "iOS 15+ (출시 예정)",
     },
   ];
 }
