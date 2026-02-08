@@ -19,26 +19,28 @@ export interface InstallerConfig {
   monthlyPrice: number;
 }
 
-/** Base URL for downloads/install scripts — auto-detected from Railway or set via MOA_BASE_URL */
-function getBaseUrl(): string {
-  if (process.env.MOA_BASE_URL) {
-    return process.env.MOA_BASE_URL;
-  }
-  const railwayDomain = process.env.RAILWAY_PUBLIC_DOMAIN;
-  if (railwayDomain) {
-    return `https://${railwayDomain}`;
-  }
-  return "https://openclaw-production-2e2e.up.railway.app";
-}
+/**
+ * Public-facing base URL.
+ *
+ * Always use moa.lawith.kr — Vercel proxies /install*, /install.sh,
+ * /install.ps1, /api/* to the Railway backend via rewrites.
+ * This keeps a single consistent domain for all user touchpoints.
+ */
+const MOA_PUBLIC_URL = "https://moa.lawith.kr";
 
 export const DEFAULT_INSTALLER_CONFIG: InstallerConfig = {
-  serverUrl: process.env.MOA_SERVER_URL ?? getBaseUrl(),
-  installPageUrl: process.env.MOA_INSTALL_URL ?? `${getBaseUrl()}/install`,
+  serverUrl: MOA_PUBLIC_URL,
+  installPageUrl: `${MOA_PUBLIC_URL}/install`,
   version: "1.0.0-beta",
   isBetaPeriod: true,
   freeTrialDays: 30,
   monthlyPrice: 9900, // 9,900원/월
 };
+
+/** Base URL used for install commands shown to users */
+function getBaseUrl(): string {
+  return MOA_PUBLIC_URL;
+}
 
 /**
  * 플랫폼별 설치 방법
@@ -62,7 +64,6 @@ function buildPlatformInstallers(): PlatformInstaller[] {
       displayName: "Windows",
       icon: "🪟",
       installCommand: `powershell -c "irm ${base}/install.ps1 | iex"`,
-      downloadUrl: `${base}/download/MoA-Setup.exe`,
       description: "Windows 10/11 64-bit",
     },
     {
@@ -70,7 +71,6 @@ function buildPlatformInstallers(): PlatformInstaller[] {
       displayName: "macOS",
       icon: "🍎",
       installCommand: `curl -fsSL ${base}/install.sh | bash`,
-      downloadUrl: `${base}/download/MoA.dmg`,
       description: "macOS 12+ (Apple Silicon / Intel)",
     },
     {
@@ -84,16 +84,15 @@ function buildPlatformInstallers(): PlatformInstaller[] {
       platform: "android",
       displayName: "Android",
       icon: "🤖",
-      downloadUrl: `${base}/download/MoA.apk`,
       appStoreUrl: "https://play.google.com/store/apps/details?id=com.lawith.moa",
-      description: "Android 10+",
+      description: "Android 10+ (출시 예정)",
     },
     {
       platform: "ios",
       displayName: "iOS",
       icon: "📱",
       appStoreUrl: "https://apps.apple.com/app/moa-ai-assistant/id0000000000",
-      description: "iOS 15+ (iPhone, iPad)",
+      description: "iOS 15+ (출시 예정)",
     },
   ];
 }

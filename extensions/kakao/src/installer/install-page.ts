@@ -11,6 +11,7 @@ import {
   getInstallerForPlatform,
   PLATFORM_INSTALLERS,
 } from "./install-config.js";
+import { getInstallScript } from "./install-scripts.js";
 
 /**
  * 설치 페이지 HTML 생성
@@ -323,8 +324,35 @@ export function generateInstallPage(userAgent: string, pairingCode?: string): st
 /**
  * 설치 요청 핸들러
  */
+/**
+ * Serve install scripts (/install.sh, /install.ps1) and the install HTML page (/install)
+ */
 export function handleInstallRequest(req: IncomingMessage, res: ServerResponse): boolean {
   const url = new URL(req.url ?? "/", `http://${req.headers.host}`);
+
+  // Serve macOS/Linux install script at /install.sh
+  if (url.pathname === "/install.sh") {
+    const hostHeader = Array.isArray(req.headers.host) ? req.headers.host[0] : req.headers.host;
+    const script = getInstallScript("unix", hostHeader);
+    res.writeHead(200, {
+      "Content-Type": "text/plain; charset=utf-8",
+      "Cache-Control": "public, max-age=300",
+    });
+    res.end(script);
+    return true;
+  }
+
+  // Serve Windows install script at /install.ps1
+  if (url.pathname === "/install.ps1") {
+    const hostHeader = Array.isArray(req.headers.host) ? req.headers.host[0] : req.headers.host;
+    const script = getInstallScript("windows", hostHeader);
+    res.writeHead(200, {
+      "Content-Type": "text/plain; charset=utf-8",
+      "Cache-Control": "public, max-age=300",
+    });
+    res.end(script);
+    return true;
+  }
 
   // /install 경로만 처리
   if (!url.pathname.startsWith("/install")) {
