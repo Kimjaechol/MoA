@@ -1,5 +1,5 @@
-import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { randomBytes } from "node:crypto";
+import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import type { KakaoIncomingMessage, KakaoSkillResponse, ResolvedKakaoAccount } from "./types.js";
 import { createKakaoApiClient } from "./api-client.js";
 // lawcall-router is available for legal consultation features when needed
@@ -10,14 +10,22 @@ import {
   postBillingDeduct,
   getCreditStatusMessage,
 } from "./billing-handler.js";
-import { handleSyncCommand, isSyncCommand, type SyncCommandContext } from "./sync/index.js";
-import { getSupabase, isSupabaseConfigured } from "./supabase.js";
+import {
+  // Installer & Subscription
+  DEFAULT_INSTALLER_CONFIG,
+  PLATFORM_INSTALLERS,
+  getUserSubscription,
+  formatSubscriptionStatus,
+  formatPlanComparison,
+  isBetaPeriod,
+} from "./installer/index.js";
 import {
   formatChannelList,
   formatToolList,
   parseBridgeCommand,
   type MoltbotAgentIntegration,
 } from "./moltbot/index.js";
+import { storeUserPhoneNumber } from "./proactive-messaging.js";
 import {
   generatePairingCode,
   listUserDevices,
@@ -42,18 +50,8 @@ import {
   formatDeviceStatusDetail,
   getDeviceStatusById,
 } from "./relay/index.js";
-import {
-  // Installer & Subscription
-  DEFAULT_INSTALLER_CONFIG,
-  PLATFORM_INSTALLERS,
-  getUserSubscription,
-  formatSubscriptionStatus,
-  formatPlanComparison,
-  isBetaPeriod,
-} from "./installer/index.js";
-import {
-  storeUserPhoneNumber,
-} from "./proactive-messaging.js";
+import { getSupabase, isSupabaseConfigured } from "./supabase.js";
+import { handleSyncCommand, isSyncCommand, type SyncCommandContext } from "./sync/index.js";
 
 export interface KakaoWebhookOptions {
   account: ResolvedKakaoAccount;
@@ -69,7 +67,11 @@ export interface KakaoWebhookOptions {
     botId: string;
     blockId: string;
     timestamp: number;
-  }) => Promise<{ text: string; quickReplies?: string[]; buttons?: Array<{ label: string; url: string }> }>;
+  }) => Promise<{
+    text: string;
+    quickReplies?: string[];
+    buttons?: Array<{ label: string; url: string }>;
+  }>;
   onError?: (error: Error) => void;
   logger?: {
     info: (msg: string) => void;
@@ -158,9 +160,7 @@ export async function startKakaoWebhook(opts: KakaoWebhookOptions): Promise<{
       const allowFrom = account.config.allowFrom ?? [];
       if (!allowFrom.includes(userId)) {
         logger.warn(`[kakao] User ${userId.slice(0, 8)}... not in allowlist`);
-        const response = apiClient.buildSkillResponse(
-          "죄송합니다. 허용되지 않은 사용자입니다.",
-        );
+        const response = apiClient.buildSkillResponse("죄송합니다. 허용되지 않은 사용자입니다.");
         res.writeHead(200, { "Content-Type": "application/json" });
         res.end(JSON.stringify(response));
         return;
@@ -168,9 +168,7 @@ export async function startKakaoWebhook(opts: KakaoWebhookOptions): Promise<{
     }
 
     if (account.config.dmPolicy === "disabled") {
-      const response = apiClient.buildSkillResponse(
-        "현재 메시지 수신이 비활성화되어 있습니다.",
-      );
+      const response = apiClient.buildSkillResponse("현재 메시지 수신이 비활성화되어 있습니다.");
       res.writeHead(200, { "Content-Type": "application/json" });
       res.end(JSON.stringify(response));
       return;
@@ -287,7 +285,9 @@ export async function startKakaoWebhook(opts: KakaoWebhookOptions): Promise<{
           );
           res.writeHead(200, { "Content-Type": "application/json" });
           res.end(JSON.stringify(response));
-          logger.info(`[kakao] Billing check failed for ${userId.slice(0, 8)}...: insufficient credits`);
+          logger.info(
+            `[kakao] Billing check failed for ${userId.slice(0, 8)}...: insufficient credits`,
+          );
           return;
         }
         usedPlatformKey = !billingCheck.billingCheck?.useCustomKey;
@@ -320,7 +320,11 @@ export async function startKakaoWebhook(opts: KakaoWebhookOptions): Promise<{
         );
         creditsUsed = billingResult.creditsUsed;
 
-        const creditMessage = await getCreditStatusMessage(userId, billingResult.creditsUsed, usedPlatformKey);
+        const creditMessage = await getCreditStatusMessage(
+          userId,
+          billingResult.creditsUsed,
+          usedPlatformKey,
+        );
         finalText = result.text + creditMessage;
       }
 
@@ -467,7 +471,28 @@ export function extractKakaoUserInfo(request: KakaoIncomingMessage): {
 
 interface MoltbotCommand {
   isCommand: boolean;
-  type?: "tools" | "channels" | "bridge" | "status" | "memory" | "help" | "install" | "subscribe" | "subscribe_status" | "device_status" | "device_detail" | "relay" | "relay_multi" | "relay_register" | "relay_devices" | "relay_remove" | "relay_status" | "relay_confirm" | "relay_reject" | "relay_result" | "phone_register";
+  type?:
+    | "tools"
+    | "channels"
+    | "bridge"
+    | "status"
+    | "memory"
+    | "help"
+    | "install"
+    | "subscribe"
+    | "subscribe_status"
+    | "device_status"
+    | "device_detail"
+    | "relay"
+    | "relay_multi"
+    | "relay_register"
+    | "relay_devices"
+    | "relay_remove"
+    | "relay_status"
+    | "relay_confirm"
+    | "relay_reject"
+    | "relay_result"
+    | "phone_register";
   args?: string[];
   bridgeCmd?: ReturnType<typeof parseBridgeCommand>;
   /** For relay commands: target device name */
@@ -647,7 +672,15 @@ async function handleMoltbotCommand(
   switch (cmd.type) {
     case "tools": {
       const category = cmd.args?.[0];
-      const validCategories = ["communication", "information", "execution", "session", "memory", "media", "channel"];
+      const validCategories = [
+        "communication",
+        "information",
+        "execution",
+        "session",
+        "memory",
+        "media",
+        "channel",
+      ];
       const categoryMap: Record<string, string> = {
         통신: "communication",
         정보: "information",
@@ -658,9 +691,7 @@ async function handleMoltbotCommand(
         채널: "channel",
       };
 
-      const normalizedCategory = category
-        ? categoryMap[category] ?? category
-        : undefined;
+      const normalizedCategory = category ? (categoryMap[category] ?? category) : undefined;
 
       if (normalizedCategory && !validCategories.includes(normalizedCategory)) {
         return {
@@ -1022,7 +1053,7 @@ ${PLATFORM_INSTALLERS.map((p) => `${p.icon} ${p.displayName}`).join(" | ")}
       // Find device by name
       const allDevices = await getDetailedDeviceStatus(detailUser.id);
       const device = allDevices.find(
-        (d) => d.deviceName.toLowerCase() === deviceName.toLowerCase()
+        (d) => d.deviceName.toLowerCase() === deviceName.toLowerCase(),
       );
 
       if (!device) {
@@ -1063,7 +1094,9 @@ ${PLATFORM_INSTALLERS.map((p) => `${p.icon} ${p.displayName}`).join(" | ")}
         .single();
 
       if (!relayUser) {
-        return { text: "사용자 정보를 찾을 수 없습니다. 먼저 메시지를 보내 계정을 활성화해주세요." };
+        return {
+          text: "사용자 정보를 찾을 수 없습니다. 먼저 메시지를 보내 계정을 활성화해주세요.",
+        };
       }
 
       const result = await sendRelayCommand({
@@ -1073,14 +1106,21 @@ ${PLATFORM_INSTALLERS.map((p) => `${p.icon} ${p.displayName}`).join(" | ")}
       });
 
       if (!result.success) {
-        return { text: result.error ?? "명령 전송에 실패했습니다.", quickReplies: ["기기", "기기등록"] };
+        return {
+          text: result.error ?? "명령 전송에 실패했습니다.",
+          quickReplies: ["기기", "기기등록"],
+        };
       }
 
       // If the command requires confirmation (dangerous command detected)
       if (result.confirmationRequired && result.safetyWarning) {
         return {
           text: result.safetyWarning,
-          quickReplies: [`확인 ${result.commandId?.slice(0, 8)}`, `거부 ${result.commandId?.slice(0, 8)}`, "기기"],
+          quickReplies: [
+            `확인 ${result.commandId?.slice(0, 8)}`,
+            `거부 ${result.commandId?.slice(0, 8)}`,
+            "기기",
+          ],
         };
       }
 
@@ -1109,7 +1149,9 @@ ${PLATFORM_INSTALLERS.map((p) => `${p.icon} ${p.displayName}`).join(" | ")}
         .single();
 
       if (!multiUser) {
-        return { text: "사용자 정보를 찾을 수 없습니다. 먼저 메시지를 보내 계정을 활성화해주세요." };
+        return {
+          text: "사용자 정보를 찾을 수 없습니다. 먼저 메시지를 보내 계정을 활성화해주세요.",
+        };
       }
 
       const multiResult = await sendMultiDeviceCommand({
@@ -1179,7 +1221,10 @@ ${PLATFORM_INSTALLERS.map((p) => `${p.icon} ${p.displayName}`).join(" | ")}
         .single();
 
       if (!devUser) {
-        return { text: "등록된 기기가 없습니다. /기기등록 명령으로 먼저 기기를 등록해주세요.", quickReplies: ["기기등록"] };
+        return {
+          text: "등록된 기기가 없습니다. /기기등록 명령으로 먼저 기기를 등록해주세요.",
+          quickReplies: ["기기등록"],
+        };
       }
 
       const twinStatus = await getTwinMoAStatus(devUser.id);
@@ -1255,10 +1300,17 @@ ${PLATFORM_INSTALLERS.map((p) => `${p.icon} ${p.displayName}`).join(" | ")}
       if (recentCmds.length > 0) {
         text += `**최근 명령:**\n`;
         for (const c of recentCmds) {
-          const statusIcon = {
-            pending: "⏳", awaiting_confirmation: "🔐", delivered: "📤", executing: "⚙️",
-            completed: "✅", failed: "❌", expired: "⏰", cancelled: "🚫",
-          }[c.status] ?? "❓";
+          const statusIcon =
+            {
+              pending: "⏳",
+              awaiting_confirmation: "🔐",
+              delivered: "📤",
+              executing: "⚙️",
+              completed: "✅",
+              failed: "❌",
+              expired: "⏰",
+              cancelled: "🚫",
+            }[c.status] ?? "❓";
           const preview = c.commandPreview ? ` \`${c.commandPreview.slice(0, 30)}\`` : "";
           const riskBadge = c.riskLevel === "high" ? " ⚠️" : "";
           text += `${statusIcon}${riskBadge} ${c.deviceName}:${preview} ${c.summary?.slice(0, 30) ?? c.status} (${formatTimeAgo(c.createdAt)})\n`;
@@ -1283,7 +1335,9 @@ ${PLATFORM_INSTALLERS.map((p) => `${p.icon} ${p.displayName}`).join(" | ")}
       // /확인 <id_prefix> — approve a dangerous command
       const idPrefix = cmd.args?.[0];
       if (!idPrefix) {
-        return { text: "사용법: /확인 <명령ID>\n\n/원격상태에서 확인 대기 중인 명령의 ID를 확인하세요." };
+        return {
+          text: "사용법: /확인 <명령ID>\n\n/원격상태에서 확인 대기 중인 명령의 ID를 확인하세요.",
+        };
       }
 
       const supabase = getSupabase();
@@ -1371,16 +1425,24 @@ ${PLATFORM_INSTALLERS.map((p) => `${p.icon} ${p.displayName}`).join(" | ")}
       }
 
       const execLog = await getExecutionLog(cmds[0].id, resUser.id);
-      const statusLabel = {
-        pending: "⏳ 대기 중", awaiting_confirmation: "🔐 확인 대기", delivered: "📤 전달됨",
-        executing: "⚙️ 실행 중", completed: "✅ 완료", failed: "❌ 실패",
-        expired: "⏰ 만료", cancelled: "🚫 취소",
-      }[execLog.status] ?? execLog.status;
+      const statusLabel =
+        {
+          pending: "⏳ 대기 중",
+          awaiting_confirmation: "🔐 확인 대기",
+          delivered: "📤 전달됨",
+          executing: "⚙️ 실행 중",
+          completed: "✅ 완료",
+          failed: "❌ 실패",
+          expired: "⏰ 만료",
+          cancelled: "🚫 취소",
+        }[execLog.status] ?? execLog.status;
 
       let text = `📋 **명령 실행 상세**\n\n`;
       text += `상태: ${statusLabel}\n`;
       if (execLog.riskLevel) {
-        const riskLabel = { low: "🟢 안전", medium: "🟡 주의", high: "🟠 위험" }[execLog.riskLevel] ?? execLog.riskLevel;
+        const riskLabel =
+          { low: "🟢 안전", medium: "🟡 주의", high: "🟠 위험" }[execLog.riskLevel] ??
+          execLog.riskLevel;
         text += `위험도: ${riskLabel}\n`;
       }
       if (execLog.commandPreview) {
@@ -1428,17 +1490,14 @@ ${PLATFORM_INSTALLERS.map((p) => `${p.icon} ${p.displayName}`).join(" | ")}
       }
 
       const supabase = getSupabase();
-      // Ensure user exists
-      let phoneUserId: string;
+      // Ensure user exists before storing phone number
       const { data: existingPhoneUser } = await supabase
         .from("lawcall_users")
         .select("id")
         .eq("kakao_user_id", userId)
         .single();
 
-      if (existingPhoneUser) {
-        phoneUserId = existingPhoneUser.id;
-      } else {
+      if (!existingPhoneUser) {
         const { data: newPhoneUser } = await supabase
           .from("lawcall_users")
           .insert({ kakao_user_id: userId })
@@ -1447,7 +1506,6 @@ ${PLATFORM_INSTALLERS.map((p) => `${p.icon} ${p.displayName}`).join(" | ")}
         if (!newPhoneUser) {
           return { text: "사용자 등록에 실패했습니다." };
         }
-        phoneUserId = newPhoneUser.id;
       }
 
       const storeResult = await storeUserPhoneNumber(userId, phoneNumber);
@@ -1476,7 +1534,10 @@ ${PLATFORM_INSTALLERS.map((p) => `${p.icon} ${p.displayName}`).join(" | ")}
 // Relay Helpers
 // ============================================
 
-function formatPairingCodeResponse(code: string, expiresAt: Date): { text: string; quickReplies?: string[] } {
+function formatPairingCodeResponse(
+  code: string,
+  expiresAt: Date,
+): { text: string; quickReplies?: string[] } {
   const minutes = Math.ceil((expiresAt.getTime() - Date.now()) / 60000);
   return {
     text: `🔗 **기기 페어링 코드**\n\n코드: **${code}**\n만료: ${minutes}분 후\n\n등록할 기기에서 다음 명령을 실행하세요:\n\nmoltbot relay pair --code ${code} --name "기기이름"\n\n또는 API로 직접 등록:\nPOST /api/relay/pair\n{"code": "${code}", "device": {"deviceName": "기기이름", "deviceType": "laptop"}}\n\n💡 전화번호를 등록하면 기기 연결 시 알림을 받을 수 있습니다.\n예: /전화번호 010-1234-5678`,

@@ -14,10 +14,16 @@
  */
 
 import type { IncomingMessage, ServerResponse } from "node:http";
-import { authenticateDevice, completePairing, updateHeartbeat, listUserDevices, removeDevice } from "./device-auth.js";
-import { decryptPayload, appendExecutionLog } from "./relay-handler.js";
-import { getSupabase, isSupabaseConfigured } from "../supabase.js";
 import type { PairRequest, ResultSubmission, RelayCallbacks } from "./types.js";
+import { getSupabase, isSupabaseConfigured } from "../supabase.js";
+import {
+  authenticateDevice,
+  completePairing,
+  updateHeartbeat,
+  listUserDevices,
+  removeDevice,
+} from "./device-auth.js";
+import { decryptPayload, appendExecutionLog } from "./relay-handler.js";
 
 const LONG_POLL_TIMEOUT_MS = 30_000; // 30 seconds
 const POLL_INTERVAL_MS = 2_000; // Check every 2 seconds during long-poll
@@ -28,7 +34,11 @@ const POLL_INTERVAL_MS = 2_000; // Check every 2 seconds during long-poll
 export async function handleRelayRequest(
   req: IncomingMessage,
   res: ServerResponse,
-  logger: { info: (msg: string) => void; warn: (msg: string) => void; error: (msg: string) => void },
+  logger: {
+    info: (msg: string) => void;
+    warn: (msg: string) => void;
+    error: (msg: string) => void;
+  },
   callbacks?: RelayCallbacks,
 ): Promise<boolean> {
   const url = req.url ?? "";
@@ -112,7 +122,12 @@ export async function handleRelayRequest(
  * POST /api/relay/pair
  * Body: { code: string, device: DeviceRegistration }
  */
-async function handlePair(req: IncomingMessage, res: ServerResponse, logger: ReturnType<typeof console>, callbacks?: RelayCallbacks) {
+async function handlePair(
+  req: IncomingMessage,
+  res: ServerResponse,
+  logger: ReturnType<typeof console>,
+  callbacks?: RelayCallbacks,
+) {
   const body = await readBody<PairRequest>(req);
   if (!body?.code || !body?.device?.deviceName) {
     sendJSON(res, 400, { error: "code and device.deviceName are required" });
@@ -131,13 +146,15 @@ async function handlePair(req: IncomingMessage, res: ServerResponse, logger: Ret
 
     // Fire onPairingComplete callback (non-blocking)
     if (callbacks?.onPairingComplete && result.userId && result.deviceId) {
-      callbacks.onPairingComplete({
-        userId: result.userId,
-        deviceId: result.deviceId,
-        deviceName: body.device.deviceName,
-      }).catch?.((err: unknown) => {
-        logger.error(`[relay] onPairingComplete callback error: ${err}`);
-      });
+      callbacks
+        .onPairingComplete({
+          userId: result.userId,
+          deviceId: result.deviceId,
+          deviceName: body.device.deviceName,
+        })
+        .catch?.((err: unknown) => {
+          logger.error(`[relay] onPairingComplete callback error: ${err}`);
+        });
     }
   } else {
     sendJSON(res, 400, { success: false, error: result.error });
@@ -149,7 +166,11 @@ async function handlePair(req: IncomingMessage, res: ServerResponse, logger: Ret
  * Header: Authorization: Bearer <device_token>
  * Supports long-polling: waits up to 30s for pending commands.
  */
-async function handlePoll(req: IncomingMessage, res: ServerResponse, logger: ReturnType<typeof console>) {
+async function handlePoll(
+  req: IncomingMessage,
+  res: ServerResponse,
+  logger: ReturnType<typeof console>,
+) {
   const device = await authFromHeader(req);
   if (!device) {
     sendJSON(res, 401, { error: "Invalid or missing device token" });
@@ -199,7 +220,11 @@ async function handlePoll(req: IncomingMessage, res: ServerResponse, logger: Ret
  * Header: Authorization: Bearer <device_token>
  * Body: ResultSubmission
  */
-async function handleResult(req: IncomingMessage, res: ServerResponse, logger: ReturnType<typeof console>) {
+async function handleResult(
+  req: IncomingMessage,
+  res: ServerResponse,
+  logger: ReturnType<typeof console>,
+) {
   const device = await authFromHeader(req);
   if (!device) {
     sendJSON(res, 401, { error: "Invalid or missing device token" });
@@ -241,7 +266,11 @@ async function handleResult(req: IncomingMessage, res: ServerResponse, logger: R
  * POST /api/relay/heartbeat
  * Header: Authorization: Bearer <device_token>
  */
-async function handleHeartbeat(req: IncomingMessage, res: ServerResponse, _logger: ReturnType<typeof console>) {
+async function handleHeartbeat(
+  req: IncomingMessage,
+  res: ServerResponse,
+  _logger: ReturnType<typeof console>,
+) {
   const device = await authFromHeader(req);
   if (!device) {
     sendJSON(res, 401, { error: "Invalid or missing device token" });
@@ -261,7 +290,11 @@ async function handleHeartbeat(req: IncomingMessage, res: ServerResponse, _logge
  * Header: Authorization: Bearer <device_token>
  * Returns all devices belonging to the same user.
  */
-async function handleListDevices(req: IncomingMessage, res: ServerResponse, _logger: ReturnType<typeof console>) {
+async function handleListDevices(
+  req: IncomingMessage,
+  res: ServerResponse,
+  _logger: ReturnType<typeof console>,
+) {
   const device = await authFromHeader(req);
   if (!device) {
     sendJSON(res, 401, { error: "Invalid or missing device token" });
@@ -287,7 +320,11 @@ async function handleListDevices(req: IncomingMessage, res: ServerResponse, _log
  * DELETE /api/relay/device?name=<device_name>
  * Header: Authorization: Bearer <device_token>
  */
-async function handleRemoveDevice(req: IncomingMessage, res: ServerResponse, logger: ReturnType<typeof console>) {
+async function handleRemoveDevice(
+  req: IncomingMessage,
+  res: ServerResponse,
+  logger: ReturnType<typeof console>,
+) {
   const device = await authFromHeader(req);
   if (!device) {
     sendJSON(res, 401, { error: "Invalid or missing device token" });
@@ -319,14 +356,20 @@ async function handleRemoveDevice(req: IncomingMessage, res: ServerResponse, log
  * Allows devices to send real-time execution progress updates.
  * Users can view these via /원격결과 <id> in KakaoTalk.
  */
-async function handleProgress(req: IncomingMessage, res: ServerResponse, logger: ReturnType<typeof console>) {
+async function handleProgress(
+  req: IncomingMessage,
+  res: ServerResponse,
+  logger: ReturnType<typeof console>,
+) {
   const device = await authFromHeader(req);
   if (!device) {
     sendJSON(res, 401, { error: "Invalid or missing device token" });
     return;
   }
 
-  const body = await readBody<{ commandId: string; event: string; message: string; data?: string }>(req);
+  const body = await readBody<{ commandId: string; event: string; message: string; data?: string }>(
+    req,
+  );
   if (!body?.commandId || !body?.event || !body?.message) {
     sendJSON(res, 400, { error: "commandId, event, and message are required" });
     return;
