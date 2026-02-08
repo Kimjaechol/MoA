@@ -12,7 +12,14 @@
 export type DeviceType = "desktop" | "laptop" | "server" | "mobile" | "tablet" | "other";
 
 /** Capabilities a device can advertise */
-export type DeviceCapability = "shell" | "file" | "browser" | "clipboard" | "screenshot" | "audio" | "notification";
+export type DeviceCapability =
+  | "shell"
+  | "file"
+  | "browser"
+  | "clipboard"
+  | "screenshot"
+  | "audio"
+  | "notification";
 
 export interface RelayDevice {
   id: string;
@@ -57,14 +64,26 @@ export interface PairingResult {
 /** Callbacks for relay lifecycle events */
 export interface RelayCallbacks {
   /** Called when a device successfully completes pairing */
-  onPairingComplete?: (params: { userId: string; deviceId: string; deviceName: string }) => void | Promise<void>;
+  onPairingComplete?: (params: {
+    userId: string;
+    deviceId: string;
+    deviceName: string;
+  }) => void | Promise<void>;
 }
 
 // ============================================
 // Command Types
 // ============================================
 
-export type CommandStatus = "pending" | "awaiting_confirmation" | "delivered" | "executing" | "completed" | "failed" | "expired" | "cancelled";
+export type CommandStatus =
+  | "pending"
+  | "awaiting_confirmation"
+  | "delivered"
+  | "executing"
+  | "completed"
+  | "failed"
+  | "expired"
+  | "cancelled";
 
 /** Encrypted command stored in the database */
 export interface RelayCommand {
@@ -89,7 +108,15 @@ export interface RelayCommand {
 
 /** Plaintext command payload (before encryption) */
 export interface CommandPayload {
-  type: "shell" | "file_read" | "file_write" | "file_list" | "browser_open" | "clipboard" | "screenshot" | "custom";
+  type:
+    | "shell"
+    | "file_read"
+    | "file_write"
+    | "file_list"
+    | "browser_open"
+    | "clipboard"
+    | "screenshot"
+    | "custom";
   command: string;
   args?: Record<string, string>;
   /** Working directory for shell commands */

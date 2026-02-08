@@ -10,9 +10,9 @@
  * Phone number storage in Supabase enables Friend Talk delivery.
  */
 
+import type { ResolvedKakaoAccount } from "./types.js";
 import { createKakaoApiClient } from "./api-client.js";
 import { getSupabase, isSupabaseConfigured } from "./supabase.js";
-import type { ResolvedKakaoAccount } from "./types.js";
 
 // ============================================
 // Phone Number Storage
@@ -93,7 +93,9 @@ export async function storeUserPhoneNumber(
  * Get user's phone number by Kakao user ID
  */
 export async function getUserPhoneNumber(kakaoUserId: string): Promise<string | null> {
-  if (!isSupabaseConfigured()) return null;
+  if (!isSupabaseConfigured()) {
+    return null;
+  }
 
   const supabase = getSupabase();
   const { data } = await supabase
@@ -109,7 +111,9 @@ export async function getUserPhoneNumber(kakaoUserId: string): Promise<string | 
  * Get user's phone number by Supabase user ID
  */
 export async function getUserPhoneNumberById(userId: string): Promise<string | null> {
-  if (!isSupabaseConfigured()) return null;
+  if (!isSupabaseConfigured()) {
+    return null;
+  }
 
   const supabase = getSupabase();
   const { data } = await supabase

@@ -12,7 +12,6 @@
  */
 
 import { randomBytes, createHmac } from "node:crypto";
-import { getSupabase, isSupabaseConfigured } from "../supabase.js";
 import type {
   DeviceRegistration,
   PairingCode,
@@ -20,6 +19,7 @@ import type {
   RelayDevice,
   DEFAULT_RELAY_BILLING,
 } from "./types.js";
+import { getSupabase, isSupabaseConfigured } from "../supabase.js";
 
 const PAIRING_CODE_TTL_MINUTES = 10;
 const DEVICE_TOKEN_BYTES = 32;
@@ -27,7 +27,9 @@ const DEVICE_TOKEN_BYTES = 32;
 /**
  * Generate a 6-digit pairing code for a user
  */
-export async function generatePairingCode(userId: string): Promise<{ code: string; expiresAt: Date } | { error: string }> {
+export async function generatePairingCode(
+  userId: string,
+): Promise<{ code: string; expiresAt: Date } | { error: string }> {
   if (!isSupabaseConfigured()) {
     return { error: "Supabase가 설정되지 않았습니다." };
   }
@@ -60,25 +62,21 @@ export async function generatePairingCode(userId: string): Promise<{ code: strin
   const code = generateSixDigitCode();
   const expiresAt = new Date(Date.now() + PAIRING_CODE_TTL_MINUTES * 60 * 1000);
 
-  const { error } = await supabase
-    .from("relay_pairing_codes")
-    .insert({
-      user_id: userId,
-      code,
-      expires_at: expiresAt.toISOString(),
-    });
+  const { error } = await supabase.from("relay_pairing_codes").insert({
+    user_id: userId,
+    code,
+    expires_at: expiresAt.toISOString(),
+  });
 
   if (error) {
     // Retry with a different code if collision
     if (error.code === "23505") {
       const retryCode = generateSixDigitCode();
-      const { error: retryError } = await supabase
-        .from("relay_pairing_codes")
-        .insert({
-          user_id: userId,
-          code: retryCode,
-          expires_at: expiresAt.toISOString(),
-        });
+      const { error: retryError } = await supabase.from("relay_pairing_codes").insert({
+        user_id: userId,
+        code: retryCode,
+        expires_at: expiresAt.toISOString(),
+      });
       if (retryError) {
         return { error: `페어링 코드 생성 실패: ${retryError.message}` };
       }
@@ -136,7 +134,10 @@ export async function completePairing(
     .single();
 
   if (existingDevice) {
-    return { success: false, error: `"${device.deviceName}" 이름의 기기가 이미 등록되어 있습니다.` };
+    return {
+      success: false,
+      error: `"${device.deviceName}" 이름의 기기가 이미 등록되어 있습니다.`,
+    };
   }
 
   // Generate device token
@@ -163,10 +164,7 @@ export async function completePairing(
   }
 
   // Mark pairing code as used
-  await supabase
-    .from("relay_pairing_codes")
-    .update({ used: true })
-    .eq("id", pairingCode.id);
+  await supabase.from("relay_pairing_codes").update({ used: true }).eq("id", pairingCode.id);
 
   return {
     success: true,
@@ -239,7 +237,10 @@ export async function listUserDevices(userId: string): Promise<RelayDevice[]> {
 /**
  * Find a device by name for a user
  */
-export async function findDeviceByName(userId: string, deviceName: string): Promise<RelayDevice | null> {
+export async function findDeviceByName(
+  userId: string,
+  deviceName: string,
+): Promise<RelayDevice | null> {
   if (!isSupabaseConfigured()) return null;
 
   const supabase = getSupabase();
@@ -319,7 +320,7 @@ export async function updateHeartbeat(deviceToken: string): Promise<number> {
 function generateSixDigitCode(): string {
   // Generate a random 6-digit code (100000-999999)
   const bytes = randomBytes(4);
-  const num = bytes.readUInt32BE(0) % 900000 + 100000;
+  const num = (bytes.readUInt32BE(0) % 900000) + 100000;
   return num.toString();
 }
 

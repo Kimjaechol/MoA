@@ -41,18 +41,23 @@
 
 // Immediate startup log — if you see this in Railway deploy logs,
 // it means server.ts is running (not the OpenClaw CLI)
-console.log("[MoA] server.ts entry point loaded — this is the MoA webhook server, NOT OpenClaw CLI");
+console.log(
+  "[MoA] server.ts entry point loaded — this is the MoA webhook server, NOT OpenClaw CLI",
+);
 
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
-import { startKakaoWebhook } from "./src/webhook.js";
-import { resolveKakaoAccount, getDefaultKakaoConfig } from "./src/config.js";
-import type { ResolvedKakaoAccount } from "./src/types.js";
-import { handleRelayRequest } from "./src/relay/index.js";
 import type { RelayCallbacks } from "./src/relay/index.js";
+import type { ResolvedKakaoAccount } from "./src/types.js";
+import { resolveKakaoAccount, getDefaultKakaoConfig } from "./src/config.js";
 import { handleInstallRequest } from "./src/installer/index.js";
 import { handlePaymentRequest } from "./src/payment/index.js";
+import {
+  sendWelcomeAfterPairing,
+  isProactiveMessagingConfigured,
+} from "./src/proactive-messaging.js";
+import { handleRelayRequest } from "./src/relay/index.js";
 import { isSupabaseConfigured } from "./src/supabase.js";
-import { sendWelcomeAfterPairing, isProactiveMessagingConfigured } from "./src/proactive-messaging.js";
+import { startKakaoWebhook } from "./src/webhook.js";
 
 const PORT = parseInt(process.env.PORT ?? process.env.KAKAO_WEBHOOK_PORT ?? "8788", 10);
 const HOST = process.env.HOST ?? "0.0.0.0";
@@ -173,7 +178,12 @@ function buildAccountFromEnv(): ResolvedKakaoAccount | null {
 /**
  * Detect which LLM API key is available and return provider info
  */
-function detectLlmProvider(): { provider: string; apiKey: string; model: string; endpoint: string } | null {
+function detectLlmProvider(): {
+  provider: string;
+  apiKey: string;
+  model: string;
+  endpoint: string;
+} | null {
   // Priority: Anthropic > OpenAI > Google Gemini > Groq
   if (process.env.ANTHROPIC_API_KEY) {
     return {
@@ -213,7 +223,12 @@ function detectLlmProvider(): { provider: string; apiKey: string; model: string;
 /**
  * Call Anthropic API
  */
-async function callAnthropic(apiKey: string, model: string, systemPrompt: string, userMessage: string): Promise<string> {
+async function callAnthropic(
+  apiKey: string,
+  model: string,
+  systemPrompt: string,
+  userMessage: string,
+): Promise<string> {
   const response = await fetch("https://api.anthropic.com/v1/messages", {
     method: "POST",
     headers: {
@@ -231,18 +246,26 @@ async function callAnthropic(apiKey: string, model: string, systemPrompt: string
   });
 
   if (!response.ok) {
-    const err = await response.json().catch(() => ({})) as Record<string, unknown>;
-    throw new Error(`Anthropic API ${response.status}: ${(err as { error?: { message?: string } }).error?.message ?? response.statusText}`);
+    const err = (await response.json().catch(() => ({}))) as Record<string, unknown>;
+    throw new Error(
+      `Anthropic API ${response.status}: ${(err as { error?: { message?: string } }).error?.message ?? response.statusText}`,
+    );
   }
 
-  const data = await response.json() as { content: Array<{ type: string; text?: string }> };
-  return data.content.find(c => c.type === "text")?.text ?? "";
+  const data = (await response.json()) as { content: Array<{ type: string; text?: string }> };
+  return data.content.find((c) => c.type === "text")?.text ?? "";
 }
 
 /**
  * Call OpenAI-compatible API (OpenAI, Groq)
  */
-async function callOpenAICompatible(endpoint: string, apiKey: string, model: string, systemPrompt: string, userMessage: string): Promise<string> {
+async function callOpenAICompatible(
+  endpoint: string,
+  apiKey: string,
+  model: string,
+  systemPrompt: string,
+  userMessage: string,
+): Promise<string> {
   const response = await fetch(endpoint, {
     method: "POST",
     headers: {
@@ -261,18 +284,25 @@ async function callOpenAICompatible(endpoint: string, apiKey: string, model: str
   });
 
   if (!response.ok) {
-    const err = await response.json().catch(() => ({})) as Record<string, unknown>;
-    throw new Error(`API ${response.status}: ${(err as { error?: { message?: string } }).error?.message ?? response.statusText}`);
+    const err = (await response.json().catch(() => ({}))) as Record<string, unknown>;
+    throw new Error(
+      `API ${response.status}: ${(err as { error?: { message?: string } }).error?.message ?? response.statusText}`,
+    );
   }
 
-  const data = await response.json() as { choices: Array<{ message: { content: string } }> };
+  const data = (await response.json()) as { choices: Array<{ message: { content: string } }> };
   return data.choices[0]?.message?.content ?? "";
 }
 
 /**
  * Call Google Gemini API
  */
-async function callGemini(apiKey: string, model: string, systemPrompt: string, userMessage: string): Promise<string> {
+async function callGemini(
+  apiKey: string,
+  model: string,
+  systemPrompt: string,
+  userMessage: string,
+): Promise<string> {
   const response = await fetch(
     `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`,
     {
@@ -288,12 +318,16 @@ async function callGemini(apiKey: string, model: string, systemPrompt: string, u
   );
 
   if (!response.ok) {
-    const err = await response.json().catch(() => ({})) as Record<string, unknown>;
-    throw new Error(`Gemini API ${response.status}: ${(err as { error?: { message?: string } }).error?.message ?? response.statusText}`);
+    const err = (await response.json().catch(() => ({}))) as Record<string, unknown>;
+    throw new Error(
+      `Gemini API ${response.status}: ${(err as { error?: { message?: string } }).error?.message ?? response.statusText}`,
+    );
   }
 
-  const data = await response.json() as { candidates: Array<{ content: { parts: Array<{ text: string }> } }> };
-  return data.candidates?.[0]?.content?.parts?.map(p => p.text).join("") ?? "";
+  const data = (await response.json()) as {
+    candidates: Array<{ content: { parts: Array<{ text: string }> } }>;
+  };
+  return data.candidates?.[0]?.content?.parts?.map((p) => p.text).join("") ?? "";
 }
 
 // ============================================
@@ -350,21 +384,41 @@ MoA는 사용자의 여러 기기(노트북, 태블릿, 데스크탑 등)에 설
 /** Check if message is a greeting or first-time visit */
 function isGreeting(text: string): boolean {
   const greetings = [
-    "안녕", "하이", "헬로", "hi", "hello", "hey", "반가", "처음",
-    "시작", "뭐해", "누구", "소개", "알려줘", "뭐야",
+    "안녕",
+    "하이",
+    "헬로",
+    "hi",
+    "hello",
+    "hey",
+    "반가",
+    "처음",
+    "시작",
+    "뭐해",
+    "누구",
+    "소개",
+    "알려줘",
+    "뭐야",
   ];
   const normalized = text.toLowerCase().trim();
-  return greetings.some(g => normalized.includes(g)) || normalized.length <= 2;
+  return greetings.some((g) => normalized.includes(g)) || normalized.length <= 2;
 }
 
 /** Check if user is asking about installation */
 function isInstallRequest(text: string): boolean {
   const installKeywords = [
-    "설치", "install", "다운로드", "download", "받기", "시작하기",
-    "어떻게 써", "사용법", "가입", "등록",
+    "설치",
+    "install",
+    "다운로드",
+    "download",
+    "받기",
+    "시작하기",
+    "어떻게 써",
+    "사용법",
+    "가입",
+    "등록",
   ];
   const normalized = text.toLowerCase().trim();
-  return installKeywords.some(k => normalized.includes(k));
+  return installKeywords.some((k) => normalized.includes(k));
 }
 
 // ============================================
@@ -381,16 +435,18 @@ async function aiOnMessage(params: {
   botId: string;
   blockId: string;
   timestamp: number;
-}): Promise<{ text: string; quickReplies?: string[]; buttons?: Array<{ label: string; url: string }> }> {
+}): Promise<{
+  text: string;
+  quickReplies?: string[];
+  buttons?: Array<{ label: string; url: string }>;
+}> {
   const utterance = params.text.trim();
 
   // 1) Greeting → Return welcome message with install button
   if (isGreeting(utterance)) {
     return {
       text: MOA_WELCOME_MESSAGE,
-      buttons: [
-        { label: "MoA 설치하기", url: getInstallUrl() },
-      ],
+      buttons: [{ label: "MoA 설치하기", url: getInstallUrl() }],
       quickReplies: ["기능 소개", "사용 사례", "도움말"],
     };
   }
@@ -399,16 +455,14 @@ async function aiOnMessage(params: {
   if (isInstallRequest(utterance)) {
     return {
       text: MOA_INSTALL_GUIDE,
-      buttons: [
-        { label: "MoA 설치하기", url: getInstallUrl() },
-      ],
+      buttons: [{ label: "MoA 설치하기", url: getInstallUrl() }],
       quickReplies: ["기기등록", "기능 소개", "도움말"],
     };
   }
 
   // 3) Feature inquiry
   const featureKeywords = ["기능", "뭘 할 수", "뭘 해", "할 수 있"];
-  if (featureKeywords.some(k => utterance.includes(k))) {
+  if (featureKeywords.some((k) => utterance.includes(k))) {
     return {
       text: `MoA의 핵심 기능을 소개합니다!
 
@@ -428,16 +482,14 @@ async function aiOnMessage(params: {
 "@모두 git pull" 처럼 모든 기기에 한 번에 명령을 보낼 수도 있습니다.
 
 아래 버튼을 눌러 지금 바로 시작하세요!`,
-      buttons: [
-        { label: "MoA 설치하기", url: getInstallUrl() },
-      ],
+      buttons: [{ label: "MoA 설치하기", url: getInstallUrl() }],
       quickReplies: ["사용 사례", "도움말"],
     };
   }
 
   // 4) Usage examples inquiry
   const usageKeywords = ["사용 사례", "사례", "예시", "활용", "어떻게 활용"];
-  if (usageKeywords.some(k => utterance.includes(k))) {
+  if (usageKeywords.some((k) => utterance.includes(k))) {
     return {
       text: `MoA 실제 사용 사례를 보여드릴게요!
 
@@ -459,9 +511,7 @@ async function aiOnMessage(params: {
 
 MoA를 설치하면 이 모든 것이 가능합니다!
 아래 버튼을 눌러 바로 시작하세요!`,
-      buttons: [
-        { label: "MoA 설치하기", url: getInstallUrl() },
-      ],
+      buttons: [{ label: "MoA 설치하기", url: getInstallUrl() }],
       quickReplies: ["기능 소개", "도움말"],
     };
   }
@@ -471,7 +521,7 @@ MoA를 설치하면 이 모든 것이 가능합니다!
 
   if (!llm) {
     return {
-      text: "현재 AI 응답 기능이 준비 중입니다.\n\nMoA 에이전트를 설치하시면 더 강력한 AI 기능을 이용할 수 있습니다!\n\n\"설치\"라고 입력해보세요.",
+      text: '현재 AI 응답 기능이 준비 중입니다.\n\nMoA 에이전트를 설치하시면 더 강력한 AI 기능을 이용할 수 있습니다!\n\n"설치"라고 입력해보세요.',
       quickReplies: ["설치", "기능 소개", "도움말"],
     };
   }
@@ -486,13 +536,25 @@ MoA를 설치하면 이 모든 것이 가능합니다!
         responseText = await callAnthropic(llm.apiKey, llm.model, systemPrompt, params.text);
         break;
       case "openai":
-        responseText = await callOpenAICompatible(llm.endpoint, llm.apiKey, llm.model, systemPrompt, params.text);
+        responseText = await callOpenAICompatible(
+          llm.endpoint,
+          llm.apiKey,
+          llm.model,
+          systemPrompt,
+          params.text,
+        );
         break;
       case "google":
         responseText = await callGemini(llm.apiKey, llm.model, systemPrompt, params.text);
         break;
       case "groq":
-        responseText = await callOpenAICompatible(llm.endpoint, llm.apiKey, llm.model, systemPrompt, params.text);
+        responseText = await callOpenAICompatible(
+          llm.endpoint,
+          llm.apiKey,
+          llm.model,
+          systemPrompt,
+          params.text,
+        );
         break;
       default:
         responseText = "지원되지 않는 AI 제공자입니다.";
@@ -541,7 +603,9 @@ async function main() {
   if (llm) {
     console.log(`[MoA] LLM provider: ${llm.provider} (model: ${llm.model})`);
   } else {
-    console.warn("[MoA] WARNING: No LLM API key found. Set ANTHROPIC_API_KEY, OPENAI_API_KEY, GOOGLE_API_KEY, or GROQ_API_KEY");
+    console.warn(
+      "[MoA] WARNING: No LLM API key found. Set ANTHROPIC_API_KEY, OPENAI_API_KEY, GOOGLE_API_KEY, or GROQ_API_KEY",
+    );
   }
 
   // Check Supabase
@@ -555,7 +619,9 @@ async function main() {
   if (isProactiveMessagingConfigured(account)) {
     console.log("[MoA] Proactive messaging: configured (Friend Talk enabled)");
   } else {
-    console.log("[MoA] Proactive messaging: not configured (set TOAST_APP_KEY, TOAST_SECRET_KEY, KAKAO_SENDER_KEY)");
+    console.log(
+      "[MoA] Proactive messaging: not configured (set TOAST_APP_KEY, TOAST_SECRET_KEY, KAKAO_SENDER_KEY)",
+    );
   }
 
   // Build relay callbacks for proactive messaging
@@ -588,10 +654,18 @@ async function main() {
     });
 
     console.log(`[MoA] Webhook server started at ${webhook.url}`);
-    console.log(`[MoA] Install page: http://${HOST === "0.0.0.0" ? "localhost" : HOST}:${PORT}/install`);
-    console.log(`[MoA] Payment API: http://${HOST === "0.0.0.0" ? "localhost" : HOST}:${PORT}/payment/*`);
-    console.log(`[MoA] Relay API: http://${HOST === "0.0.0.0" ? "localhost" : HOST}:${PORT}/api/relay/*`);
-    console.log(`[MoA] Health check: http://${HOST === "0.0.0.0" ? "localhost" : HOST}:${PORT}/health`);
+    console.log(
+      `[MoA] Install page: http://${HOST === "0.0.0.0" ? "localhost" : HOST}:${PORT}/install`,
+    );
+    console.log(
+      `[MoA] Payment API: http://${HOST === "0.0.0.0" ? "localhost" : HOST}:${PORT}/payment/*`,
+    );
+    console.log(
+      `[MoA] Relay API: http://${HOST === "0.0.0.0" ? "localhost" : HOST}:${PORT}/api/relay/*`,
+    );
+    console.log(
+      `[MoA] Health check: http://${HOST === "0.0.0.0" ? "localhost" : HOST}:${PORT}/health`,
+    );
 
     // Graceful shutdown
     const shutdown = async (signal: string) => {

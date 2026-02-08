@@ -72,11 +72,7 @@ export {
 } from "./safety-guard.js";
 
 // Billing
-export {
-  chargeRelayCommand,
-  getRelayBillingConfig,
-  getRelayUsageStats,
-} from "./relay-billing.js";
+export { chargeRelayCommand, getRelayBillingConfig, getRelayUsageStats } from "./relay-billing.js";
 
 // API server
 export { handleRelayRequest } from "./relay-server.js";
