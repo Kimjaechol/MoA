@@ -112,6 +112,7 @@ export type {
   PairingResult,
   PollResponse,
   RelayBillingConfig,
+  RelayCallbacks,
   RelayCommand,
   RelayDevice,
   ResultResponse,
