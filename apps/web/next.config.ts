@@ -29,6 +29,15 @@ const nextConfig: NextConfig = {
         source: "/install.ps1",
         destination: `${RAILWAY_BACKEND}/install.ps1`,
       },
+      // One-click installer wrappers
+      {
+        source: "/install.bat",
+        destination: `${RAILWAY_BACKEND}/install.bat`,
+      },
+      {
+        source: "/install.command",
+        destination: `${RAILWAY_BACKEND}/install.command`,
+      },
       // Relay API: moa.lawith.kr/api/relay/* → Railway /api/relay/*
       {
         source: "/api/relay/:path*",

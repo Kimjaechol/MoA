@@ -19,9 +19,19 @@ const PLATFORM_ORDER: Exclude<Platform, null>[] = [
   "ios",
 ];
 
+const POST_DOWNLOAD_MSG: Record<string, string> = {
+  windows:
+    "다운로드된 MoA-Install.bat 파일을 더블클릭하면 자동으로 설치됩니다.",
+  macos:
+    "다운로드된 MoA-Install.command 파일을 더블클릭하면 자동으로 설치됩니다.",
+  linux:
+    "다운로드된 install.sh 파일을 터미널에서 bash install.sh 로 실행하세요.",
+};
+
 export default function DownloadSection() {
   const [detected, setDetected] = useState<Platform>(null);
   const [selected, setSelected] = useState<Exclude<Platform, null>>("windows");
+  const [downloaded, setDownloaded] = useState(false);
 
   useEffect(() => {
     const p = detectPlatform(navigator.userAgent);
@@ -30,6 +40,11 @@ export default function DownloadSection() {
       setSelected(p);
     }
   }, []);
+
+  // Reset download state when platform changes
+  useEffect(() => {
+    setDownloaded(false);
+  }, [selected]);
 
   const info = PLATFORM_INFO[selected];
 
@@ -121,35 +136,22 @@ export default function DownloadSection() {
             {info.desc}
           </p>
 
-          {info.installCmd && (
-            <div
-              style={{
-                background: "var(--bg)",
-                borderRadius: "var(--radius)",
-                padding: "16px 20px",
-                marginBottom: "24px",
-                fontFamily: "monospace",
-                fontSize: "0.85rem",
-                color: "var(--success)",
-                overflowX: "auto",
-                textAlign: "left",
-                border: "1px solid var(--border)",
-              }}
-            >
-              <code>{info.installCmd}</code>
-            </div>
-          )}
-
           <div
             style={{
               display: "flex",
               gap: "12px",
               justifyContent: "center",
               flexWrap: "wrap",
+              marginBottom: "16px",
             }}
           >
             {info.downloadUrl && (
-              <a href={info.downloadUrl} className="btn btn-primary">
+              <a
+                href={info.downloadUrl}
+                className="btn btn-primary"
+                onClick={() => setDownloaded(true)}
+                style={{ fontSize: "1.1rem", padding: "14px 32px" }}
+              >
                 설치하기
               </a>
             )}
@@ -159,21 +161,74 @@ export default function DownloadSection() {
                 className="btn btn-primary"
                 target="_blank"
                 rel="noopener noreferrer"
+                style={{ fontSize: "1.1rem", padding: "14px 32px" }}
               >
                 {selected === "ios" ? "App Store" : "Google Play"}에서 받기
               </a>
             )}
-            {info.installCmd && (
-              <button
-                className="btn btn-outline"
-                onClick={() => {
-                  navigator.clipboard.writeText(info.installCmd!);
+          </div>
+
+          {/* Post-download instruction */}
+          {downloaded && POST_DOWNLOAD_MSG[selected] && (
+            <p
+              style={{
+                color: "var(--success)",
+                fontWeight: 600,
+                fontSize: "0.95rem",
+                marginBottom: "16px",
+              }}
+            >
+              {POST_DOWNLOAD_MSG[selected]}
+            </p>
+          )}
+
+          {/* Terminal command as secondary option */}
+          {info.installCmd && (
+            <details style={{ marginTop: "8px" }}>
+              <summary
+                style={{
+                  cursor: "pointer",
+                  color: "var(--text-muted)",
+                  fontSize: "0.85rem",
                 }}
               >
-                명령어 복사
-              </button>
-            )}
-          </div>
+                고급: 터미널 명령어로 설치
+              </summary>
+              <div
+                style={{
+                  background: "var(--bg)",
+                  borderRadius: "var(--radius)",
+                  padding: "16px 20px",
+                  marginTop: "12px",
+                  fontFamily: "monospace",
+                  fontSize: "0.85rem",
+                  color: "var(--success)",
+                  overflowX: "auto",
+                  textAlign: "left",
+                  border: "1px solid var(--border)",
+                  position: "relative",
+                }}
+              >
+                <code>{info.installCmd}</code>
+                <button
+                  className="btn btn-outline"
+                  style={{
+                    position: "absolute",
+                    right: "8px",
+                    top: "50%",
+                    transform: "translateY(-50%)",
+                    padding: "4px 12px",
+                    fontSize: "0.75rem",
+                  }}
+                  onClick={() => {
+                    navigator.clipboard.writeText(info.installCmd!);
+                  }}
+                >
+                  복사
+                </button>
+              </div>
+            </details>
+          )}
         </div>
       </div>
     </section>
