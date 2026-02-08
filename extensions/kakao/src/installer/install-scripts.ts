@@ -157,12 +157,17 @@ EOF
 }
 
 register_device() {
-    print_step "4/5" "Registering device..."
+    print_step "4/5" "Connecting device..."
     if [[ -z "\$PAIRING_CODE" ]]; then
-        echo -n "Enter pairing code (from KakaoTalk, or Enter to skip): "
+        echo ""
+        print_info "Pairing code connects this PC to your KakaoTalk."
+        print_info "(You can get a code later by sending '/설치' in KakaoTalk)"
+        print_info "Skip for now? Just press Enter."
+        echo ""
+        echo -n "  Pairing code (or press Enter to skip): "
         read -r PAIRING_CODE
     fi
-    [[ -z "\$PAIRING_CODE" ]] && { print_warning "Skipping registration"; return; }
+    [[ -z "\$PAIRING_CODE" ]] && { print_info "Skipped - you can pair later from KakaoTalk."; return; }
 
     local device_name; device_name=\$(hostname)
     local response
@@ -189,8 +194,8 @@ show_completion() {
     echo ""
     echo -e "\${YELLOW}Next steps:\${NC}"
     echo "  1. Restart terminal or run: source ~/.zshrc"
-    echo "  2. Open KakaoTalk and send: /연결상태"
-    echo "  3. Try: @\$(hostname) ls"
+    echo "  2. KakaoTalk channel: send '/설치' to get a pairing code"
+    echo "  3. Run: moa pair <code>"
     echo ""
 }
 
@@ -336,9 +341,16 @@ function Set-Environment {
 
 function Register-Device {
     param([string]$Code)
-    Write-Step "4/5" "Registering device..."
-    if ([string]::IsNullOrEmpty($Code) -and -not $Silent) { $Code = Read-Host "Enter pairing code (from KakaoTalk)" }
-    if ([string]::IsNullOrEmpty($Code)) { Write-ColorText "  Skipping registration" "Yellow"; return }
+    Write-Step "4/5" "Connecting device..."
+    if ([string]::IsNullOrEmpty($Code) -and -not $Silent) {
+        Write-ColorText ""
+        Write-ColorText "  Pairing code connects this PC to your KakaoTalk." "DarkGray"
+        Write-ColorText "  (You can get a code later by sending '/install' in KakaoTalk)" "DarkGray"
+        Write-ColorText "  Skip for now? Just press Enter." "DarkGray"
+        Write-ColorText ""
+        $Code = Read-Host "  Pairing code (or press Enter to skip)"
+    }
+    if ([string]::IsNullOrEmpty($Code)) { Write-ColorText "  Skipped - you can pair later from KakaoTalk." "Yellow"; return }
     $body = @{pairingCode=$Code; deviceName=$env:COMPUTERNAME; deviceType="desktop"; platform="windows"; capabilities=@("shell","file","process")} | ConvertTo-Json
     try {
         $response = Invoke-RestMethod -Uri "$MOA_API_URL/pair" -Method POST -Body $body -ContentType "application/json"
@@ -360,9 +372,9 @@ function Show-Completion {
     Write-ColorText "Installed to: $InstallPath"
     Write-ColorText ""
     Write-ColorText "Next steps:" "Yellow"
-    Write-ColorText "  1. Open a new terminal"
-    Write-ColorText "  2. Open KakaoTalk and send: /연결상태"
-    Write-ColorText "  3. Try: @$env:COMPUTERNAME dir"
+    Write-ColorText "  1. Open a new terminal (or PowerShell)"
+    Write-ColorText "  2. KakaoTalk channel: send '/설치' to get a pairing code"
+    Write-ColorText "  3. Run: moa pair <code>"
     Write-ColorText ""
 }
 
