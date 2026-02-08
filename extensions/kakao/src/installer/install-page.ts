@@ -11,7 +11,7 @@ import {
   getInstallerForPlatform,
   PLATFORM_INSTALLERS,
 } from "./install-config.js";
-import { getInstallScript } from "./install-scripts.js";
+import { getInstallScript, getOneClickInstaller } from "./install-scripts.js";
 
 /**
  * 설치 페이지 HTML 생성
@@ -228,17 +228,26 @@ export function generateInstallPage(userAgent: string, pairingCode?: string): st
         ? `
     <button class="primary-install" onclick="install('${primaryInstaller.platform}')">
       <span class="icon">${primaryInstaller.icon}</span>
-      ${primaryInstaller.displayName}에 설치
+      ${primaryInstaller.displayName}에 설치하기
       <div class="platform">${primaryInstaller.description}</div>
     </button>
+
+    <p id="post-download-msg" style="display:none; text-align:center; color:#4caf50; font-weight:600; margin-bottom:16px;">
+      ✅ 다운로드가 시작되었습니다! 다운로드된 파일을 실행해주세요.
+    </p>
 
     ${
       primaryInstaller.installCommand
         ? `
-    <div class="command-box">
-      <code id="install-cmd">${primaryInstaller.installCommand}</code>
-      <button class="copy-btn" onclick="copyCommand()">복사</button>
-    </div>
+    <details style="margin-bottom:20px;">
+      <summary style="cursor:pointer; color:#999; font-size:13px; text-align:center;">
+        고급: 터미널 명령어로 설치
+      </summary>
+      <div class="command-box" style="margin-top:10px;">
+        <code id="install-cmd">${primaryInstaller.installCommand}</code>
+        <button class="copy-btn" onclick="copyCommand()">복사</button>
+      </div>
+    </details>
     `
         : ""
     }
@@ -285,10 +294,14 @@ export function generateInstallPage(userAgent: string, pairingCode?: string): st
       if (installer.appStoreUrl) {
         window.location.href = installer.appStoreUrl;
       } else if (installer.downloadUrl) {
-        window.location.href = installer.downloadUrl + (pairingCode ? '?code=' + pairingCode : '');
+        // Trigger one-click installer download
+        var url = installer.downloadUrl + (pairingCode ? '?code=' + pairingCode : '');
+        window.location.href = url;
+        // Show post-download message
+        var msg = document.getElementById('post-download-msg');
+        if (msg) { msg.style.display = 'block'; }
       } else if (installer.installCommand) {
         copyCommand();
-        alert('터미널에서 복사한 명령어를 붙여넣기 하세요!');
       }
     }
 
@@ -351,6 +364,34 @@ export function handleInstallRequest(req: IncomingMessage, res: ServerResponse):
       "Cache-Control": "public, max-age=300",
     });
     res.end(script);
+    return true;
+  }
+
+  // One-click installer for Windows: /install.bat
+  if (url.pathname === "/install.bat") {
+    const hostHeader = Array.isArray(req.headers.host) ? req.headers.host[0] : req.headers.host;
+    const code = url.searchParams.get("code") ?? undefined;
+    const bat = getOneClickInstaller("windows", hostHeader, code);
+    res.writeHead(200, {
+      "Content-Type": "application/octet-stream",
+      "Content-Disposition": 'attachment; filename="MoA-Install.bat"',
+      "Cache-Control": "no-cache",
+    });
+    res.end(bat);
+    return true;
+  }
+
+  // One-click installer for macOS: /install.command
+  if (url.pathname === "/install.command") {
+    const hostHeader = Array.isArray(req.headers.host) ? req.headers.host[0] : req.headers.host;
+    const code = url.searchParams.get("code") ?? undefined;
+    const cmd = getOneClickInstaller("macos", hostHeader, code);
+    res.writeHead(200, {
+      "Content-Type": "application/octet-stream",
+      "Content-Disposition": 'attachment; filename="MoA-Install.command"',
+      "Cache-Control": "no-cache",
+    });
+    res.end(cmd);
     return true;
   }
 

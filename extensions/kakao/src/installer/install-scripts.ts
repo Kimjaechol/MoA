@@ -1,8 +1,8 @@
 /**
  * Dynamic install script generator
  *
- * Generates install.sh and install.ps1 with correct URLs
- * based on the runtime environment (Railway domain, etc.)
+ * Generates install.sh, install.ps1, and one-click wrapper files
+ * (.bat for Windows, .command for macOS) with correct URLs.
  */
 
 /**
@@ -205,6 +205,66 @@ main() {
 
 main "\$@"
 `;
+}
+
+/**
+ * Generate a one-click wrapper file for the given platform.
+ * - Windows: .bat file that runs the PowerShell installer
+ * - macOS: .command file that runs the bash installer (double-clickable in Finder)
+ * - Linux: same as the .sh install script
+ */
+export function getOneClickInstaller(
+  platform: "windows" | "macos" | "linux",
+  host?: string,
+  pairingCode?: string,
+): string {
+  const baseUrl = resolveBaseUrl(host);
+  const codeSuffix = pairingCode ? ` -s -- --code ${pairingCode}` : "";
+  const codeParam = pairingCode ? ` -PairingCode "${pairingCode}"` : "";
+
+  if (platform === "windows") {
+    return `@echo off
+chcp 65001 >nul 2>&1
+echo.
+echo   =============================================
+echo     MoA (Master of AI) - Windows Installer
+echo   =============================================
+echo.
+echo   Installing MoA... Please wait.
+echo.
+powershell -ExecutionPolicy Bypass -Command "& { $ProgressPreference='SilentlyContinue'; irm '${baseUrl}/install.ps1' | iex }${codeParam}"
+echo.
+echo   Press any key to close...
+pause >nul
+`;
+  }
+
+  if (platform === "macos") {
+    return `#!/bin/bash
+# MoA (Master of AI) - macOS One-Click Installer
+# Double-click this file to install MoA.
+
+clear
+echo ""
+echo "  ============================================="
+echo "    MoA (Master of AI) - macOS Installer"
+echo "  ============================================="
+echo ""
+echo "  Installing MoA... Please wait."
+echo ""
+
+curl -fsSL "${baseUrl}/install.sh" | bash${codeSuffix}
+
+echo ""
+echo "  Installation complete!"
+echo "  You can close this window."
+echo ""
+read -n 1 -s -r -p "  Press any key to close..."
+`;
+  }
+
+  // Linux: same as install.sh
+  return getInstallScript("unix", host);
 }
 
 function generateWindowsScript(vars: ScriptVars): string {
