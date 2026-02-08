@@ -17,7 +17,7 @@ import type { IncomingMessage, ServerResponse } from "node:http";
 import { authenticateDevice, completePairing, updateHeartbeat, listUserDevices, removeDevice } from "./device-auth.js";
 import { decryptPayload, appendExecutionLog } from "./relay-handler.js";
 import { getSupabase, isSupabaseConfigured } from "../supabase.js";
-import type { PairRequest, ResultSubmission } from "./types.js";
+import type { PairRequest, ResultSubmission, RelayCallbacks } from "./types.js";
 
 const LONG_POLL_TIMEOUT_MS = 30_000; // 30 seconds
 const POLL_INTERVAL_MS = 2_000; // Check every 2 seconds during long-poll
@@ -29,6 +29,7 @@ export async function handleRelayRequest(
   req: IncomingMessage,
   res: ServerResponse,
   logger: { info: (msg: string) => void; warn: (msg: string) => void; error: (msg: string) => void },
+  callbacks?: RelayCallbacks,
 ): Promise<boolean> {
   const url = req.url ?? "";
 
@@ -51,7 +52,7 @@ export async function handleRelayRequest(
     switch (path) {
       case "/api/relay/pair":
         if (req.method === "POST") {
-          await handlePair(req, res, logger);
+          await handlePair(req, res, logger, callbacks);
           return true;
         }
         break;
@@ -111,7 +112,7 @@ export async function handleRelayRequest(
  * POST /api/relay/pair
  * Body: { code: string, device: DeviceRegistration }
  */
-async function handlePair(req: IncomingMessage, res: ServerResponse, logger: ReturnType<typeof console>) {
+async function handlePair(req: IncomingMessage, res: ServerResponse, logger: ReturnType<typeof console>, callbacks?: RelayCallbacks) {
   const body = await readBody<PairRequest>(req);
   if (!body?.code || !body?.device?.deviceName) {
     sendJSON(res, 400, { error: "code and device.deviceName are required" });
@@ -127,6 +128,17 @@ async function handlePair(req: IncomingMessage, res: ServerResponse, logger: Ret
       deviceToken: result.deviceToken,
       deviceId: result.deviceId,
     });
+
+    // Fire onPairingComplete callback (non-blocking)
+    if (callbacks?.onPairingComplete && result.userId && result.deviceId) {
+      callbacks.onPairingComplete({
+        userId: result.userId,
+        deviceId: result.deviceId,
+        deviceName: body.device.deviceName,
+      }).catch?.((err: unknown) => {
+        logger.error(`[relay] onPairingComplete callback error: ${err}`);
+      });
+    }
   } else {
     sendJSON(res, 400, { success: false, error: result.error });
   }

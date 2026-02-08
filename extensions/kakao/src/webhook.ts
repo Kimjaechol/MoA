@@ -51,6 +51,9 @@ import {
   formatPlanComparison,
   isBetaPeriod,
 } from "./installer/index.js";
+import {
+  storeUserPhoneNumber,
+} from "./proactive-messaging.js";
 
 export interface KakaoWebhookOptions {
   account: ResolvedKakaoAccount;
@@ -464,7 +467,7 @@ export function extractKakaoUserInfo(request: KakaoIncomingMessage): {
 
 interface MoltbotCommand {
   isCommand: boolean;
-  type?: "tools" | "channels" | "bridge" | "status" | "memory" | "help" | "install" | "subscribe" | "subscribe_status" | "device_status" | "device_detail" | "relay" | "relay_multi" | "relay_register" | "relay_devices" | "relay_remove" | "relay_status" | "relay_confirm" | "relay_reject" | "relay_result";
+  type?: "tools" | "channels" | "bridge" | "status" | "memory" | "help" | "install" | "subscribe" | "subscribe_status" | "device_status" | "device_detail" | "relay" | "relay_multi" | "relay_register" | "relay_devices" | "relay_remove" | "relay_status" | "relay_confirm" | "relay_reject" | "relay_result" | "phone_register";
   args?: string[];
   bridgeCmd?: ReturnType<typeof parseBridgeCommand>;
   /** For relay commands: target device name */
@@ -615,6 +618,18 @@ function parseMoltbotCommand(message: string): MoltbotCommand {
   const resultMatch = trimmed.match(/^[/\/](원격결과|relay[-_]?result|결과)\s+(\S+)$/i);
   if (resultMatch) {
     return { isCommand: true, type: "relay_result", args: [resultMatch[2]] };
+  }
+
+  // /전화번호 010-XXXX-XXXX — register phone number for proactive notifications
+  const phoneMatch = trimmed.match(/^[/\/]?전화번호\s+([\d\-]+)$/i);
+  if (phoneMatch) {
+    return { isCommand: true, type: "phone_register", args: [phoneMatch[1]] };
+  }
+
+  // Pure phone number pattern (010으로 시작하는 메시지)
+  const purePhoneMatch = trimmed.match(/^(010[\d\-]{8,12})$/);
+  if (purePhoneMatch) {
+    return { isCommand: true, type: "phone_register", args: [purePhoneMatch[1]] };
   }
 
   return { isCommand: false };
@@ -812,6 +827,10 @@ async function handleMoltbotCommand(
 • \`충전\` - 크레딧 충전
 • \`/구독\` - 구독 플랜 보기
 • \`/구독상태\` - 내 구독 확인
+
+**알림 설정**
+• \`/전화번호 010-1234-5678\` - 알림 받을 번호 등록
+• 기기 등록 완료 시 Friend Talk으로 환영 메시지 전송
 
 **설치**
 • \`/설치\` - 다른 기기에 MoA 설치`,
@@ -1395,6 +1414,57 @@ ${PLATFORM_INSTALLERS.map((p) => `${p.icon} ${p.displayName}`).join(" | ")}
       return { text, quickReplies: ["원격상태", "기기"] };
     }
 
+    // ============================================
+    // Phone Number Registration
+    // ============================================
+
+    case "phone_register": {
+      const phoneNumber = cmd.args?.[0];
+      if (!phoneNumber) {
+        return {
+          text: "사용법: /전화번호 010-1234-5678\n\n전화번호를 등록하면 기기 연결 완료 시 카카오톡 Friend Talk으로 알림을 받을 수 있습니다.",
+          quickReplies: ["기기등록", "도움말"],
+        };
+      }
+
+      const supabase = getSupabase();
+      // Ensure user exists
+      let phoneUserId: string;
+      const { data: existingPhoneUser } = await supabase
+        .from("lawcall_users")
+        .select("id")
+        .eq("kakao_user_id", userId)
+        .single();
+
+      if (existingPhoneUser) {
+        phoneUserId = existingPhoneUser.id;
+      } else {
+        const { data: newPhoneUser } = await supabase
+          .from("lawcall_users")
+          .insert({ kakao_user_id: userId })
+          .select("id")
+          .single();
+        if (!newPhoneUser) {
+          return { text: "사용자 등록에 실패했습니다." };
+        }
+        phoneUserId = newPhoneUser.id;
+      }
+
+      const storeResult = await storeUserPhoneNumber(userId, phoneNumber);
+
+      if (!storeResult.success) {
+        return {
+          text: storeResult.error ?? "전화번호 저장에 실패했습니다.",
+          quickReplies: ["도움말"],
+        };
+      }
+
+      return {
+        text: `✅ 전화번호가 등록되었습니다!\n\n등록 번호: ${phoneNumber}\n\n이제 기기를 등록하면 완료 시 Friend Talk으로 환영 메시지를 받으실 수 있습니다.\n\n기기를 등록하시려면 "기기등록"이라고 입력하세요.`,
+        quickReplies: ["기기등록", "기기", "도움말"],
+      };
+    }
+
     default:
       return {
         text: "알 수 없는 명령입니다. /도움말을 입력해주세요.",
@@ -1409,7 +1479,7 @@ ${PLATFORM_INSTALLERS.map((p) => `${p.icon} ${p.displayName}`).join(" | ")}
 function formatPairingCodeResponse(code: string, expiresAt: Date): { text: string; quickReplies?: string[] } {
   const minutes = Math.ceil((expiresAt.getTime() - Date.now()) / 60000);
   return {
-    text: `🔗 **기기 페어링 코드**\n\n코드: **${code}**\n만료: ${minutes}분 후\n\n등록할 기기에서 다음 명령을 실행하세요:\n\nmoltbot relay pair --code ${code} --name "기기이름"\n\n또는 API로 직접 등록:\nPOST /api/relay/pair\n{"code": "${code}", "device": {"deviceName": "기기이름", "deviceType": "laptop"}}`,
+    text: `🔗 **기기 페어링 코드**\n\n코드: **${code}**\n만료: ${minutes}분 후\n\n등록할 기기에서 다음 명령을 실행하세요:\n\nmoltbot relay pair --code ${code} --name "기기이름"\n\n또는 API로 직접 등록:\nPOST /api/relay/pair\n{"code": "${code}", "device": {"deviceName": "기기이름", "deviceType": "laptop"}}\n\n💡 전화번호를 등록하면 기기 연결 시 알림을 받을 수 있습니다.\n예: /전화번호 010-1234-5678`,
     quickReplies: ["기기", "도움말"],
   };
 }

@@ -5,6 +5,38 @@
  * without requiring the full OpenClaw gateway.
  *
  * Usage: ./node_modules/.bin/tsx extensions/kakao/server.ts
+ *
+ * ## Environment Variables
+ *
+ * ### Required
+ * - PORT / KAKAO_WEBHOOK_PORT — Server port (default: 8788)
+ * - KAKAO_APP_KEY / KAKAO_JAVASCRIPT_KEY — Kakao App Key
+ * - KAKAO_ADMIN_KEY / KAKAO_REST_API_KEY — Kakao Admin Key
+ *
+ * ### LLM Provider (at least one required for AI chat)
+ * - ANTHROPIC_API_KEY — Anthropic Claude API key
+ * - OPENAI_API_KEY — OpenAI API key
+ * - GOOGLE_API_KEY / GEMINI_API_KEY — Google Gemini API key
+ * - GROQ_API_KEY — Groq API key
+ * - MOA_MODEL — Override default model for the selected provider
+ *
+ * ### Supabase (for billing, sync, relay, phone storage)
+ * - SUPABASE_URL — Supabase project URL
+ * - SUPABASE_KEY — Supabase anon/service key
+ *
+ * ### Kakao Channel & Toast API (for Friend Talk / Alim Talk)
+ * - KAKAO_CHANNEL_ID — Kakao Talk Channel ID
+ * - KAKAO_SENDER_KEY — Kakao Talk Channel sender profile key
+ * - TOAST_APP_KEY — NHN Cloud Toast App Key
+ * - TOAST_SECRET_KEY — NHN Cloud Toast Secret Key
+ *
+ * ### Optional
+ * - HOST — Bind address (default: 0.0.0.0)
+ * - KAKAO_WEBHOOK_PATH — Webhook path (default: /kakao/webhook)
+ * - MOA_INSTALL_URL — Override install page URL
+ * - RAILWAY_PUBLIC_DOMAIN — Auto-set by Railway for public URL
+ * - LAWCALL_ENCRYPTION_KEY — Encryption key for relay commands
+ * - RELAY_MAX_DEVICES — Max devices per user (default: 5)
  */
 
 // Immediate startup log — if you see this in Railway deploy logs,
@@ -16,9 +48,11 @@ import { startKakaoWebhook } from "./src/webhook.js";
 import { resolveKakaoAccount, getDefaultKakaoConfig } from "./src/config.js";
 import type { ResolvedKakaoAccount } from "./src/types.js";
 import { handleRelayRequest } from "./src/relay/index.js";
+import type { RelayCallbacks } from "./src/relay/index.js";
 import { handleInstallRequest } from "./src/installer/index.js";
 import { handlePaymentRequest } from "./src/payment/index.js";
 import { isSupabaseConfigured } from "./src/supabase.js";
+import { sendWelcomeAfterPairing, isProactiveMessagingConfigured } from "./src/proactive-messaging.js";
 
 const PORT = parseInt(process.env.PORT ?? process.env.KAKAO_WEBHOOK_PORT ?? "8788", 10);
 const HOST = process.env.HOST ?? "0.0.0.0";
@@ -517,6 +551,23 @@ async function main() {
     console.log("[MoA] Supabase: not configured (billing & sync disabled, AI chat still works)");
   }
 
+  // Check proactive messaging (Friend Talk)
+  if (isProactiveMessagingConfigured(account)) {
+    console.log("[MoA] Proactive messaging: configured (Friend Talk enabled)");
+  } else {
+    console.log("[MoA] Proactive messaging: not configured (set TOAST_APP_KEY, TOAST_SECRET_KEY, KAKAO_SENDER_KEY)");
+  }
+
+  // Build relay callbacks for proactive messaging
+  const relayCallbacks: RelayCallbacks = {
+    onPairingComplete: async ({ userId, deviceId, deviceName }) => {
+      console.log(`[MoA] Device paired: ${deviceName} (${deviceId}) for user ${userId}`);
+      if (isProactiveMessagingConfigured(account)) {
+        await sendWelcomeAfterPairing(userId, deviceName, account);
+      }
+    },
+  };
+
   try {
     const webhook = await startKakaoWebhook({
       account,
@@ -531,8 +582,8 @@ async function main() {
         if (handleInstallRequest(req, res)) return true;
         // Then try payment callbacks (/payment/*)
         if (handlePaymentRequest(req, res, console)) return true;
-        // Then try relay API (/api/relay/*)
-        return handleRelayRequest(req, res, console);
+        // Then try relay API (/api/relay/*) — with pairing callbacks
+        return handleRelayRequest(req, res, console, relayCallbacks);
       },
     });
 

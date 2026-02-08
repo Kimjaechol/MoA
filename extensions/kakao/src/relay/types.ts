@@ -50,7 +50,14 @@ export interface PairingResult {
   success: boolean;
   deviceToken?: string;
   deviceId?: string;
+  userId?: string;
   error?: string;
+}
+
+/** Callbacks for relay lifecycle events */
+export interface RelayCallbacks {
+  /** Called when a device successfully completes pairing */
+  onPairingComplete?: (params: { userId: string; deviceId: string; deviceName: string }) => void | Promise<void>;
 }
 
 // ============================================

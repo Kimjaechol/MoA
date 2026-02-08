@@ -172,6 +172,7 @@ export async function completePairing(
     success: true,
     deviceToken,
     deviceId: newDevice.id,
+    userId: pairingCode.user_id,
   };
 }
 
