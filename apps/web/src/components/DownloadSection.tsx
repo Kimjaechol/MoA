@@ -21,11 +21,11 @@ const PLATFORM_ORDER: Exclude<Platform, null>[] = [
 
 const POST_DOWNLOAD_MSG: Record<string, string> = {
   windows:
-    "다운로드된 MoA-Install.bat 파일을 더블클릭하면 자동으로 설치됩니다.",
+    "다운로드된 MoA-Install.bat 파일을 더블클릭하세요. 설치 후 카카오톡 MoA 채널에서 '이 기기등록' 버튼을 클릭하면 PC와 연결됩니다.",
   macos:
-    "다운로드된 MoA-Install.command 파일을 더블클릭하면 자동으로 설치됩니다.",
+    "다운로드된 MoA-Install.command 파일을 더블클릭하세요. 설치 후 카카오톡 MoA 채널에서 '이 기기등록' 버튼을 클릭하면 PC와 연결됩니다.",
   linux:
-    "다운로드된 install.sh 파일을 터미널에서 bash install.sh 로 실행하세요.",
+    "다운로드된 install.sh 파일을 터미널에서 bash install.sh 로 실행하세요. 설치 후 카카오톡 MoA 채널에서 '이 기기등록' 버튼을 클릭하면 PC와 연결됩니다.",
 };
 
 export default function DownloadSection() {

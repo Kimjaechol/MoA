@@ -54,7 +54,7 @@ import {
   sendWelcomeAfterPairing,
   isProactiveMessagingConfigured,
 } from "./src/proactive-messaging.js";
-import { handleRelayRequest } from "./src/relay/index.js";
+import { generatePairingCode, handleRelayRequest } from "./src/relay/index.js";
 import { isSupabaseConfigured } from "./src/supabase.js";
 import { startKakaoWebhook } from "./src/webhook.js";
 
@@ -111,14 +111,15 @@ MoA는 노트북, 태블릿, 데스크탑 등 여러 기기에 설치되어 동�
 
 const MOA_INSTALL_GUIDE = `MoA 설치는 아주 간단합니다!
 
-[1단계] 아래 링크를 클릭하세요
-설치 페이지에서 사용하시는 기기(Windows/Mac/Linux)를 선택하면 자동으로 설치가 시작됩니다.
+[1단계] 아래 "MoA 설치하기" 버튼을 클릭하세요.
+사용하시는 기기(Windows/Mac/Linux)에 맞는 설치 파일이 다운로드됩니다. 다운로드된 파일을 더블클릭하면 자동으로 설치됩니다.
 
-[2단계] 설치 완료 후 카카오톡으로 돌아와서 "기기등록" 이라고 입력하세요.
-페어링 코드가 발급됩니다.
+[2단계] 설치가 끝나면 아래 "이 기기등록" 버튼을 클릭하세요.
+6자리 페어링 코드가 발급됩니다.
 
-[3단계] 설치된 MoA에 페어링 코드를 입력하면 끝!
-이제 카카오톡에서 바로 기기를 제어할 수 있습니다.
+[3단계] 설치된 PC에서 페어링 코드를 입력하세요.
+새 터미널(PowerShell)을 열고 아래 명령어를 입력하면 끝!
+moa pair <발급받은 코드>
 
 추가 기기도 같은 방법으로 등록하면 모든 기기가 하나의 AI로 연결됩니다!`;
 
@@ -416,10 +417,16 @@ function isInstallRequest(text: string): boolean {
     "어떻게 써",
     "사용법",
     "가입",
-    "등록",
   ];
   const normalized = text.toLowerCase().trim();
   return installKeywords.some((k) => normalized.includes(k));
+}
+
+/** Check if user wants to register a device (pairing) */
+function isDeviceRegistration(text: string): boolean {
+  const keywords = ["기기등록", "기기 등록", "이 기기등록", "디바이스 등록", "페어링"];
+  const normalized = text.toLowerCase().trim();
+  return keywords.some((k) => normalized.includes(k));
 }
 
 // ============================================
@@ -448,20 +455,52 @@ async function aiOnMessage(params: {
     return {
       text: MOA_WELCOME_MESSAGE,
       buttons: [{ label: "MoA 설치하기", url: getInstallUrl() }],
-      quickReplies: ["기능 소개", "사용 사례", "도움말"],
+      quickReplies: ["설치", "이 기기등록", "기능 소개"],
     };
   }
 
-  // 2) Install request → Return install guide with install button
+  // 2) Install request → Return install guide with install + register buttons
   if (isInstallRequest(utterance)) {
     return {
       text: MOA_INSTALL_GUIDE,
       buttons: [{ label: "MoA 설치하기", url: getInstallUrl() }],
-      quickReplies: ["기기등록", "기능 소개", "도움말"],
+      quickReplies: ["이 기기등록", "기능 소개", "도움말"],
     };
   }
 
-  // 3) Feature inquiry
+  // 3) Device registration → Generate pairing code
+  if (isDeviceRegistration(utterance)) {
+    if (!isSupabaseConfigured()) {
+      return {
+        text: `기기 등록 기능이 현재 준비 중입니다.\n\nMoA가 설치되어 있지 않다면, 먼저 설치를 진행해주세요!`,
+        buttons: [{ label: "MoA 설치하기", url: getInstallUrl() }],
+        quickReplies: ["설치", "도움말"],
+      };
+    }
+
+    try {
+      const result = await generatePairingCode(params.userId);
+      if (result.success && result.code) {
+        return {
+          text: `기기 등록을 위한 페어링 코드가 발급되었습니다!\n\n🔑 페어링 코드: ${result.code}\n⏰ 유효시간: 10분\n\n[사용 방법]\n1. MoA가 설치된 PC에서 새 터미널(PowerShell)을 여세요\n2. 아래 명령어를 입력하세요:\n\nmoa pair ${result.code}\n\n연결이 완료되면 카카오톡에서 바로 PC를 제어할 수 있습니다!\n\n예시: "@내노트북 바탕화면 파일 목록 보여줘"`,
+          quickReplies: ["기능 소개", "사용 사례", "도움말"],
+        };
+      }
+      return {
+        text: `페어링 코드 발급 중 문제가 발생했습니다.\n${result.error ?? "잠시 후 다시 시도해주세요."}\n\nMoA가 아직 설치되어 있지 않다면, 먼저 설치를 진행해주세요!`,
+        buttons: [{ label: "MoA 설치하기", url: getInstallUrl() }],
+        quickReplies: ["이 기기등록", "설치", "도움말"],
+      };
+    } catch (err) {
+      console.error("[MoA] Pairing code generation error:", err);
+      return {
+        text: `페어링 코드 발급 중 오류가 발생했습니다.\n잠시 후 다시 시도해주세요.`,
+        quickReplies: ["이 기기등록", "설치", "도움말"],
+      };
+    }
+  }
+
+  // 5) Feature inquiry
   const featureKeywords = ["기능", "뭘 할 수", "뭘 해", "할 수 있"];
   if (featureKeywords.some((k) => utterance.includes(k))) {
     return {
@@ -484,11 +523,11 @@ async function aiOnMessage(params: {
 
 아래 버튼을 눌러 지금 바로 시작하세요!`,
       buttons: [{ label: "MoA 설치하기", url: getInstallUrl() }],
-      quickReplies: ["사용 사례", "도움말"],
+      quickReplies: ["설치", "이 기기등록", "사용 사례"],
     };
   }
 
-  // 4) Usage examples inquiry
+  // 6) Usage examples inquiry
   const usageKeywords = ["사용 사례", "사례", "예시", "활용", "어떻게 활용"];
   if (usageKeywords.some((k) => utterance.includes(k))) {
     return {
@@ -513,11 +552,11 @@ async function aiOnMessage(params: {
 MoA를 설치하면 이 모든 것이 가능합니다!
 아래 버튼을 눌러 바로 시작하세요!`,
       buttons: [{ label: "MoA 설치하기", url: getInstallUrl() }],
-      quickReplies: ["기능 소개", "도움말"],
+      quickReplies: ["설치", "이 기기등록", "기능 소개"],
     };
   }
 
-  // 5) General AI chat — use LLM with MoA-optimized system prompt
+  // 7) General AI chat — use LLM with MoA-optimized system prompt
   const llm = detectLlmProvider();
 
   if (!llm) {

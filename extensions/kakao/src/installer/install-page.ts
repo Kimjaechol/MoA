@@ -232,9 +232,12 @@ export function generateInstallPage(userAgent: string, pairingCode?: string): st
       <div class="platform">${primaryInstaller.description}</div>
     </button>
 
-    <p id="post-download-msg" style="display:none; text-align:center; color:#4caf50; font-weight:600; margin-bottom:16px;">
-      ✅ 다운로드가 시작되었습니다! 다운로드된 파일을 실행해주세요.
-    </p>
+    <div id="post-download-msg" style="display:none; text-align:left; background:#f0fdf4; border:1px solid #bbf7d0; border-radius:12px; padding:16px 20px; margin-bottom:16px;">
+      <p style="color:#16a34a; font-weight:700; margin-bottom:8px;">✅ 다운로드가 시작되었습니다!</p>
+      <p style="color:#333; font-size:14px; margin-bottom:4px;">1. 다운로드된 파일을 <b>더블클릭</b>하여 설치하세요.</p>
+      <p style="color:#333; font-size:14px; margin-bottom:4px;">2. 설치 완료 후 카카오톡 MoA 채널에서 <b>"이 기기등록"</b> 버튼을 클릭하세요.</p>
+      <p style="color:#333; font-size:14px;">3. 발급된 6자리 코드를 PC에 입력하면 연결 완료!</p>
+    </div>
 
     ${
       primaryInstaller.installCommand
