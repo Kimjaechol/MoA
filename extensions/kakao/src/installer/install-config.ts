@@ -19,26 +19,28 @@ export interface InstallerConfig {
   monthlyPrice: number;
 }
 
-/** Base URL for downloads/install scripts — auto-detected from Railway or set via MOA_BASE_URL */
-function getBaseUrl(): string {
-  if (process.env.MOA_BASE_URL) {
-    return process.env.MOA_BASE_URL;
-  }
-  const railwayDomain = process.env.RAILWAY_PUBLIC_DOMAIN;
-  if (railwayDomain) {
-    return `https://${railwayDomain}`;
-  }
-  return "https://moa.lawith.kr";
-}
+/**
+ * Public-facing base URL.
+ *
+ * Always use moa.lawith.kr — Vercel proxies /install*, /install.sh,
+ * /install.ps1, /api/* to the Railway backend via rewrites.
+ * This keeps a single consistent domain for all user touchpoints.
+ */
+const MOA_PUBLIC_URL = "https://moa.lawith.kr";
 
 export const DEFAULT_INSTALLER_CONFIG: InstallerConfig = {
-  serverUrl: process.env.MOA_SERVER_URL ?? getBaseUrl(),
-  installPageUrl: process.env.MOA_INSTALL_URL ?? `${getBaseUrl()}/install`,
+  serverUrl: MOA_PUBLIC_URL,
+  installPageUrl: `${MOA_PUBLIC_URL}/install`,
   version: "1.0.0-beta",
   isBetaPeriod: true,
   freeTrialDays: 30,
   monthlyPrice: 9900, // 9,900원/월
 };
+
+/** Base URL used for install commands shown to users */
+function getBaseUrl(): string {
+  return MOA_PUBLIC_URL;
+}
 
 /**
  * 플랫폼별 설치 방법

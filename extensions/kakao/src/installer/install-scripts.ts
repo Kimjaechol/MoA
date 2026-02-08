@@ -5,19 +5,11 @@
  * based on the runtime environment (Railway domain, etc.)
  */
 
-/** Resolve the base URL for download/API endpoints */
-function resolveBaseUrl(host?: string): string {
-  if (process.env.MOA_BASE_URL) {
-    return process.env.MOA_BASE_URL;
-  }
-  const railwayDomain = process.env.RAILWAY_PUBLIC_DOMAIN;
-  if (railwayDomain) {
-    return `https://${railwayDomain}`;
-  }
-  if (host) {
-    const proto = host.includes("localhost") ? "http" : "https";
-    return `${proto}://${host}`;
-  }
+/**
+ * Resolve the base URL for API endpoints baked into install scripts.
+ * Always use the public domain — Vercel proxies to Railway.
+ */
+function resolveBaseUrl(_host?: string): string {
   return "https://moa.lawith.kr";
 }
 
