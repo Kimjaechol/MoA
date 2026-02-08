@@ -155,19 +155,22 @@ EOF
 show_completion() {
     echo ""
     echo -e "\${GREEN}============================================\${NC}"
-    echo -e "\${GREEN}  MoA Installation Complete!\${NC}"
+    echo -e "\${GREEN}  MoA 설치가 완료되었습니다!\${NC}"
     echo -e "\${GREEN}============================================\${NC}"
     echo ""
-    echo -e "  Installed to: \${INSTALL_DIR}"
+    echo -e "  다음 단계가 브라우저에서 열립니다..."
     echo ""
-    echo -e "\${CYAN}  [Next] KakaoTalk connect:\${NC}"
-    echo "  1. Restart terminal (or: source ~/.zshrc)"
-    echo "  2. KakaoTalk > MoA channel > click '\${YELLOW}이 기기등록\${NC}' button"
-    echo "  3. You will receive a 6-digit pairing code"
-    echo "  4. Enter: \${YELLOW}moa pair <code>\${NC}"
-    echo ""
-    echo -e "  \${BLUE}Done! You can now control this PC from KakaoTalk.\${NC}"
-    echo ""
+}
+
+open_welcome() {
+    local welcome_url="${vars.apiUrl%/api/relay}"
+    welcome_url="\${welcome_url%/}/welcome"
+    # Try to open browser silently
+    if [[ "\$(uname)" == "Darwin" ]]; then
+        open "\$welcome_url" 2>/dev/null || true
+    else
+        xdg-open "\$welcome_url" 2>/dev/null || sensible-browser "\$welcome_url" 2>/dev/null || true
+    fi
 }
 
 main() {
@@ -176,6 +179,7 @@ main() {
     install_moa
     setup_environment
     show_completion
+    open_welcome
 }
 
 main "\$@"
@@ -308,19 +312,15 @@ function Set-Environment {
 function Show-Completion {
     Write-ColorText ""
     Write-ColorText "============================================" "Green"
-    Write-ColorText "  MoA Installation Complete!" "Green"
+    Write-ColorText "  MoA 설치가 완료되었습니다!" "Green"
     Write-ColorText "============================================" "Green"
     Write-ColorText ""
-    Write-ColorText "  Installed to: $InstallPath"
+    Write-ColorText "  다음 단계가 브라우저에서 열립니다..." "Cyan"
     Write-ColorText ""
-    Write-ColorText "  [Next] KakaoTalk connect:" "Cyan"
-    Write-ColorText "  1. Open a new PowerShell window"
-    Write-ColorText "  2. KakaoTalk > MoA channel > click " -NoNewline; Write-ColorText "'이 기기등록'" "Yellow" -NoNewline; Write-ColorText " button"
-    Write-ColorText "  3. You will receive a 6-digit pairing code"
-    Write-ColorText "  4. Enter: " -NoNewline; Write-ColorText "moa pair <code>" "Yellow"
-    Write-ColorText ""
-    Write-ColorText "  Done! You can now control this PC from KakaoTalk." "Cyan"
-    Write-ColorText ""
+}
+
+function Open-Welcome {
+    Start-Process "https://moa.lawith.kr/welcome"
 }
 
 function Main {
@@ -329,6 +329,7 @@ function Main {
     Install-MoA
     Set-Environment
     Show-Completion
+    Open-Welcome
 }
 
 Main

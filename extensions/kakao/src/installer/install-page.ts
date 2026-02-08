@@ -338,10 +338,186 @@ export function generateInstallPage(userAgent: string, pairingCode?: string): st
 }
 
 /**
- * 설치 요청 핸들러
+ * 설치 완료 후 안내 페이지 (GUI)
+ * 설치 스크립트가 완료되면 브라우저에서 이 페이지를 자동으로 엽니다.
  */
+function generateWelcomePage(): string {
+  return `<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>MoA 설치 완료 - 시작하기</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Malgun Gothic', sans-serif;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      min-height: 100vh;
+      padding: 30px 20px;
+    }
+    .container {
+      background: white;
+      border-radius: 20px;
+      padding: 40px;
+      max-width: 680px;
+      margin: 0 auto;
+      box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+    }
+    .header {
+      text-align: center;
+      margin-bottom: 32px;
+    }
+    .header .icon { font-size: 48px; }
+    .header h1 { font-size: 24px; color: #1a1a2e; margin: 12px 0 4px; }
+    .header .subtitle { color: #16a34a; font-weight: 600; font-size: 16px; }
+    .section {
+      background: #f8f9fa;
+      border-radius: 16px;
+      padding: 24px;
+      margin-bottom: 20px;
+    }
+    .section h2 {
+      font-size: 18px;
+      color: #1a1a2e;
+      margin-bottom: 16px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .section h2 .num {
+      background: linear-gradient(135deg, #667eea, #764ba2);
+      color: white;
+      width: 28px; height: 28px;
+      border-radius: 50%;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 14px;
+      font-weight: 700;
+      flex-shrink: 0;
+    }
+    .channel {
+      background: white;
+      border-radius: 12px;
+      padding: 16px 20px;
+      margin-bottom: 12px;
+      border: 1px solid #e5e7eb;
+    }
+    .channel:last-child { margin-bottom: 0; }
+    .channel h3 {
+      font-size: 16px;
+      color: #333;
+      margin-bottom: 8px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .channel .steps {
+      color: #555;
+      font-size: 14px;
+      line-height: 1.8;
+    }
+    .channel .steps b { color: #1a1a2e; }
+    .channel .steps .code {
+      display: inline-block;
+      background: #1a1a2e;
+      color: #00ff88;
+      padding: 2px 10px;
+      border-radius: 6px;
+      font-family: 'Menlo', 'Consolas', monospace;
+      font-size: 13px;
+    }
+    .tip {
+      background: #fffbeb;
+      border: 1px solid #fde68a;
+      border-radius: 12px;
+      padding: 16px 20px;
+      margin-top: 20px;
+    }
+    .tip h3 { font-size: 14px; color: #92400e; margin-bottom: 6px; }
+    .tip p { font-size: 13px; color: #78350f; line-height: 1.6; }
+    .footer {
+      text-align: center;
+      margin-top: 24px;
+      color: #999;
+      font-size: 13px;
+    }
+    .footer a { color: #667eea; text-decoration: none; }
+    .footer a:hover { text-decoration: underline; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <div class="icon">🎉</div>
+      <h1>MoA 설치가 완료되었습니다!</h1>
+      <p class="subtitle">이제 메신저로 이 컴퓨터에 명령을 내릴 수 있습니다</p>
+    </div>
+
+    <div class="section">
+      <h2><span class="num">1</span> 기기 등록 (최초 1회)</h2>
+      <p style="color:#555; font-size:14px; margin-bottom:12px;">
+        이 컴퓨터를 MoA에 등록해야 메신저에서 명령을 보낼 수 있습니다.
+      </p>
+      <div class="channel">
+        <div class="steps">
+          <b>① 카카오톡</b> MoA 채널에서 <b>"이 기기등록"</b> 버튼 클릭<br>
+          <b>②</b> 6자리 페어링 코드를 받습니다<br>
+          <b>③</b> 이 컴퓨터에서 새 터미널(PowerShell)을 열고 입력:<br>
+          <span class="code">moa pair 발급받은코드</span><br>
+          <b>④</b> 연결 완료! 🎉
+        </div>
+      </div>
+    </div>
+
+    <div class="section">
+      <h2><span class="num">2</span> MoA와 대화하는 방법</h2>
+
+      <div class="channel">
+        <h3>💬 카카오톡으로 대화하기</h3>
+        <div class="steps">
+          카카오톡에서 <b>MoA 채널</b>로 메시지를 보내면 됩니다.<br>
+          예시: <b>"@내컴퓨터 바탕화면 파일 목록 보여줘"</b><br>
+          예시: <b>"오늘 날씨 알려줘"</b>
+        </div>
+      </div>
+
+      <div class="channel">
+        <h3>✈️ 텔레그램으로 대화하기</h3>
+        <div class="steps">
+          텔레그램에서 <b>MoA 봇</b>을 검색하여 대화를 시작합니다.<br>
+          <span style="color:#999;">(준비 중 — 곧 지원 예정)</span>
+        </div>
+      </div>
+
+      <div class="channel">
+        <h3>📱 WhatsApp으로 대화하기</h3>
+        <div class="steps">
+          WhatsApp에서 <b>MoA 번호</b>로 메시지를 보냅니다.<br>
+          <span style="color:#999;">(준비 중 — 곧 지원 예정)</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="tip">
+      <h3>💡 팁</h3>
+      <p>
+        추가 기기(다른 노트북, 태블릿 등)도 같은 방법으로 MoA를 설치하고 등록하면,
+        모든 기기가 하나의 AI로 연결되어 어디서든 제어할 수 있습니다.
+      </p>
+    </div>
+
+    <div class="footer">
+      <p><a href="https://moa.lawith.kr">moa.lawith.kr</a> · Master of AI</p>
+    </div>
+  </div>
+</body>
+</html>`;
+}
+
 /**
- * Serve install scripts (/install.sh, /install.ps1) and the install HTML page (/install)
+ * Serve install scripts, one-click installers, welcome page, and the install HTML page.
  */
 export function handleInstallRequest(req: IncomingMessage, res: ServerResponse): boolean {
   const url = new URL(req.url ?? "/", `http://${req.headers.host}`);
@@ -393,6 +569,17 @@ export function handleInstallRequest(req: IncomingMessage, res: ServerResponse):
       "Cache-Control": "no-cache",
     });
     res.end(cmd);
+    return true;
+  }
+
+  // /welcome — post-install guide page (auto-opened by installer)
+  if (url.pathname === "/welcome") {
+    const html = generateWelcomePage();
+    res.writeHead(200, {
+      "Content-Type": "text/html; charset=utf-8",
+      "Cache-Control": "no-cache",
+    });
+    res.end(html);
     return true;
   }
 

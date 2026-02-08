@@ -53,6 +53,11 @@ const nextConfig: NextConfig = {
         source: "/health",
         destination: `${RAILWAY_BACKEND}/health`,
       },
+      // Post-install welcome/guide page
+      {
+        source: "/welcome",
+        destination: `${RAILWAY_BACKEND}/welcome`,
+      },
     ];
   },
 };
