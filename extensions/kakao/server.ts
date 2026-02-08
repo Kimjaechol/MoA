@@ -114,12 +114,11 @@ const MOA_INSTALL_GUIDE = `MoA 설치는 아주 간단합니다!
 [1단계] 아래 "MoA 설치하기" 버튼을 클릭하세요.
 사용하시는 기기(Windows/Mac/Linux)에 맞는 설치 파일이 다운로드됩니다. 다운로드된 파일을 더블클릭하면 자동으로 설치됩니다.
 
-[2단계] 설치가 끝나면 아래 "이 기기등록" 버튼을 클릭하세요.
+[2단계] 설치 완료 후 자동으로 열리는 페이지에서 "이 기기등록" 버튼을 클릭하세요.
 6자리 페어링 코드가 발급됩니다.
 
-[3단계] 설치된 PC에서 페어링 코드를 입력하세요.
-새 터미널(PowerShell)을 열고 아래 명령어를 입력하면 끝!
-moa pair <발급받은 코드>
+[3단계] 같은 페이지에서 받은 6자리 코드를 입력하면 끝!
+터미널이나 명령어 입력은 필요없습니다.
 
 추가 기기도 같은 방법으로 등록하면 모든 기기가 하나의 AI로 연결됩니다!`;
 
@@ -482,7 +481,7 @@ async function aiOnMessage(params: {
       const result = await generatePairingCode(params.userId);
       if (result.success && result.code) {
         return {
-          text: `기기 등록을 위한 페어링 코드가 발급되었습니다!\n\n🔑 페어링 코드: ${result.code}\n⏰ 유효시간: 10분\n\n[사용 방법]\n1. MoA가 설치된 PC에서 새 터미널(PowerShell)을 여세요\n2. 아래 명령어를 입력하세요:\n\nmoa pair ${result.code}\n\n연결이 완료되면 카카오톡에서 바로 PC를 제어할 수 있습니다!\n\n예시: "@내노트북 바탕화면 파일 목록 보여줘"`,
+          text: `기기 등록을 위한 페어링 코드가 발급되었습니다!\n\n🔑 페어링 코드: ${result.code}\n⏰ 유효시간: 10분\n\n[사용 방법]\nMoA가 설치된 PC의 브라우저에서 아래 페이지를 열고 코드를 입력하세요:\nhttps://moa.lawith.kr/welcome\n\n(설치 직후라면 이미 열려 있습니다!)\n\n연결이 완료되면 카카오톡에서 바로 PC를 제어할 수 있습니다!`,
           quickReplies: ["기능 소개", "사용 사례", "도움말"],
         };
       }
