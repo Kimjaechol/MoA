@@ -100,7 +100,7 @@ export interface AsyncVoiceBillingResult {
  * Calculate credits for a real-time voice session
  */
 export function calculateRealtimeCredits(session: VoiceSession): VoiceBillingResult {
-  const durationMs = session.durationMs || (Date.now() - session.createdAt.getTime());
+  const durationMs = session.durationMs || Date.now() - session.createdAt.getTime();
   const provider = session.provider;
   const pricing = PROVIDER_PRICING[provider];
 
@@ -288,7 +288,7 @@ export function checkVoiceCredits(
  */
 export function formatInsufficientCreditsMessage(
   check: ReturnType<typeof checkVoiceCredits>,
-  provider: VoiceProviderType,
+  _provider: VoiceProviderType,
 ): string {
   return `⚠️ **크레딧 부족**
 

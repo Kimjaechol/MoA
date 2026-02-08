@@ -233,7 +233,7 @@ export interface KakaoPaySubscriptionPaymentRequest {
 
 async function kakaoPayRequest<T>(
   endpoint: string,
-  body: Record<string, string | number>
+  body: Record<string, string | number>,
 ): Promise<T> {
   const config = getKakaoPayConfig();
 
@@ -275,7 +275,7 @@ function toSnakeCase(str: string): string {
   return str.replace(/[A-Z]/g, (letter) => `_${letter.toLowerCase()}`);
 }
 
-function fromSnakeCase<T extends Record<string, unknown>>(obj: T): T {
+function _fromSnakeCase<T extends Record<string, unknown>>(obj: T): T {
   const result: Record<string, unknown> = {};
   for (const [key, value] of Object.entries(obj)) {
     const camelKey = key.replace(/_([a-z])/g, (_, letter) => letter.toUpperCase());
@@ -291,9 +291,7 @@ function fromSnakeCase<T extends Record<string, unknown>>(obj: T): T {
 /**
  * 결제 준비 (결제 URL 생성)
  */
-export async function readyPayment(
-  request: KakaoPayReadyRequest
-): Promise<KakaoPayReadyResponse> {
+export async function readyPayment(request: KakaoPayReadyRequest): Promise<KakaoPayReadyResponse> {
   try {
     const result = await kakaoPayRequest<{
       tid: string;
@@ -337,7 +335,7 @@ export async function readyPayment(
  * 결제 승인
  */
 export async function approvePayment(
-  request: KakaoPayApproveRequest
+  request: KakaoPayApproveRequest,
 ): Promise<KakaoPayApproveResponse> {
   try {
     const result = await kakaoPayRequest<{
@@ -423,7 +421,7 @@ export async function approvePayment(
  * 결제 취소
  */
 export async function cancelPayment(
-  request: KakaoPayCancelRequest
+  request: KakaoPayCancelRequest,
 ): Promise<KakaoPayCancelResponse> {
   try {
     const result = await kakaoPayRequest<{
@@ -490,12 +488,14 @@ export async function cancelPayment(
  * 정기 결제 준비
  */
 export async function readySubscription(
-  request: KakaoPaySubscriptionReadyRequest
+  request: KakaoPaySubscriptionReadyRequest,
 ): Promise<KakaoPayReadyResponse> {
   const config = getKakaoPayConfig();
 
   // 정기 결제용 CID (테스트: TCSUBSCRIP)
-  const subscriptionCid = config.testMode ? "TCSUBSCRIP" : (process.env.KAKAO_PAY_SUBSCRIPTION_CID ?? config.cid);
+  const subscriptionCid = config.testMode
+    ? "TCSUBSCRIP"
+    : (process.env.KAKAO_PAY_SUBSCRIPTION_CID ?? config.cid);
 
   try {
     // 임시로 CID 변경
@@ -547,10 +547,12 @@ export async function readySubscription(
  * 정기 결제 SID로 결제 실행
  */
 export async function chargeSubscription(
-  request: KakaoPaySubscriptionPaymentRequest
+  request: KakaoPaySubscriptionPaymentRequest,
 ): Promise<KakaoPayApproveResponse> {
   const config = getKakaoPayConfig();
-  const subscriptionCid = config.testMode ? "TCSUBSCRIP" : (process.env.KAKAO_PAY_SUBSCRIPTION_CID ?? config.cid);
+  const subscriptionCid = config.testMode
+    ? "TCSUBSCRIP"
+    : (process.env.KAKAO_PAY_SUBSCRIPTION_CID ?? config.cid);
 
   try {
     const originalCid = config.cid;
@@ -616,7 +618,9 @@ export async function inactivateSubscription(sid: string): Promise<{
   error?: { code: string; message: string };
 }> {
   const config = getKakaoPayConfig();
-  const subscriptionCid = config.testMode ? "TCSUBSCRIP" : (process.env.KAKAO_PAY_SUBSCRIPTION_CID ?? config.cid);
+  const subscriptionCid = config.testMode
+    ? "TCSUBSCRIP"
+    : (process.env.KAKAO_PAY_SUBSCRIPTION_CID ?? config.cid);
 
   try {
     const originalCid = config.cid;
@@ -659,7 +663,9 @@ export async function getSubscriptionStatus(sid: string): Promise<{
   error?: { code: string; message: string };
 }> {
   const config = getKakaoPayConfig();
-  const subscriptionCid = config.testMode ? "TCSUBSCRIP" : (process.env.KAKAO_PAY_SUBSCRIPTION_CID ?? config.cid);
+  const subscriptionCid = config.testMode
+    ? "TCSUBSCRIP"
+    : (process.env.KAKAO_PAY_SUBSCRIPTION_CID ?? config.cid);
 
   try {
     const originalCid = config.cid;

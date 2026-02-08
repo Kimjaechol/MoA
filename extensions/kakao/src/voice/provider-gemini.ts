@@ -19,7 +19,6 @@ import {
   VoiceProvider,
   type VoiceProviderConfig,
   type VoiceSession,
-  type VoiceTool,
   type VoiceProviderType,
   type AudioConfig,
   GEMINI_AUDIO_CONFIG,
@@ -119,7 +118,8 @@ interface GeminiServerMessage {
 // Gemini Provider Implementation
 // ============================================
 
-const GEMINI_LIVE_ENDPOINT = "wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1alpha.GenerativeService.BidiGenerateContent";
+const GEMINI_LIVE_ENDPOINT =
+  "wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1alpha.GenerativeService.BidiGenerateContent";
 
 export class GeminiLiveProvider extends VoiceProvider {
   private ws: WebSocket | null = null;
@@ -175,23 +175,23 @@ export class GeminiLiveProvider extends VoiceProvider {
     return new Promise((resolve, reject) => {
       this.ws = new WebSocket(url);
 
-      this.ws.onopen = () => {
+      this.ws.addEventListener("open", () => {
         this.sendSetup();
         resolve();
-      };
+      });
 
-      this.ws.onerror = (event) => {
+      this.ws.addEventListener("error", (event) => {
         const error = new Error(`Gemini WebSocket error: ${event}`);
         reject(error);
-      };
+      });
 
-      this.ws.onclose = (event) => {
+      this.ws.addEventListener("close", (event) => {
         this.handleClose(event.reason ?? "Connection closed");
-      };
+      });
 
-      this.ws.onmessage = (event) => {
+      this.ws.addEventListener("message", (event) => {
         this.handleMessage(event.data);
-      };
+      });
     });
   }
 
@@ -395,7 +395,9 @@ export class GeminiLiveProvider extends VoiceProvider {
 
   commitAudio(): void {
     // Gemini uses VAD, so committing is done by sending end_of_turn
-    if (!this.ws || !this.isSetupComplete) return;
+    if (!this.ws || !this.isSetupComplete) {
+      return;
+    }
 
     const message: GeminiMessage = {
       clientContent: {
@@ -408,7 +410,9 @@ export class GeminiLiveProvider extends VoiceProvider {
   }
 
   sendText(text: string): void {
-    if (!this.ws || !this.isSetupComplete) return;
+    if (!this.ws || !this.isSetupComplete) {
+      return;
+    }
 
     const message: GeminiMessage = {
       clientContent: {
@@ -446,7 +450,9 @@ export class GeminiLiveProvider extends VoiceProvider {
   }
 
   sendToolResult(callId: string, result: unknown): void {
-    if (!this.ws || !this.isSetupComplete) return;
+    if (!this.ws || !this.isSetupComplete) {
+      return;
+    }
 
     const message: GeminiMessage = {
       toolResponse: {
@@ -498,8 +504,11 @@ export class GeminiLiveProvider extends VoiceProvider {
 /**
  * Create a Gemini Live provider instance
  */
-export function createGeminiProvider(config: Partial<VoiceProviderConfig> = {}): GeminiLiveProvider {
-  const apiKey = config.apiKey ??
+export function createGeminiProvider(
+  config: Partial<VoiceProviderConfig> = {},
+): GeminiLiveProvider {
+  const apiKey =
+    config.apiKey ??
     process.env.GOOGLE_API_KEY ??
     process.env.GEMINI_API_KEY ??
     process.env.OPENCLAW_GEMINI_API_KEY;

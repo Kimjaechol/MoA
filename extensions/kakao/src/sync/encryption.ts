@@ -86,7 +86,8 @@ export function encrypt(plaintext: string | Buffer, key: Buffer): EncryptedData 
   const iv = randomBytes(IV_LENGTH);
   const cipher = createCipheriv(ALGORITHM, key, iv, { authTagLength: AUTH_TAG_LENGTH });
 
-  const plaintextBuffer = typeof plaintext === "string" ? Buffer.from(plaintext, "utf-8") : plaintext;
+  const plaintextBuffer =
+    typeof plaintext === "string" ? Buffer.from(plaintext, "utf-8") : plaintext;
 
   const encrypted = Buffer.concat([cipher.update(plaintextBuffer), cipher.final()]);
 
@@ -155,7 +156,10 @@ export function decryptJSON<T>(encryptedData: EncryptedData, key: Buffer): T {
  * Compress and encrypt large data (for memory/conversation sync)
  * Uses gzip compression before encryption for efficiency
  */
-export async function compressAndEncrypt(data: string | Buffer, key: Buffer): Promise<EncryptedData> {
+export async function compressAndEncrypt(
+  data: string | Buffer,
+  key: Buffer,
+): Promise<EncryptedData> {
   const { gzip } = await import("zlib");
   const { promisify } = await import("util");
   const gzipAsync = promisify(gzip);
@@ -169,7 +173,10 @@ export async function compressAndEncrypt(data: string | Buffer, key: Buffer): Pr
 /**
  * Decrypt and decompress large data
  */
-export async function decryptAndDecompress(encryptedData: EncryptedData, key: Buffer): Promise<Buffer> {
+export async function decryptAndDecompress(
+  encryptedData: EncryptedData,
+  key: Buffer,
+): Promise<Buffer> {
   const { gunzip } = await import("zlib");
   const { promisify } = await import("util");
   const gunzipAsync = promisify(gunzip);

@@ -45,7 +45,6 @@ console.log(
   "[MoA] server.ts entry point loaded — this is the MoA webhook server, NOT OpenClaw CLI",
 );
 
-import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import type { RelayCallbacks } from "./src/relay/index.js";
 import type { ResolvedKakaoAccount } from "./src/types.js";
 import { resolveKakaoAccount, getDefaultKakaoConfig } from "./src/config.js";
@@ -65,13 +64,19 @@ const WEBHOOK_PATH = process.env.KAKAO_WEBHOOK_PATH ?? "/kakao/webhook";
 
 /** MoA install page URL — auto-detected from Railway or configurable via env */
 function getInstallUrl(): string {
-  if (process.env.MOA_INSTALL_URL) return process.env.MOA_INSTALL_URL;
+  if (process.env.MOA_INSTALL_URL) {
+    return process.env.MOA_INSTALL_URL;
+  }
   // Railway auto-sets RAILWAY_PUBLIC_DOMAIN (just the hostname, no protocol)
   const railwayDomain = process.env.RAILWAY_PUBLIC_DOMAIN;
-  if (railwayDomain) return `https://${railwayDomain}/install`;
+  if (railwayDomain) {
+    return `https://${railwayDomain}/install`;
+  }
   // Fallback: construct from PORT env (Railway also sets PORT)
   const port = process.env.PORT;
-  if (port) return `https://openclaw-production-2e2e.up.railway.app/install`;
+  if (port) {
+    return `https://openclaw-production-2e2e.up.railway.app/install`;
+  }
   return `http://localhost:${PORT}/install`;
 }
 
@@ -645,9 +650,13 @@ async function main() {
       // Mount install page, relay API, and payment routes on the same server
       requestInterceptor: (req, res) => {
         // Try install page first (/install)
-        if (handleInstallRequest(req, res)) return true;
+        if (handleInstallRequest(req, res)) {
+          return true;
+        }
         // Then try payment callbacks (/payment/*)
-        if (handlePaymentRequest(req, res, console)) return true;
+        if (handlePaymentRequest(req, res, console)) {
+          return true;
+        }
         // Then try relay API (/api/relay/*) — with pairing callbacks
         return handleRelayRequest(req, res, console, relayCallbacks);
       },

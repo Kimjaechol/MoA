@@ -130,9 +130,7 @@ export function generateQRCodeData(pairingCode: string, userId: string): QRCodeD
  */
 export function generateIOSSmartBanner(pairingCode?: string): string {
   const appId = "123456789"; // Apple App Store ID
-  const appArgument = pairingCode
-    ? `moa://pair?code=${pairingCode}`
-    : "moa://open";
+  const appArgument = pairingCode ? `moa://pair?code=${pairingCode}` : "moa://open";
 
   return `<meta name="apple-itunes-app" content="app-id=${appId}, app-argument=${appArgument}">`;
 }
@@ -188,7 +186,7 @@ export function getMobileAppConfig(userAgent: string): MobileAppConfig | null {
  * Generate Android intent URL with fallback
  */
 export function generateAndroidIntent(params: DeepLinkParams): string {
-  const deepLink = generateDeepLink(params);
+  const _deepLink = generateDeepLink(params);
   const fallbackUrl = encodeURIComponent(ANDROID_CONFIG.appStoreUrl);
 
   // Android intent format

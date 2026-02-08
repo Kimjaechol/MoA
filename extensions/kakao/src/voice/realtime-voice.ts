@@ -216,37 +216,46 @@ export class RealtimeVoiceClient extends EventEmitter {
     };
 
     // Use dynamic check for Node.js vs browser environment
-    if (typeof globalThis.WebSocket !== "undefined" && typeof process !== "undefined" && process.versions?.node) {
+    if (
+      typeof globalThis.WebSocket !== "undefined" &&
+      typeof process !== "undefined" &&
+      process.versions?.node
+    ) {
       // Node.js environment - use ws package style
-      this.ws = new (globalThis.WebSocket as unknown as new (url: string, opts: WebSocketOptions) => WebSocket)(`${url}?${params}`, wsOptions);
+      this.ws = new (globalThis.WebSocket as unknown as new (
+        url: string,
+        opts: WebSocketOptions,
+      ) => WebSocket)(`${url}?${params}`, wsOptions);
     } else {
       // Browser environment - headers not directly supported
       this.ws = new WebSocket(`${url}?${params}`);
     }
 
     return new Promise((resolve, reject) => {
-      if (!this.ws) return reject(new Error("WebSocket not initialized"));
+      if (!this.ws) {
+        return reject(new Error("WebSocket not initialized"));
+      }
 
-      this.ws.onopen = () => {
+      this.ws.addEventListener("open", () => {
         this.session!.status = "connected";
         this.emit("session.connected", this.session);
         this.sendSessionConfig();
         resolve();
-      };
+      });
 
-      this.ws.onerror = (event) => {
+      this.ws.addEventListener("error", (event) => {
         const error = new Error(`WebSocket error: ${event}`);
         this.emit("session.error", error);
         reject(error);
-      };
+      });
 
-      this.ws.onclose = (event) => {
+      this.ws.addEventListener("close", (event) => {
         this.handleClose(event.reason ?? "Connection closed");
-      };
+      });
 
-      this.ws.onmessage = (event) => {
+      this.ws.addEventListener("message", (event) => {
         this.handleMessage(event.data);
-      };
+      });
     });
   }
 
@@ -347,21 +356,14 @@ export class RealtimeVoiceClient extends EventEmitter {
           break;
 
         case "response.audio.delta":
-          const audioData = Buffer.from(
-            (message as unknown as { delta: string }).delta,
-            "base64",
-          );
+          const audioData = Buffer.from((message as unknown as { delta: string }).delta, "base64");
           this.session!.audioStats.outputBytes += audioData.length;
           this.session!.status = "speaking";
           this.emit("response.audio", audioData);
           break;
 
         case "response.audio_transcript.delta":
-          this.emit(
-            "response.text",
-            (message as unknown as { delta: string }).delta,
-            false,
-          );
+          this.emit("response.text", (message as unknown as { delta: string }).delta, false);
           break;
 
         case "response.audio_transcript.done":
@@ -383,11 +385,7 @@ export class RealtimeVoiceClient extends EventEmitter {
             name: string;
             arguments: string;
           };
-          this.emit(
-            "function.call",
-            funcCall.name,
-            JSON.parse(funcCall.arguments),
-          );
+          this.emit("function.call", funcCall.name, JSON.parse(funcCall.arguments));
           break;
 
         case "error":
@@ -456,7 +454,9 @@ export class RealtimeVoiceClient extends EventEmitter {
    */
   getAverageLatency(): number {
     const latencies = this.session?.audioStats.latencyMs ?? [];
-    if (latencies.length === 0) return 0;
+    if (latencies.length === 0) {
+      return 0;
+    }
     return latencies.reduce((a, b) => a + b, 0) / latencies.length;
   }
 }
@@ -482,10 +482,7 @@ export function createRealtimeClient(config: RealtimeConfig): RealtimeVoiceClien
  */
 export function isRealtimeAvailable(): boolean {
   // Check for OpenAI API key
-  return !!(
-    process.env.OPENAI_API_KEY ||
-    process.env.OPENCLAW_OPENAI_API_KEY
-  );
+  return !!(process.env.OPENAI_API_KEY || process.env.OPENCLAW_OPENAI_API_KEY);
 }
 
 // ============================================

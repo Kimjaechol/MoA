@@ -52,16 +52,26 @@ export function detectDeviceInfo(): Omit<DeviceInfo, "deviceId" | "deviceName"> 
 
   // 플랫폼 판별
   let detectedPlatform: DeviceInfo["platform"];
-  if (os === "win32") detectedPlatform = "windows";
-  else if (os === "darwin") detectedPlatform = "macos";
-  else if (os === "linux") detectedPlatform = "linux";
-  else if (os === "android") detectedPlatform = "android";
-  else detectedPlatform = "linux"; // fallback
+  if (os === "win32") {
+    detectedPlatform = "windows";
+  } else if (os === "darwin") {
+    detectedPlatform = "macos";
+  } else if (os === "linux") {
+    detectedPlatform = "linux";
+  } else if (os === "android") {
+    detectedPlatform = "android";
+  } else {
+    detectedPlatform = "linux";
+  } // fallback
 
   // 디바이스 타입 추론
   let deviceType: DeviceInfo["deviceType"] = "desktop";
   const hostName = hostname().toLowerCase();
-  if (hostName.includes("laptop") || hostName.includes("macbook") || hostName.includes("notebook")) {
+  if (
+    hostName.includes("laptop") ||
+    hostName.includes("macbook") ||
+    hostName.includes("notebook")
+  ) {
     deviceType = "laptop";
   } else if (hostName.includes("server") || hostName.includes("srv")) {
     deviceType = "server";
@@ -107,10 +117,15 @@ export function generateDefaultDeviceName(): string {
 
   // 친숙한 이름으로 변환
   let osName = "";
-  if (os === "win32") osName = "PC";
-  else if (os === "darwin") osName = "Mac";
-  else if (os === "linux") osName = "Linux";
-  else osName = os;
+  if (os === "win32") {
+    osName = "PC";
+  } else if (os === "darwin") {
+    osName = "Mac";
+  } else if (os === "linux") {
+    osName = "Linux";
+  } else {
+    osName = os;
+  }
 
   // hostname에서 불필요한 부분 제거
   const cleanHost = hostName
@@ -160,7 +175,10 @@ export class DeviceConnector {
   /**
    * 페어링 코드로 초기 등록
    */
-  async register(pairingCode: string, deviceName?: string): Promise<{
+  async register(
+    pairingCode: string,
+    deviceName?: string,
+  ): Promise<{
     success: boolean;
     token?: string;
     error?: string;
@@ -258,10 +276,14 @@ export class DeviceConnector {
    * 폴링 시작
    */
   private startPolling(): void {
-    if (this.pollTimer) clearInterval(this.pollTimer);
+    if (this.pollTimer) {
+      clearInterval(this.pollTimer);
+    }
 
     const poll = async () => {
-      if (!this.state.authToken || this.state.status !== "connected") return;
+      if (!this.state.authToken || this.state.status !== "connected") {
+        return;
+      }
 
       try {
         const response = await fetch(`${this.config.serverUrl}/api/relay/poll`, {
@@ -320,10 +342,14 @@ export class DeviceConnector {
    * Heartbeat 시작
    */
   private startHeartbeat(): void {
-    if (this.heartbeatTimer) clearInterval(this.heartbeatTimer);
+    if (this.heartbeatTimer) {
+      clearInterval(this.heartbeatTimer);
+    }
 
     const sendHeartbeat = async () => {
-      if (!this.state.authToken) return;
+      if (!this.state.authToken) {
+        return;
+      }
 
       try {
         const response = await fetch(`${this.config.serverUrl}/api/relay/heartbeat`, {
@@ -352,7 +378,9 @@ export class DeviceConnector {
    * 결과 제출
    */
   private async submitResult(commandId: string, result: unknown): Promise<void> {
-    if (!this.state.authToken) return;
+    if (!this.state.authToken) {
+      return;
+    }
 
     try {
       await fetch(`${this.config.serverUrl}/api/relay/result`, {

@@ -225,16 +225,20 @@ export abstract class VoiceProvider extends EventEmitter {
    * Check if connected
    */
   isConnected(): boolean {
-    return this.session?.status === "connected" ||
-           this.session?.status === "listening" ||
-           this.session?.status === "speaking";
+    return (
+      this.session?.status === "connected" ||
+      this.session?.status === "listening" ||
+      this.session?.status === "speaking"
+    );
   }
 
   /**
    * Get session duration in milliseconds
    */
   getDuration(): number {
-    if (!this.session) return 0;
+    if (!this.session) {
+      return 0;
+    }
     return Date.now() - this.session.createdAt.getTime();
   }
 
@@ -243,7 +247,9 @@ export abstract class VoiceProvider extends EventEmitter {
    */
   getAverageLatency(): number {
     const latencies = this.session?.stats.latencyMs ?? [];
-    if (latencies.length === 0) return 0;
+    if (latencies.length === 0) {
+      return 0;
+    }
     return latencies.reduce((a, b) => a + b, 0) / latencies.length;
   }
 
@@ -330,7 +336,10 @@ export const KOREAN_VOICE_SETTINGS: Record<VoiceProviderType, Partial<VoiceProvi
 /**
  * Get provider-specific audio configuration
  */
-export function getAudioConfig(provider: VoiceProviderType): { input: AudioConfig; output: AudioConfig } {
+export function getAudioConfig(provider: VoiceProviderType): {
+  input: AudioConfig;
+  output: AudioConfig;
+} {
   switch (provider) {
     case "openai":
       return OPENAI_AUDIO_CONFIG;
@@ -349,7 +358,11 @@ export function isProviderAvailable(provider: VoiceProviderType): boolean {
     case "openai":
       return !!(process.env.OPENAI_API_KEY || process.env.OPENCLAW_OPENAI_API_KEY);
     case "gemini":
-      return !!(process.env.GOOGLE_API_KEY || process.env.GEMINI_API_KEY || process.env.OPENCLAW_GEMINI_API_KEY);
+      return !!(
+        process.env.GOOGLE_API_KEY ||
+        process.env.GEMINI_API_KEY ||
+        process.env.OPENCLAW_GEMINI_API_KEY
+      );
     default:
       return false;
   }
@@ -360,8 +373,12 @@ export function isProviderAvailable(provider: VoiceProviderType): boolean {
  */
 export function getAvailableProviders(): VoiceProviderType[] {
   const providers: VoiceProviderType[] = [];
-  if (isProviderAvailable("openai")) providers.push("openai");
-  if (isProviderAvailable("gemini")) providers.push("gemini");
+  if (isProviderAvailable("openai")) {
+    providers.push("openai");
+  }
+  if (isProviderAvailable("gemini")) {
+    providers.push("gemini");
+  }
   return providers;
 }
 

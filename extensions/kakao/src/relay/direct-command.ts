@@ -13,14 +13,9 @@
  * - 강력한 보안 (암호화된 메시지만 전달)
  */
 
-import { getSupabase, isSupabaseConfigured } from "../supabase.js";
-import { findDeviceByName, listUserDevices } from "./device-auth.js";
-import { chargeRelayCommand } from "./relay-billing.js";
-import {
-  sendRelayCommand,
-  parseCommandText,
-  type SendRelayResult,
-} from "./relay-handler.js";
+import { isSupabaseConfigured } from "../supabase.js";
+import { listUserDevices } from "./device-auth.js";
+import { sendRelayCommand } from "./relay-handler.js";
 
 // ============================================
 // Multi-Device Parallel Command
@@ -70,7 +65,10 @@ export async function sendMultiDeviceCommand(params: {
 
   // Handle "@모두" or "*" - send to all online devices
   let deviceNames = targetDeviceNames;
-  if (deviceNames.length === 1 && (deviceNames[0] === "*" || deviceNames[0] === "모두" || deviceNames[0] === "all")) {
+  if (
+    deviceNames.length === 1 &&
+    (deviceNames[0] === "*" || deviceNames[0] === "모두" || deviceNames[0] === "all")
+  ) {
     const allDevices = await listUserDevices(userId);
     const onlineDevices = allDevices.filter((d) => d.isOnline);
     if (onlineDevices.length === 0) {
@@ -94,7 +92,7 @@ export async function sendMultiDeviceCommand(params: {
     }).then((result) => ({
       deviceName,
       ...result,
-    }))
+    })),
   );
 
   const results = await Promise.all(promises);
@@ -165,7 +163,8 @@ export function parseDirectCommand(input: string): ParsedDirectCommand | null {
 
   // Check for "all devices" keywords
   const allKeywords = ["모두", "all", "*", "전체", "모든기기"];
-  const isAllDevices = deviceNames.length === 1 && allKeywords.includes(deviceNames[0].toLowerCase());
+  const isAllDevices =
+    deviceNames.length === 1 && allKeywords.includes(deviceNames[0].toLowerCase());
 
   return {
     targetDevices: isAllDevices ? ["*"] : deviceNames,
@@ -264,7 +263,9 @@ export function formatTwinMoAStatus(status: TwinMoAStatus): string {
 
   lines.push("🤖 나의 쌍둥이 MoA 현황");
   lines.push("━━━━━━━━━━━━━━━━━━━━━━");
-  lines.push(`총 ${status.totalDevices}대 | 🟢 온라인 ${status.onlineDevices} | ⚫ 오프라인 ${status.offlineDevices}`);
+  lines.push(
+    `총 ${status.totalDevices}대 | 🟢 온라인 ${status.onlineDevices} | ⚫ 오프라인 ${status.offlineDevices}`,
+  );
   lines.push("");
 
   if (status.devices.length === 0) {
@@ -318,11 +319,17 @@ function formatTimeAgo(date: Date): string {
   const diffMs = now.getTime() - date.getTime();
   const diffMins = Math.floor(diffMs / 60000);
 
-  if (diffMins < 1) return "방금 전";
-  if (diffMins < 60) return `${diffMins}분 전`;
+  if (diffMins < 1) {
+    return "방금 전";
+  }
+  if (diffMins < 60) {
+    return `${diffMins}분 전`;
+  }
 
   const diffHours = Math.floor(diffMins / 60);
-  if (diffHours < 24) return `${diffHours}시간 전`;
+  if (diffHours < 24) {
+    return `${diffHours}시간 전`;
+  }
 
   const diffDays = Math.floor(diffHours / 24);
   return `${diffDays}일 전`;

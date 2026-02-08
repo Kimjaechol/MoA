@@ -15,9 +15,23 @@ import {
 /**
  * 설치 페이지 HTML 생성
  */
+/** Sanitize a string for safe HTML insertion (prevent XSS) */
+function escapeHtml(str: string): string {
+  return str
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
 export function generateInstallPage(userAgent: string, pairingCode?: string): string {
   const detectedPlatform = detectPlatform(userAgent);
   const primaryInstaller = detectedPlatform ? getInstallerForPlatform(detectedPlatform) : null;
+  // Sanitize pairing code — must be digits only, max 6 chars
+  const safePairingCode = pairingCode
+    ? escapeHtml(pairingCode.replace(/[^0-9]/g, "").slice(0, 6))
+    : undefined;
 
   const html = `<!DOCTYPE html>
 <html lang="ko">
@@ -197,42 +211,56 @@ export function generateInstallPage(userAgent: string, pairingCode?: string): st
       <span class="version">${DEFAULT_INSTALLER_CONFIG.version}</span>
     </div>
 
-    ${pairingCode ? `
+    ${
+      safePairingCode
+        ? `
     <div class="pairing-section">
-      <div class="pairing-code">${pairingCode}</div>
+      <div class="pairing-code">${safePairingCode}</div>
       <p>설치 후 이 코드로 연결하세요 (10분간 유효)</p>
     </div>
-    ` : ""}
+    `
+        : ""
+    }
 
-    ${primaryInstaller ? `
+    ${
+      primaryInstaller
+        ? `
     <button class="primary-install" onclick="install('${primaryInstaller.platform}')">
       <span class="icon">${primaryInstaller.icon}</span>
       ${primaryInstaller.displayName}에 설치
       <div class="platform">${primaryInstaller.description}</div>
     </button>
 
-    ${primaryInstaller.installCommand ? `
+    ${
+      primaryInstaller.installCommand
+        ? `
     <div class="command-box">
       <code id="install-cmd">${primaryInstaller.installCommand}</code>
       <button class="copy-btn" onclick="copyCommand()">복사</button>
     </div>
-    ` : ""}
-    ` : `
+    `
+        : ""
+    }
+    `
+        : `
     <p style="text-align: center; color: #666; margin-bottom: 20px;">
       아래에서 플랫폼을 선택하세요
     </p>
-    `}
+    `
+    }
 
     <div class="other-platforms">
       <h3>다른 플랫폼</h3>
       <div class="platform-grid">
-        ${PLATFORM_INSTALLERS.map((p) => `
+        ${PLATFORM_INSTALLERS.map(
+          (p) => `
         <button class="platform-btn ${p.platform === detectedPlatform ? "active" : ""}"
                 onclick="selectPlatform('${p.platform}')">
           <span class="icon">${p.icon}</span>
           <span class="name">${p.displayName}</span>
         </button>
-        `).join("")}
+        `,
+        ).join("")}
       </div>
     </div>
 
@@ -247,7 +275,7 @@ export function generateInstallPage(userAgent: string, pairingCode?: string): st
 
   <script>
     const installers = ${JSON.stringify(PLATFORM_INSTALLERS)};
-    const pairingCode = ${pairingCode ? `"${pairingCode}"` : "null"};
+    const pairingCode = ${safePairingCode ? `"${safePairingCode}"` : "null"};
 
     function install(platform) {
       const installer = installers.find(p => p.platform === platform);
@@ -295,10 +323,7 @@ export function generateInstallPage(userAgent: string, pairingCode?: string): st
 /**
  * 설치 요청 핸들러
  */
-export function handleInstallRequest(
-  req: IncomingMessage,
-  res: ServerResponse,
-): boolean {
+export function handleInstallRequest(req: IncomingMessage, res: ServerResponse): boolean {
   const url = new URL(req.url ?? "/", `http://${req.headers.host}`);
 
   // /install 경로만 처리

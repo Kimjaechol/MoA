@@ -16,8 +16,6 @@ import {
   checkMoaSLMStatus,
   healthCheck,
   autoRecover,
-  startOllamaServer,
-  isOllamaRunning,
   type InstallProgress,
   type ProgressCallback,
 } from "./ollama-installer.js";
@@ -108,9 +106,8 @@ async function doInitialize(
     });
 
     // Determine if we should skip Tier 2
-    const skipTier2 = config.skipTier2Install ?? (
-      config.deviceType === "mobile" || shouldSkipTier2()
-    );
+    const skipTier2 =
+      config.skipTier2Install ?? (config.deviceType === "mobile" || shouldSkipTier2());
 
     // Install SLM models
     const installSuccess = await installMoaSLM(onProgress, {
@@ -194,22 +191,24 @@ export function initializeMoAAgentBackground(
   onProgress?: ProgressCallback,
   onComplete?: (result: MoAInitResult) => void,
 ): void {
-  initializeMoAAgent(config, onProgress).then(result => {
-    onComplete?.(result);
-  }).catch(error => {
-    onComplete?.({
-      success: false,
-      status: {
-        initialized: false,
-        slmReady: false,
-        tier1Available: false,
-        tier2Available: false,
-        offlineModeEnabled: false,
-        error: error instanceof Error ? error.message : "Unknown error",
-      },
-      message: "백그라운드 초기화 실패",
+  initializeMoAAgent(config, onProgress)
+    .then((result) => {
+      onComplete?.(result);
+    })
+    .catch((error) => {
+      onComplete?.({
+        success: false,
+        status: {
+          initialized: false,
+          slmReady: false,
+          tier1Available: false,
+          tier2Available: false,
+          offlineModeEnabled: false,
+          error: error instanceof Error ? error.message : "Unknown error",
+        },
+        message: "백그라운드 초기화 실패",
+      });
     });
-  });
 }
 
 // ============================================
@@ -321,19 +320,22 @@ export async function getDisplayInfo(): Promise<{
   const statusEmoji = info.serverRunning ? "🟢" : "🔴";
   const tier1Emoji = info.tier1.status === "ready" ? "✅" : "❌";
   const tier2Emoji =
-    info.tier2.status === "ready" ? "✅" :
-    info.tier2.status === "skipped" ? "⏭️" : "❌";
+    info.tier2.status === "ready" ? "✅" : info.tier2.status === "skipped" ? "⏭️" : "❌";
 
   return {
     status: `${statusEmoji} ${info.serverRunning ? "실행 중" : "정지됨"}`,
     tier1: `${tier1Emoji} ${info.tier1.model} (${info.tier1.status === "ready" ? "준비됨" : "미설치"})`,
     tier2: `${tier2Emoji} ${info.tier2.model} (${
-      info.tier2.status === "ready" ? "준비됨" :
-      info.tier2.status === "skipped" ? "건너뜀 (메모리 부족)" : "미설치"
+      info.tier2.status === "ready"
+        ? "준비됨"
+        : info.tier2.status === "skipped"
+          ? "건너뜀 (메모리 부족)"
+          : "미설치"
     })`,
-    recommendation: info.tier1.status === "ready"
-      ? "로컬 AI가 준비되어 개인정보 보호 및 오프라인 사용이 가능합니다."
-      : "로컬 AI를 설치하면 개인정보를 외부로 전송하지 않고 처리할 수 있습니다.",
+    recommendation:
+      info.tier1.status === "ready"
+        ? "로컬 AI가 준비되어 개인정보 보호 및 오프라인 사용이 가능합니다."
+        : "로컬 AI를 설치하면 개인정보를 외부로 전송하지 않고 처리할 수 있습니다.",
   };
 }
 
@@ -377,7 +379,9 @@ export function isLowMemoryEnvironment(): boolean {
 /**
  * Get recommended configuration based on device
  */
-export function getRecommendedConfig(deviceType: "mobile" | "desktop" | "tablet"): Partial<MoAAgentConfig> {
+export function getRecommendedConfig(
+  deviceType: "mobile" | "desktop" | "tablet",
+): Partial<MoAAgentConfig> {
   switch (deviceType) {
     case "mobile":
       return {

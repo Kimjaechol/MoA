@@ -130,7 +130,7 @@ export async function kakaoGeocode(query: string): Promise<GeocodingResult> {
       return { success: false, error: `Kakao API error: ${response.status}` };
     }
 
-    const data = await response.json() as {
+    const data = (await response.json()) as {
       documents: Array<{
         place_name: string;
         address_name: string;
@@ -264,7 +264,7 @@ export async function kakaoDirections(
       };
     }
 
-    const data = await response.json() as {
+    const data = (await response.json()) as {
       routes: Array<{
         summary: {
           distance: number;
@@ -417,7 +417,7 @@ export async function naverGeocode(query: string): Promise<GeocodingResult> {
       return { success: false, error: `Naver API error: ${response.status}` };
     }
 
-    const data = await response.json() as {
+    const data = (await response.json()) as {
       items: Array<{
         title: string;
         address: string;
@@ -457,7 +457,7 @@ export async function naverDirections(
   destination: Location,
   mode: TransportMode = "driving",
 ): Promise<RouteResult> {
-  const config = getConfig();
+  const _config = getConfig();
 
   // Geocode if coordinates not provided
   let originCoords = origin.coordinates;
@@ -567,7 +567,7 @@ export async function googleGeocode(query: string): Promise<GeocodingResult> {
       return { success: false, error: `Google API error: ${response.status}` };
     }
 
-    const data = await response.json() as {
+    const data = (await response.json()) as {
       status: string;
       results: Array<{
         formatted_address: string;
@@ -653,7 +653,13 @@ export async function googleDirections(
   }
 
   // Generate deep links
-  const deepLinks = generateGoogleDeepLinks(originCoords, destCoords, origin.name, destination.name, mode);
+  const deepLinks = generateGoogleDeepLinks(
+    originCoords,
+    destCoords,
+    origin.name,
+    destination.name,
+    mode,
+  );
 
   if (!config.googleMapsApiKey) {
     return {
@@ -697,7 +703,7 @@ export async function googleDirections(
       };
     }
 
-    const data = await response.json() as {
+    const data = (await response.json()) as {
       status: string;
       routes: Array<{
         legs: Array<{
@@ -1055,12 +1061,34 @@ export function parseNavigationCommand(message: string): {
 
   // Navigation keywords
   const navKeywords = [
-    "길찾기", "길 찾기", "경로", "가는 길", "가는길",
-    "어떻게 가", "어떻게가", "얼마나 걸", "얼마나걸",
-    "몇 분", "몇분", "시간이 얼마나", "소요 시간", "소요시간",
-    "버스", "지하철", "대중교통", "차로", "자동차로", "운전",
-    "걸어서", "도보로", "자전거로",
-    "네비", "내비", "navigation", "directions", "route",
+    "길찾기",
+    "길 찾기",
+    "경로",
+    "가는 길",
+    "가는길",
+    "어떻게 가",
+    "어떻게가",
+    "얼마나 걸",
+    "얼마나걸",
+    "몇 분",
+    "몇분",
+    "시간이 얼마나",
+    "소요 시간",
+    "소요시간",
+    "버스",
+    "지하철",
+    "대중교통",
+    "차로",
+    "자동차로",
+    "운전",
+    "걸어서",
+    "도보로",
+    "자전거로",
+    "네비",
+    "내비",
+    "navigation",
+    "directions",
+    "route",
   ];
 
   const isNavigationCommand = navKeywords.some((kw) => normalized.includes(kw));
@@ -1093,7 +1121,8 @@ export function parseNavigationCommand(message: string): {
     if (match) {
       // Clean up extracted locations
       const origin = match[1]?.trim().replace(/^(현재\s*위치|여기|지금\s*위치)$/, "현재 위치");
-      const destination = match[2]?.trim()
+      const destination = match[2]
+        ?.trim()
         .replace(/어떻게.*$/, "")
         .replace(/얼마나.*$/, "")
         .replace(/몇.*$/, "")

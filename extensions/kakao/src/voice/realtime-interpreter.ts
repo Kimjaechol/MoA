@@ -13,25 +13,38 @@
  */
 
 import { EventEmitter } from "node:events";
-import {
-  GeminiLiveProvider,
-  createGeminiProvider,
-} from "./provider-gemini.js";
-import {
-  type VoiceProviderConfig,
-  type VoiceSession,
-} from "./provider-interface.js";
+import { GeminiLiveProvider, createGeminiProvider } from "./provider-gemini.js";
 
 // ============================================
 // Language Configuration
 // ============================================
 
 export type LanguageCode =
-  | "ko" | "en" | "ja" | "zh" | "zh-TW"
-  | "es" | "fr" | "de" | "it" | "pt"
-  | "ru" | "ar" | "hi" | "th" | "vi"
-  | "id" | "ms" | "tl" | "nl" | "pl"
-  | "tr" | "uk" | "cs" | "sv" | "da";
+  | "ko"
+  | "en"
+  | "ja"
+  | "zh"
+  | "zh-TW"
+  | "es"
+  | "fr"
+  | "de"
+  | "it"
+  | "pt"
+  | "ru"
+  | "ar"
+  | "hi"
+  | "th"
+  | "vi"
+  | "id"
+  | "ms"
+  | "tl"
+  | "nl"
+  | "pl"
+  | "tr"
+  | "uk"
+  | "cs"
+  | "sv"
+  | "da";
 
 export interface LanguageInfo {
   code: LanguageCode;
@@ -45,8 +58,20 @@ export const SUPPORTED_LANGUAGES: Record<LanguageCode, LanguageInfo> = {
   ko: { code: "ko", name: "Korean", nativeName: "한국어", flag: "🇰🇷", voiceName: "Kore" },
   en: { code: "en", name: "English", nativeName: "English", flag: "🇺🇸", voiceName: "Puck" },
   ja: { code: "ja", name: "Japanese", nativeName: "日本語", flag: "🇯🇵", voiceName: "Aoede" },
-  zh: { code: "zh", name: "Chinese (Simplified)", nativeName: "中文", flag: "🇨🇳", voiceName: "Charon" },
-  "zh-TW": { code: "zh-TW", name: "Chinese (Traditional)", nativeName: "繁體中文", flag: "🇹🇼", voiceName: "Charon" },
+  zh: {
+    code: "zh",
+    name: "Chinese (Simplified)",
+    nativeName: "中文",
+    flag: "🇨🇳",
+    voiceName: "Charon",
+  },
+  "zh-TW": {
+    code: "zh-TW",
+    name: "Chinese (Traditional)",
+    nativeName: "繁體中文",
+    flag: "🇹🇼",
+    voiceName: "Charon",
+  },
   es: { code: "es", name: "Spanish", nativeName: "Español", flag: "🇪🇸", voiceName: "Fenrir" },
   fr: { code: "fr", name: "French", nativeName: "Français", flag: "🇫🇷", voiceName: "Aoede" },
   de: { code: "de", name: "German", nativeName: "Deutsch", flag: "🇩🇪", voiceName: "Puck" },
@@ -57,7 +82,13 @@ export const SUPPORTED_LANGUAGES: Record<LanguageCode, LanguageInfo> = {
   hi: { code: "hi", name: "Hindi", nativeName: "हिन्दी", flag: "🇮🇳", voiceName: "Kore" },
   th: { code: "th", name: "Thai", nativeName: "ไทย", flag: "🇹🇭", voiceName: "Kore" },
   vi: { code: "vi", name: "Vietnamese", nativeName: "Tiếng Việt", flag: "🇻🇳", voiceName: "Kore" },
-  id: { code: "id", name: "Indonesian", nativeName: "Bahasa Indonesia", flag: "🇮🇩", voiceName: "Kore" },
+  id: {
+    code: "id",
+    name: "Indonesian",
+    nativeName: "Bahasa Indonesia",
+    flag: "🇮🇩",
+    voiceName: "Kore",
+  },
   ms: { code: "ms", name: "Malay", nativeName: "Bahasa Melayu", flag: "🇲🇾", voiceName: "Kore" },
   tl: { code: "tl", name: "Filipino", nativeName: "Tagalog", flag: "🇵🇭", voiceName: "Kore" },
   nl: { code: "nl", name: "Dutch", nativeName: "Nederlands", flag: "🇳🇱", voiceName: "Puck" },
@@ -71,14 +102,14 @@ export const SUPPORTED_LANGUAGES: Record<LanguageCode, LanguageInfo> = {
 
 // Popular language pairs for quick access
 export const POPULAR_PAIRS: Array<[LanguageCode, LanguageCode]> = [
-  ["ko", "en"],  // Korean ↔ English
-  ["ko", "ja"],  // Korean ↔ Japanese
-  ["ko", "zh"],  // Korean ↔ Chinese
-  ["en", "ja"],  // English ↔ Japanese
-  ["en", "zh"],  // English ↔ Chinese
-  ["en", "es"],  // English ↔ Spanish
-  ["en", "fr"],  // English ↔ French
-  ["en", "de"],  // English ↔ German
+  ["ko", "en"], // Korean ↔ English
+  ["ko", "ja"], // Korean ↔ Japanese
+  ["ko", "zh"], // Korean ↔ Chinese
+  ["en", "ja"], // English ↔ Japanese
+  ["en", "zh"], // English ↔ Chinese
+  ["en", "es"], // English ↔ Spanish
+  ["en", "fr"], // English ↔ French
+  ["en", "de"], // English ↔ German
 ];
 
 // ============================================
@@ -215,7 +246,8 @@ function buildInterpreterPrompt(config: InterpreterConfig): string {
   if (config.domain && config.domain !== "general") {
     const domainGuides: Record<string, string> = {
       business: "Use business/corporate terminology and formal expressions.",
-      medical: "Use accurate medical terminology. Be precise with symptoms, treatments, and diagnoses.",
+      medical:
+        "Use accurate medical terminology. Be precise with symptoms, treatments, and diagnoses.",
       legal: "Use proper legal terminology. Be precise with legal concepts and terms.",
       technical: "Use accurate technical terminology for IT, engineering, and scientific contexts.",
     };
@@ -251,10 +283,7 @@ export class RealtimeInterpreter extends EventEmitter {
   /**
    * Start a new interpretation session
    */
-  async startSession(
-    userId: string,
-    config: InterpreterConfig,
-  ): Promise<InterpreterSession> {
+  async startSession(userId: string, config: InterpreterConfig): Promise<InterpreterSession> {
     const sessionId = `interp-${userId}-${Date.now()}`;
 
     const session: InterpreterSession = {
@@ -314,10 +343,7 @@ export class RealtimeInterpreter extends EventEmitter {
   /**
    * Set up event forwarding from provider
    */
-  private setupProviderEvents(
-    session: InterpreterSession,
-    provider: GeminiLiveProvider,
-  ): void {
+  private setupProviderEvents(session: InterpreterSession, provider: GeminiLiveProvider): void {
     provider.on("input.started", () => {
       session.status = "listening";
       session.lastActivity = new Date();
@@ -380,7 +406,7 @@ export class RealtimeInterpreter extends EventEmitter {
       this.emit("session.error", error, session);
     });
 
-    provider.on("session.closed", (reason: string) => {
+    provider.on("session.closed", (_reason: string) => {
       session.status = "closed";
       this.emit("session.ended", session);
     });
@@ -391,10 +417,14 @@ export class RealtimeInterpreter extends EventEmitter {
    */
   private detectLanguage(text: string, config: InterpreterConfig): LanguageCode {
     // Korean detection (Hangul)
-    if (/[\uAC00-\uD7AF\u1100-\u11FF]/.test(text)) return "ko";
+    if (/[\uAC00-\uD7AF\u1100-\u11FF]/.test(text)) {
+      return "ko";
+    }
 
     // Japanese detection (Hiragana, Katakana, some Kanji patterns)
-    if (/[\u3040-\u309F\u30A0-\u30FF]/.test(text)) return "ja";
+    if (/[\u3040-\u309F\u30A0-\u30FF]/.test(text)) {
+      return "ja";
+    }
 
     // Chinese detection (CJK without Japanese kana)
     if (/[\u4E00-\u9FFF]/.test(text) && !/[\u3040-\u309F\u30A0-\u30FF]/.test(text)) {
@@ -404,13 +434,19 @@ export class RealtimeInterpreter extends EventEmitter {
     }
 
     // Arabic
-    if (/[\u0600-\u06FF]/.test(text)) return "ar";
+    if (/[\u0600-\u06FF]/.test(text)) {
+      return "ar";
+    }
 
     // Thai
-    if (/[\u0E00-\u0E7F]/.test(text)) return "th";
+    if (/[\u0E00-\u0E7F]/.test(text)) {
+      return "th";
+    }
 
     // Russian/Cyrillic
-    if (/[\u0400-\u04FF]/.test(text)) return "ru";
+    if (/[\u0400-\u04FF]/.test(text)) {
+      return "ru";
+    }
 
     // Default to source or English
     return config.sourceLanguage === "en" ? config.targetLanguage : config.sourceLanguage;
@@ -429,7 +465,9 @@ export class RealtimeInterpreter extends EventEmitter {
    */
   sendAudio(sessionId: string, chunk: Buffer): void {
     const session = this.sessions.get(sessionId);
-    if (!session?.provider) return;
+    if (!session?.provider) {
+      return;
+    }
 
     session.provider.sendAudio(chunk);
   }
@@ -439,7 +477,9 @@ export class RealtimeInterpreter extends EventEmitter {
    */
   sendText(sessionId: string, text: string): void {
     const session = this.sessions.get(sessionId);
-    if (!session?.provider) return;
+    if (!session?.provider) {
+      return;
+    }
 
     session.provider.sendText(text);
   }
@@ -449,7 +489,9 @@ export class RealtimeInterpreter extends EventEmitter {
    */
   async endSession(sessionId: string): Promise<InterpreterStats | null> {
     const session = this.sessions.get(sessionId);
-    if (!session) return null;
+    if (!session) {
+      return null;
+    }
 
     // Calculate final stats
     session.stats.totalDurationMs = Date.now() - session.createdAt.getTime();
@@ -518,7 +560,8 @@ export async function translateText(
   request: TranslationRequest,
   apiKey?: string,
 ): Promise<TranslationResult> {
-  const key = apiKey ??
+  const key =
+    apiKey ??
     process.env.GOOGLE_API_KEY ??
     process.env.GEMINI_API_KEY ??
     process.env.OPENCLAW_GEMINI_API_KEY;
@@ -578,7 +621,7 @@ ${request.text}`;
     );
 
     if (!response.ok) {
-      const error = await response.text();
+      const _error = await response.text();
       return {
         success: false,
         originalText: request.text,
@@ -636,12 +679,12 @@ export function formatLanguageList(): string {
 
   // Group by region
   const regions: Record<string, LanguageCode[]> = {
-    "동아시아": ["ko", "ja", "zh", "zh-TW"],
-    "동남아시아": ["th", "vi", "id", "ms", "tl"],
-    "남아시아": ["hi"],
-    "유럽": ["en", "es", "fr", "de", "it", "pt", "nl", "pl", "cs", "sv", "da"],
-    "동유럽": ["ru", "uk", "tr"],
-    "중동": ["ar"],
+    동아시아: ["ko", "ja", "zh", "zh-TW"],
+    동남아시아: ["th", "vi", "id", "ms", "tl"],
+    남아시아: ["hi"],
+    유럽: ["en", "es", "fr", "de", "it", "pt", "nl", "pl", "cs", "sv", "da"],
+    동유럽: ["ru", "uk", "tr"],
+    중동: ["ar"],
   };
 
   for (const [region, codes] of Object.entries(regions)) {
@@ -685,40 +728,66 @@ export function parseLanguageCode(input: string): LanguageCode | null {
   // Korean aliases
   const aliases: Record<string, LanguageCode> = {
     // Korean
-    "한국어": "ko", "한글": "ko", "korean": "ko",
+    한국어: "ko",
+    한글: "ko",
+    korean: "ko",
     // English
-    "영어": "en", "english": "en",
+    영어: "en",
+    english: "en",
     // Japanese
-    "일본어": "ja", "일어": "ja", "japanese": "ja",
+    일본어: "ja",
+    일어: "ja",
+    japanese: "ja",
     // Chinese
-    "중국어": "zh", "중문": "zh", "chinese": "zh",
-    "번체": "zh-TW", "대만어": "zh-TW", "traditional": "zh-TW",
+    중국어: "zh",
+    중문: "zh",
+    chinese: "zh",
+    번체: "zh-TW",
+    대만어: "zh-TW",
+    traditional: "zh-TW",
     // Spanish
-    "스페인어": "es", "spanish": "es",
+    스페인어: "es",
+    spanish: "es",
     // French
-    "프랑스어": "fr", "불어": "fr", "french": "fr",
+    프랑스어: "fr",
+    불어: "fr",
+    french: "fr",
     // German
-    "독일어": "de", "독어": "de", "german": "de",
+    독일어: "de",
+    독어: "de",
+    german: "de",
     // Italian
-    "이탈리아어": "it", "italian": "it",
+    이탈리아어: "it",
+    italian: "it",
     // Portuguese
-    "포르투갈어": "pt", "portuguese": "pt",
+    포르투갈어: "pt",
+    portuguese: "pt",
     // Russian
-    "러시아어": "ru", "노어": "ru", "russian": "ru",
+    러시아어: "ru",
+    노어: "ru",
+    russian: "ru",
     // Arabic
-    "아랍어": "ar", "arabic": "ar",
+    아랍어: "ar",
+    arabic: "ar",
     // Hindi
-    "힌디어": "hi", "hindi": "hi",
+    힌디어: "hi",
+    hindi: "hi",
     // Thai
-    "태국어": "th", "thai": "th",
+    태국어: "th",
+    thai: "th",
     // Vietnamese
-    "베트남어": "vi", "월남어": "vi", "vietnamese": "vi",
+    베트남어: "vi",
+    월남어: "vi",
+    vietnamese: "vi",
     // Indonesian
-    "인도네시아어": "id", "indonesian": "id",
+    인도네시아어: "id",
+    indonesian: "id",
     // Dutch
-    "네덜란드어": "nl", "dutch": "nl",
+    네덜란드어: "nl",
+    dutch: "nl",
     // Turkish
-    "터키어": "tr", "turkish": "tr",
+    터키어: "tr",
+    turkish: "tr",
   };
 
   return aliases[normalized] ?? null;

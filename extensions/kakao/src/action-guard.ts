@@ -15,7 +15,6 @@
 
 import {
   type SensitiveActionCategory,
-  type PermissionCheckResult,
   type PendingConfirmation,
   checkPermission,
   grantPermission,
@@ -359,32 +358,32 @@ function formatActionDetails(
 
   switch (action) {
     case "send_email":
-      if (details.to) lines.push(`• 받는 사람: ${details.to}`);
-      if (details.subject) lines.push(`• 제목: ${details.subject}`);
+      if (details.to) { lines.push(`• 받는 사람: ${details.to}`); }
+      if (details.subject) { lines.push(`• 제목: ${details.subject}`); }
       break;
 
     case "send_sms":
     case "send_kakao":
     case "send_message":
-      if (details.to) lines.push(`• 받는 사람: ${details.to}`);
-      if (details.preview) lines.push(`• 내용 미리보기: ${String(details.preview).slice(0, 50)}...`);
+      if (details.to) { lines.push(`• 받는 사람: ${details.to}`); }
+      if (details.preview) { lines.push(`• 내용 미리보기: ${String(details.preview).slice(0, 50)}...`); }
       break;
 
     case "make_payment":
-      if (details.amount) lines.push(`• 금액: ${details.amount}원`);
-      if (details.recipient) lines.push(`• 받는 곳: ${details.recipient}`);
-      if (details.description) lines.push(`• 설명: ${details.description}`);
+      if (details.amount) { lines.push(`• 금액: ${details.amount}원`); }
+      if (details.recipient) { lines.push(`• 받는 곳: ${details.recipient}`); }
+      if (details.description) { lines.push(`• 설명: ${details.description}`); }
       break;
 
     case "book_reservation":
-      if (details.place) lines.push(`• 장소: ${details.place}`);
-      if (details.date) lines.push(`• 날짜: ${details.date}`);
-      if (details.time) lines.push(`• 시간: ${details.time}`);
+      if (details.place) { lines.push(`• 장소: ${details.place}`); }
+      if (details.date) { lines.push(`• 날짜: ${details.date}`); }
+      if (details.time) { lines.push(`• 시간: ${details.time}`); }
       break;
 
     case "execute_code":
-      if (details.language) lines.push(`• 언어: ${details.language}`);
-      if (details.preview) lines.push(`• 코드 미리보기:\n\`\`\`\n${String(details.preview).slice(0, 100)}...\n\`\`\``);
+      if (details.language) { lines.push(`• 언어: ${details.language}`); }
+      if (details.preview) { lines.push(`• 코드 미리보기:\n\`\`\`\n${String(details.preview).slice(0, 100)}...\n\`\`\``); }
       break;
 
     default:
@@ -465,7 +464,7 @@ export function getPendingPermissionRequest(
   originalMessage: string;
 } | undefined {
   const pending = pendingPermissionRequests.get(kakaoUserId);
-  if (!pending) return undefined;
+  if (!pending) { return undefined; }
 
   // 5분 초과 시 만료
   if (Date.now() - pending.createdAt.getTime() > 5 * 60 * 1000) {

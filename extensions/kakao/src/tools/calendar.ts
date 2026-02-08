@@ -10,7 +10,7 @@ export interface CalendarEvent {
   startTime: string;
   endTime: string;
   isAllDay: boolean;
-  source: 'google' | 'kakao';
+  source: "google" | "kakao";
   calendarName?: string;
   attendees?: string[];
   reminders?: number[]; // 분 단위
@@ -20,7 +20,7 @@ export interface CalendarResult {
   events: CalendarEvent[];
   startDate: string;
   endDate: string;
-  sources: ('google' | 'kakao')[];
+  sources: ("google" | "kakao")[];
 }
 
 // ==================== Google Calendar ====================
@@ -42,7 +42,7 @@ async function refreshGoogleToken(): Promise<string> {
   const refreshToken = process.env.GOOGLE_REFRESH_TOKEN;
 
   if (!clientId || !clientSecret || !refreshToken) {
-    throw new Error('Google Calendar 인증 정보가 설정되지 않았습니다');
+    throw new Error("Google Calendar 인증 정보가 설정되지 않았습니다");
   }
 
   // 캐시된 토큰이 유효한지 확인
@@ -50,16 +50,16 @@ async function refreshGoogleToken(): Promise<string> {
     return googleTokensCache.accessToken;
   }
 
-  const response = await fetch('https://oauth2.googleapis.com/token', {
-    method: 'POST',
+  const response = await fetch("https://oauth2.googleapis.com/token", {
+    method: "POST",
     headers: {
-      'Content-Type': 'application/x-www-form-urlencoded',
+      "Content-Type": "application/x-www-form-urlencoded",
     },
     body: new URLSearchParams({
       client_id: clientId,
       client_secret: clientSecret,
       refresh_token: refreshToken,
-      grant_type: 'refresh_token',
+      grant_type: "refresh_token",
     }),
   });
 
@@ -87,7 +87,7 @@ export async function getGoogleCalendarEvents(
 ): Promise<CalendarEvent[]> {
   // Google 인증 정보 확인
   if (!process.env.GOOGLE_CLIENT_ID) {
-    console.warn('Google Calendar가 설정되지 않았습니다');
+    console.warn("Google Calendar가 설정되지 않았습니다");
     return [];
   }
 
@@ -96,16 +96,14 @@ export async function getGoogleCalendarEvents(
 
     const now = new Date();
     const start = startDate ? new Date(startDate) : now;
-    const end = endDate
-      ? new Date(endDate)
-      : new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000); // 기본 7일
+    const end = endDate ? new Date(endDate) : new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000); // 기본 7일
 
-    const url = new URL('https://www.googleapis.com/calendar/v3/calendars/primary/events');
-    url.searchParams.set('timeMin', start.toISOString());
-    url.searchParams.set('timeMax', end.toISOString());
-    url.searchParams.set('singleEvents', 'true');
-    url.searchParams.set('orderBy', 'startTime');
-    url.searchParams.set('maxResults', '50');
+    const url = new URL("https://www.googleapis.com/calendar/v3/calendars/primary/events");
+    url.searchParams.set("timeMin", start.toISOString());
+    url.searchParams.set("timeMax", end.toISOString());
+    url.searchParams.set("singleEvents", "true");
+    url.searchParams.set("orderBy", "startTime");
+    url.searchParams.set("maxResults", "50");
 
     const response = await fetch(url.toString(), {
       headers: {
@@ -131,20 +129,20 @@ export async function getGoogleCalendarEvents(
         reminders?: { overrides?: { minutes: number }[] };
       }) => ({
         id: event.id,
-        title: event.summary || '(제목 없음)',
+        title: event.summary || "(제목 없음)",
         description: event.description,
         location: event.location,
-        startTime: event.start.dateTime || event.start.date || '',
-        endTime: event.end.dateTime || event.end.date || '',
+        startTime: event.start.dateTime || event.start.date || "",
+        endTime: event.end.dateTime || event.end.date || "",
         isAllDay: !event.start.dateTime,
-        source: 'google' as const,
-        calendarName: 'Google Calendar',
+        source: "google" as const,
+        calendarName: "Google Calendar",
         attendees: event.attendees?.map((a) => a.email),
         reminders: event.reminders?.overrides?.map((r) => r.minutes),
       }),
     );
   } catch (error) {
-    console.error('Google Calendar 조회 실패:', error);
+    console.error("Google Calendar 조회 실패:", error);
     return [];
   }
 }
@@ -167,7 +165,7 @@ async function refreshKakaoToken(userId: string): Promise<string> {
   const clientSecret = process.env.KAKAO_CLIENT_SECRET;
 
   if (!clientId) {
-    throw new Error('카카오 API 키가 설정되지 않았습니다');
+    throw new Error("카카오 API 키가 설정되지 않았습니다");
   }
 
   // 캐시된 토큰 확인
@@ -177,11 +175,11 @@ async function refreshKakaoToken(userId: string): Promise<string> {
   }
 
   if (!cached?.refreshToken) {
-    throw new Error('카카오 캘린더 접근 권한이 없습니다. 먼저 연동을 진행해주세요.');
+    throw new Error("카카오 캘린더 접근 권한이 없습니다. 먼저 연동을 진행해주세요.");
   }
 
   const body: Record<string, string> = {
-    grant_type: 'refresh_token',
+    grant_type: "refresh_token",
     client_id: clientId,
     refresh_token: cached.refreshToken,
   };
@@ -190,10 +188,10 @@ async function refreshKakaoToken(userId: string): Promise<string> {
     body.client_secret = clientSecret;
   }
 
-  const response = await fetch('https://kauth.kakao.com/oauth/token', {
-    method: 'POST',
+  const response = await fetch("https://kauth.kakao.com/oauth/token", {
+    method: "POST",
     headers: {
-      'Content-Type': 'application/x-www-form-urlencoded',
+      "Content-Type": "application/x-www-form-urlencoded",
     },
     body: new URLSearchParams(body),
   });
@@ -239,7 +237,7 @@ export async function getKakaoCalendarEvents(
 ): Promise<CalendarEvent[]> {
   // 카카오 인증 정보 확인
   if (!process.env.KAKAO_REST_API_KEY) {
-    console.warn('카카오 API가 설정되지 않았습니다');
+    console.warn("카카오 API가 설정되지 않았습니다");
     return [];
   }
 
@@ -252,9 +250,7 @@ export async function getKakaoCalendarEvents(
   try {
     const now = new Date();
     const start = startDate ? new Date(startDate) : now;
-    const end = endDate
-      ? new Date(endDate)
-      : new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
+    const end = endDate ? new Date(endDate) : new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
 
     // 카카오 톡캘린더 API 호출
     // 참고: 카카오 톡캘린더 API는 비공개 API이므로
@@ -269,9 +265,9 @@ export async function getKakaoCalendarEvents(
     }
 
     // 톡캘린더 일정 조회 (v2 API)
-    const url = new URL('https://kapi.kakao.com/v2/api/calendar/events');
-    url.searchParams.set('from', start.toISOString().slice(0, 10));
-    url.searchParams.set('to', end.toISOString().slice(0, 10));
+    const url = new URL("https://kapi.kakao.com/v2/api/calendar/events");
+    url.searchParams.set("from", start.toISOString().slice(0, 10));
+    url.searchParams.set("to", end.toISOString().slice(0, 10));
 
     const response = await fetch(url.toString(), {
       headers: {
@@ -282,7 +278,7 @@ export async function getKakaoCalendarEvents(
     if (!response.ok) {
       // 권한 없음 또는 미지원 API인 경우
       if (response.status === 403 || response.status === 404) {
-        console.warn('카카오 톡캘린더 API 접근 불가');
+        console.warn("카카오 톡캘린더 API 접근 불가");
         return [];
       }
       throw new Error(`카카오 캘린더 API 오류: ${response.status}`);
@@ -304,19 +300,19 @@ export async function getKakaoCalendarEvents(
         reminders?: { remind_at: number }[];
       }) => ({
         id: event.id,
-        title: event.title || '(제목 없음)',
+        title: event.title || "(제목 없음)",
         description: event.description,
         location: event.location?.name,
         startTime: event.time.start_at,
         endTime: event.time.end_at,
         isAllDay: event.time.all_day || false,
-        source: 'kakao' as const,
-        calendarName: '톡캘린더',
+        source: "kakao" as const,
+        calendarName: "톡캘린더",
         reminders: event.reminders?.map((r) => r.remind_at),
       }),
     );
   } catch (error) {
-    console.error('카카오 캘린더 조회 실패:', error);
+    console.error("카카오 캘린더 조회 실패:", error);
     return [];
   }
 }
@@ -343,13 +339,17 @@ export async function getAllCalendarEvents(
   ]);
 
   // 시간순 정렬
-  const allEvents = [...googleEvents, ...kakaoEvents].sort((a, b) =>
+  const allEvents = [...googleEvents, ...kakaoEvents].toSorted((a, b) =>
     a.startTime.localeCompare(b.startTime),
   );
 
-  const sources: ('google' | 'kakao')[] = [];
-  if (googleEvents.length > 0) sources.push('google');
-  if (kakaoEvents.length > 0) sources.push('kakao');
+  const sources: ("google" | "kakao")[] = [];
+  if (googleEvents.length > 0) {
+    sources.push("google");
+  }
+  if (kakaoEvents.length > 0) {
+    sources.push("kakao");
+  }
 
   return {
     events: allEvents,
@@ -386,16 +386,16 @@ export function formatCalendarMessage(result: CalendarResult): string {
     message += `**${formatDate(date)} (${dayOfWeek})**\n`;
 
     for (const event of dateEvents) {
-      const time = event.isAllDay ? '종일' : formatTime(event.startTime);
-      const sourceIcon = event.source === 'google' ? '🔵' : '🟡';
+      const time = event.isAllDay ? "종일" : formatTime(event.startTime);
+      const sourceIcon = event.source === "google" ? "🔵" : "🟡";
       message += `${sourceIcon} ${time} - ${event.title}`;
 
       if (event.location) {
         message += ` 📍${event.location}`;
       }
-      message += '\n';
+      message += "\n";
     }
-    message += '\n';
+    message += "\n";
   }
 
   // 소스 범례
@@ -410,21 +410,21 @@ export function formatCalendarMessage(result: CalendarResult): string {
  * 날짜 포맷팅 헬퍼
  */
 function formatDate(dateStr: string): string {
-  const [year, month, day] = dateStr.split('-');
+  const [_year, month, day] = dateStr.split("-");
   return `${parseInt(month)}월 ${parseInt(day)}일`;
 }
 
 function formatTime(dateTimeStr: string): string {
-  if (dateTimeStr.includes('T')) {
-    const time = dateTimeStr.split('T')[1].slice(0, 5);
-    const [hour, minute] = time.split(':');
+  if (dateTimeStr.includes("T")) {
+    const time = dateTimeStr.split("T")[1].slice(0, 5);
+    const [hour, minute] = time.split(":");
     return `${hour}:${minute}`;
   }
-  return '';
+  return "";
 }
 
 function getDayOfWeek(dateStr: string): string {
-  const days = ['일', '월', '화', '수', '목', '금', '토'];
+  const days = ["일", "월", "화", "수", "목", "금", "토"];
   const date = new Date(dateStr);
   return days[date.getDay()];
 }
@@ -434,11 +434,12 @@ function getDayOfWeek(dateStr: string): string {
  */
 export function getKakaoCalendarLinkMessage(): string {
   const clientId = process.env.KAKAO_REST_API_KEY;
-  const redirectUri = process.env.KAKAO_CALENDAR_REDIRECT_URI ||
+  const redirectUri =
+    process.env.KAKAO_CALENDAR_REDIRECT_URI ||
     `${process.env.LAWCALL_BASE_URL}/kakao/calendar/callback`;
 
   if (!clientId) {
-    return '카카오 캘린더 연동이 지원되지 않습니다.';
+    return "카카오 캘린더 연동이 지원되지 않습니다.";
   }
 
   const authUrl = `https://kauth.kakao.com/oauth/authorize?client_id=${clientId}&redirect_uri=${encodeURIComponent(redirectUri)}&response_type=code&scope=talk_calendar`;

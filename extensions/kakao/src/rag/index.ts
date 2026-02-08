@@ -15,4 +15,4 @@ export {
   buildLegalContext,
   type LegalDocument,
   type LegalRAGResult,
-} from './legal-rag.js';
+} from "./legal-rag.js";

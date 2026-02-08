@@ -12,14 +12,7 @@
  * 4. If complex + online → Route to cloud LLM
  */
 
-import {
-  SLM_MODELS,
-  isOllamaRunning,
-  startOllamaServer,
-  checkMoaSLMStatus,
-  autoRecover,
-  type SLMModel,
-} from "./ollama-installer.js";
+import { SLM_MODELS, isOllamaRunning, checkMoaSLMStatus, autoRecover } from "./ollama-installer.js";
 
 // ============================================
 // Types
@@ -131,7 +124,7 @@ async function callOllama(
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
       model,
-      messages: messages.map(m => ({
+      messages: messages.map((m) => ({
         role: m.role,
         content: m.content,
       })),
@@ -148,7 +141,7 @@ async function callOllama(
     throw new Error(`Ollama API error: ${error}`);
   }
 
-  const data = await response.json() as {
+  const data = (await response.json()) as {
     message: { content: string };
     prompt_eval_count?: number;
     eval_count?: number;
@@ -220,16 +213,20 @@ async function unloadModel(model: string): Promise<boolean> {
  */
 async function tier1Route(userMessage: string): Promise<RoutingDecision> {
   const startTime = Date.now();
-  const tier1Model = SLM_MODELS.find(m => m.tier === 1)!;
+  const tier1Model = SLM_MODELS.find((m) => m.tier === 1)!;
 
   try {
-    const result = await callOllama(tier1Model.ollamaName, [
-      { role: "system", content: TIER1_ROUTING_PROMPT },
-      { role: "user", content: userMessage },
-    ], {
-      maxTokens: 256,
-      temperature: 0.1, // Low temp for consistent routing
-    });
+    const result = await callOllama(
+      tier1Model.ollamaName,
+      [
+        { role: "system", content: TIER1_ROUTING_PROMPT },
+        { role: "user", content: userMessage },
+      ],
+      {
+        maxTokens: 256,
+        temperature: 0.1, // Low temp for consistent routing
+      },
+    );
 
     // Parse JSON response
     const jsonMatch = result.content.match(/\{[\s\S]*\}/);
@@ -276,7 +273,7 @@ async function tier1Respond(
   options?: { maxTokens?: number; temperature?: number },
 ): Promise<SLMResponse> {
   const startTime = Date.now();
-  const tier1Model = SLM_MODELS.find(m => m.tier === 1)!;
+  const tier1Model = SLM_MODELS.find((m) => m.tier === 1)!;
 
   // Prepend system prompt
   const fullMessages: SLMMessage[] = [
@@ -314,7 +311,7 @@ async function tier2Process(
   options?: { maxTokens?: number; temperature?: number; enableThinking?: boolean },
 ): Promise<SLMResponse> {
   const startTime = Date.now();
-  const tier2Model = SLM_MODELS.find(m => m.tier === 2)!;
+  const tier2Model = SLM_MODELS.find((m) => m.tier === 2)!;
 
   // Check if Tier 2 is available
   const status = await checkMoaSLMStatus();
@@ -326,14 +323,12 @@ async function tier2Process(
   await loadModel(tier2Model.ollamaName);
 
   // Prepend system prompt with thinking mode
-  const systemPrompt = options?.enableThinking !== false
-    ? TIER2_REASONING_PROMPT
-    : TIER2_REASONING_PROMPT.replace("/think", "/no_think");
+  const systemPrompt =
+    options?.enableThinking !== false
+      ? TIER2_REASONING_PROMPT
+      : TIER2_REASONING_PROMPT.replace("/think", "/no_think");
 
-  const fullMessages: SLMMessage[] = [
-    { role: "system", content: systemPrompt },
-    ...messages,
-  ];
+  const fullMessages: SLMMessage[] = [{ role: "system", content: systemPrompt }, ...messages];
 
   const result = await callOllama(tier2Model.ollamaName, fullMessages, {
     maxTokens: options?.maxTokens ?? 4096,
@@ -530,8 +525,8 @@ export async function getSLMInfo(): Promise<{
   const running = await isOllamaRunning();
   const status = running ? await checkMoaSLMStatus() : { tier1Ready: false, tier2Ready: false };
 
-  const tier1Model = SLM_MODELS.find(m => m.tier === 1)!;
-  const tier2Model = SLM_MODELS.find(m => m.tier === 2)!;
+  const tier1Model = SLM_MODELS.find((m) => m.tier === 1)!;
+  const tier2Model = SLM_MODELS.find((m) => m.tier === 2)!;
 
   return {
     tier1: {
@@ -540,11 +535,7 @@ export async function getSLMInfo(): Promise<{
     },
     tier2: {
       model: tier2Model.ollamaName,
-      status: shouldSkipTier2()
-        ? "skipped"
-        : status.tier2Ready
-          ? "ready"
-          : "not-installed",
+      status: shouldSkipTier2() ? "skipped" : status.tier2Ready ? "ready" : "not-installed",
     },
     serverRunning: running,
   };
@@ -563,7 +554,7 @@ export async function preloadTier2(): Promise<boolean> {
     return false;
   }
 
-  const tier2Model = SLM_MODELS.find(m => m.tier === 2)!;
+  const tier2Model = SLM_MODELS.find((m) => m.tier === 2)!;
   return loadModel(tier2Model.ollamaName);
 }
 
@@ -571,7 +562,7 @@ export async function preloadTier2(): Promise<boolean> {
  * Unload Tier 2 to free memory (for mobile)
  */
 export async function unloadTier2(): Promise<boolean> {
-  const tier2Model = SLM_MODELS.find(m => m.tier === 2)!;
+  const tier2Model = SLM_MODELS.find((m) => m.tier === 2)!;
   return unloadModel(tier2Model.ollamaName);
 }
 

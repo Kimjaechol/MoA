@@ -156,31 +156,38 @@ export class OpenAIRealtimeProvider extends VoiceProvider {
       };
 
       // Use dynamic check for Node.js vs browser environment
-      if (typeof globalThis.WebSocket !== "undefined" && typeof process !== "undefined" && process.versions?.node) {
+      if (
+        typeof globalThis.WebSocket !== "undefined" &&
+        typeof process !== "undefined" &&
+        process.versions?.node
+      ) {
         // Node.js environment - use ws package style
-        this.ws = new (globalThis.WebSocket as unknown as new (url: string, opts: WebSocketOptions) => WebSocket)(url, wsOptions);
+        this.ws = new (globalThis.WebSocket as unknown as new (
+          url: string,
+          opts: WebSocketOptions,
+        ) => WebSocket)(url, wsOptions);
       } else {
         // Browser environment - headers not directly supported, would need proxy
         this.ws = new WebSocket(url);
       }
 
-      this.ws.onopen = () => {
+      this.ws.addEventListener("open", () => {
         this.sendSessionUpdate();
         resolve();
-      };
+      });
 
-      this.ws.onerror = (event) => {
+      this.ws.addEventListener("error", (event) => {
         const error = new Error(`OpenAI WebSocket error: ${event}`);
         reject(error);
-      };
+      });
 
-      this.ws.onclose = (event) => {
+      this.ws.addEventListener("close", (event) => {
         this.handleClose(event.reason ?? "Connection closed");
-      };
+      });
 
-      this.ws.onmessage = (event) => {
+      this.ws.addEventListener("message", (event) => {
         this.handleMessage(event.data);
-      };
+      });
     });
   }
 
@@ -271,20 +278,13 @@ export class OpenAIRealtimeProvider extends VoiceProvider {
             this.emit("response.started");
           }
 
-          const audioData = Buffer.from(
-            (message as unknown as { delta: string }).delta,
-            "base64",
-          );
+          const audioData = Buffer.from((message as unknown as { delta: string }).delta, "base64");
           this.session!.stats.outputAudioBytes += audioData.length;
           this.emit("response.audio", audioData);
           break;
 
         case "response.audio_transcript.delta":
-          this.emit(
-            "response.text",
-            (message as unknown as { delta: string }).delta,
-            false,
-          );
+          this.emit("response.text", (message as unknown as { delta: string }).delta, false);
           break;
 
         case "response.audio_transcript.done":
@@ -305,11 +305,7 @@ export class OpenAIRealtimeProvider extends VoiceProvider {
             name: funcCall.name,
             args: JSON.parse(funcCall.arguments),
           });
-          this.emit(
-            "tool.call",
-            funcCall.name,
-            JSON.parse(funcCall.arguments),
-          );
+          this.emit("tool.call", funcCall.name, JSON.parse(funcCall.arguments));
           break;
 
         case "response.done":
@@ -324,7 +320,11 @@ export class OpenAIRealtimeProvider extends VoiceProvider {
           this.emit("response.ended");
 
           // Extract token usage
-          const usage = (message as unknown as { response?: { usage?: { input_tokens: number; output_tokens: number } } }).response?.usage;
+          const usage = (
+            message as unknown as {
+              response?: { usage?: { input_tokens: number; output_tokens: number } };
+            }
+          ).response?.usage;
           if (usage) {
             this.session!.stats.inputTokens += usage.input_tokens;
             this.session!.stats.outputTokens += usage.output_tokens;
@@ -388,7 +388,9 @@ export class OpenAIRealtimeProvider extends VoiceProvider {
   }
 
   commitAudio(): void {
-    if (!this.ws || !this.isSessionReady) return;
+    if (!this.ws || !this.isSessionReady) {
+      return;
+    }
 
     const message: InputAudioBufferCommit = {
       type: "input_audio_buffer.commit",
@@ -405,7 +407,9 @@ export class OpenAIRealtimeProvider extends VoiceProvider {
   }
 
   sendText(text: string): void {
-    if (!this.ws || !this.isSessionReady) return;
+    if (!this.ws || !this.isSessionReady) {
+      return;
+    }
 
     // Add text message to conversation
     const itemMessage: ConversationItemCreate = {
@@ -433,7 +437,9 @@ export class OpenAIRealtimeProvider extends VoiceProvider {
   }
 
   interrupt(): void {
-    if (!this.ws || !this.isSessionReady) return;
+    if (!this.ws || !this.isSessionReady) {
+      return;
+    }
 
     // Cancel current response
     const message: ResponseCancel = {
@@ -463,7 +469,9 @@ export class OpenAIRealtimeProvider extends VoiceProvider {
   }
 
   sendToolResult(callId: string, result: unknown): void {
-    if (!this.ws || !this.isSessionReady) return;
+    if (!this.ws || !this.isSessionReady) {
+      return;
+    }
 
     const message: OpenAIMessage = {
       type: "conversation.item.create",
@@ -524,10 +532,10 @@ interface WebSocketOptions {
 /**
  * Create an OpenAI Realtime provider instance
  */
-export function createOpenAIProvider(config: Partial<VoiceProviderConfig> = {}): OpenAIRealtimeProvider {
-  const apiKey = config.apiKey ??
-    process.env.OPENAI_API_KEY ??
-    process.env.OPENCLAW_OPENAI_API_KEY;
+export function createOpenAIProvider(
+  config: Partial<VoiceProviderConfig> = {},
+): OpenAIRealtimeProvider {
+  const apiKey = config.apiKey ?? process.env.OPENAI_API_KEY ?? process.env.OPENCLAW_OPENAI_API_KEY;
 
   if (!apiKey) {
     throw new Error("OpenAI API key not found. Set OPENAI_API_KEY.");
@@ -540,8 +548,5 @@ export function createOpenAIProvider(config: Partial<VoiceProviderConfig> = {}):
  * Check if OpenAI Realtime API is available
  */
 export function isOpenAIAvailable(): boolean {
-  return !!(
-    process.env.OPENAI_API_KEY ||
-    process.env.OPENCLAW_OPENAI_API_KEY
-  );
+  return !!(process.env.OPENAI_API_KEY || process.env.OPENCLAW_OPENAI_API_KEY);
 }

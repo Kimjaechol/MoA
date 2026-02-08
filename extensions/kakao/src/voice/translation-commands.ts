@@ -14,8 +14,6 @@ import {
   formatPopularPairs,
   SUPPORTED_LANGUAGES,
   type LanguageCode,
-  type TranslationResult,
-  type InterpreterConfig,
 } from "./realtime-interpreter.js";
 
 // ============================================
@@ -23,12 +21,12 @@ import {
 // ============================================
 
 export type TranslationCommandType =
-  | "translate"      // Text translation
-  | "interpret"      // Start real-time interpretation
+  | "translate" // Text translation
+  | "interpret" // Start real-time interpretation
   | "interpret_stop" // Stop interpretation
-  | "languages"      // List supported languages
-  | "set_language"   // Set default language
-  | "help";          // Help
+  | "languages" // List supported languages
+  | "set_language" // Set default language
+  | "help"; // Help
 
 export interface TranslationCommand {
   isCommand: boolean;
@@ -55,24 +53,40 @@ export interface TranslationCommandResult {
 // Language pair shortcuts (한영, 영한, 한일, etc.)
 const LANGUAGE_PAIR_SHORTCUTS: Record<string, [LanguageCode, LanguageCode]> = {
   // Korean pairs
-  "한영": ["ko", "en"], "영한": ["en", "ko"],
-  "한일": ["ko", "ja"], "일한": ["ja", "ko"],
-  "한중": ["ko", "zh"], "중한": ["zh", "ko"],
-  "한불": ["ko", "fr"], "불한": ["fr", "ko"],
-  "한독": ["ko", "de"], "독한": ["de", "ko"],
-  "한서": ["ko", "es"], "서한": ["es", "ko"],
-  "한러": ["ko", "ru"], "러한": ["ru", "ko"],
-  "한아": ["ko", "ar"], "아한": ["ar", "ko"],
-  "한태": ["ko", "th"], "태한": ["th", "ko"],
-  "한베": ["ko", "vi"], "베한": ["vi", "ko"],
+  한영: ["ko", "en"],
+  영한: ["en", "ko"],
+  한일: ["ko", "ja"],
+  일한: ["ja", "ko"],
+  한중: ["ko", "zh"],
+  중한: ["zh", "ko"],
+  한불: ["ko", "fr"],
+  불한: ["fr", "ko"],
+  한독: ["ko", "de"],
+  독한: ["de", "ko"],
+  한서: ["ko", "es"],
+  서한: ["es", "ko"],
+  한러: ["ko", "ru"],
+  러한: ["ru", "ko"],
+  한아: ["ko", "ar"],
+  아한: ["ar", "ko"],
+  한태: ["ko", "th"],
+  태한: ["th", "ko"],
+  한베: ["ko", "vi"],
+  베한: ["vi", "ko"],
   // English pairs
-  "영일": ["en", "ja"], "일영": ["ja", "en"],
-  "영중": ["en", "zh"], "중영": ["zh", "en"],
-  "영불": ["en", "fr"], "불영": ["fr", "en"],
-  "영독": ["en", "de"], "독영": ["de", "en"],
-  "영서": ["en", "es"], "서영": ["es", "en"],
+  영일: ["en", "ja"],
+  일영: ["ja", "en"],
+  영중: ["en", "zh"],
+  중영: ["zh", "en"],
+  영불: ["en", "fr"],
+  불영: ["fr", "en"],
+  영독: ["en", "de"],
+  독영: ["de", "en"],
+  영서: ["en", "es"],
+  서영: ["es", "en"],
   // Japanese pairs
-  "일중": ["ja", "zh"], "중일": ["zh", "ja"],
+  일중: ["ja", "zh"],
+  중일: ["zh", "ja"],
 };
 
 /**
@@ -80,66 +94,115 @@ const LANGUAGE_PAIR_SHORTCUTS: Record<string, [LanguageCode, LanguageCode]> = {
  */
 export function isTranslationCommand(message: string): boolean {
   const trimmed = message.trim();
-  const lower = trimmed.toLowerCase();
+  const _lower = trimmed.toLowerCase();
 
   // Slash commands
-  if (/^[/\/](번역|translate|통역|interpret|언어|languages?)/i.test(trimmed)) {
+  if (/^[/](번역|translate|통역|interpret|언어|languages?)/i.test(trimmed)) {
     return true;
   }
 
   // Translation verb patterns
   const translationVerbs = [
     // 번역 variations
-    /번역/, /번역해/, /번역\s*해\s*줘/, /번역\s*해\s*주세요/, /번역\s*해\s*줄래/,
-    /번역\s*좀/, /번역\s*부탁/, /번역\s*해\s*봐/, /번역\s*해\s*볼래/,
-    /번역기/, /번역\s*기능/, /번역\s*서비스/,
+    /번역/,
+    /번역해/,
+    /번역\s*해\s*줘/,
+    /번역\s*해\s*주세요/,
+    /번역\s*해\s*줄래/,
+    /번역\s*좀/,
+    /번역\s*부탁/,
+    /번역\s*해\s*봐/,
+    /번역\s*해\s*볼래/,
+    /번역기/,
+    /번역\s*기능/,
+    /번역\s*서비스/,
     // 바꿔/옮겨 patterns
-    /로\s*바꿔/, /로\s*옮겨/, /로\s*변환/,
+    /로\s*바꿔/,
+    /로\s*옮겨/,
+    /로\s*변환/,
     // Question patterns
-    /로\s*뭐/, /어로\s*뭐/, /어로는\s*뭐/, /로\s*어떻게/,
-    /어로\s*말해/, /어로\s*써/, /어로\s*적어/,
+    /로\s*뭐/,
+    /어로\s*뭐/,
+    /어로는\s*뭐/,
+    /로\s*어떻게/,
+    /어로\s*말해/,
+    /어로\s*써/,
+    /어로\s*적어/,
     // English
-    /translate/i, /translation/i,
+    /translate/i,
+    /translation/i,
   ];
 
   for (const pattern of translationVerbs) {
-    if (pattern.test(trimmed)) return true;
+    if (pattern.test(trimmed)) {
+      return true;
+    }
   }
 
   // Interpretation verb patterns
   const interpretVerbs = [
     // 통역 variations
-    /통역/, /통역해/, /통역\s*해\s*줘/, /통역\s*해\s*주세요/,
-    /통역\s*좀/, /통역\s*부탁/, /통역\s*시작/, /통역\s*켜/,
-    /통역\s*모드/, /통역기/, /통역\s*기능/, /통역\s*서비스/,
-    /통역사/, /통역\s*종료/, /통역\s*끝/, /통역\s*중지/, /통역\s*꺼/,
+    /통역/,
+    /통역해/,
+    /통역\s*해\s*줘/,
+    /통역\s*해\s*주세요/,
+    /통역\s*좀/,
+    /통역\s*부탁/,
+    /통역\s*시작/,
+    /통역\s*켜/,
+    /통역\s*모드/,
+    /통역기/,
+    /통역\s*기능/,
+    /통역\s*서비스/,
+    /통역사/,
+    /통역\s*종료/,
+    /통역\s*끝/,
+    /통역\s*중지/,
+    /통역\s*꺼/,
     // Real-time variations
-    /실시간\s*통역/, /동시\s*통역/, /라이브\s*통역/, /live\s*통역/i,
+    /실시간\s*통역/,
+    /동시\s*통역/,
+    /라이브\s*통역/,
+    /live\s*통역/i,
     // English
-    /interpret/i, /interpretation/i,
+    /interpret/i,
+    /interpretation/i,
   ];
 
   for (const pattern of interpretVerbs) {
-    if (pattern.test(trimmed)) return true;
+    if (pattern.test(trimmed)) {
+      return true;
+    }
   }
 
   // Language pair shortcuts (한영, 영한, etc.)
   for (const shortcut of Object.keys(LANGUAGE_PAIR_SHORTCUTS)) {
-    if (trimmed.includes(shortcut)) return true;
+    if (trimmed.includes(shortcut)) {
+      return true;
+    }
   }
 
   // Language list patterns
   const langListPatterns = [
-    /언어\s*목록/, /언어\s*리스트/, /지원\s*언어/, /사용.*언어/,
-    /어떤\s*언어/, /무슨\s*언어/, /언어\s*종류/,
+    /언어\s*목록/,
+    /언어\s*리스트/,
+    /지원\s*언어/,
+    /사용.*언어/,
+    /어떤\s*언어/,
+    /무슨\s*언어/,
+    /언어\s*종류/,
   ];
 
   for (const pattern of langListPatterns) {
-    if (pattern.test(trimmed)) return true;
+    if (pattern.test(trimmed)) {
+      return true;
+    }
   }
 
   // 영작, 일작, etc. (writing in language)
-  if (/^(영|일|중|불|독|서)작/.test(trimmed)) return true;
+  if (/^(영|일|중|불|독|서)작/.test(trimmed)) {
+    return true;
+  }
 
   return false;
 }
@@ -149,13 +212,13 @@ export function isTranslationCommand(message: string): boolean {
  */
 export function parseTranslationCommand(message: string): TranslationCommand {
   const trimmed = message.trim();
-  const lower = trimmed.toLowerCase();
+  const _lower = trimmed.toLowerCase();
 
   // ============================================
   // Help Commands
   // ============================================
   const helpPatterns = [
-    /^[/\/]?(번역|통역)\s*(도움말|도움|헬프|help|사용법|사용\s*방법|어떻게)/i,
+    /^[/]?(번역|통역)\s*(도움말|도움|헬프|help|사용법|사용\s*방법|어떻게)/i,
     /^(번역|통역)\s*(어떻게|뭐야|뭐지|뭔가요)/i,
   ];
   for (const pattern of helpPatterns) {
@@ -168,7 +231,7 @@ export function parseTranslationCommand(message: string): TranslationCommand {
   // Language List Commands
   // ============================================
   const langListPatterns = [
-    /^[/\/]?(언어|languages?|언어\s*목록|지원\s*언어|언어\s*리스트)$/i,
+    /^[/]?(언어|languages?|언어\s*목록|지원\s*언어|언어\s*리스트)$/i,
     /^(어떤|무슨|사용\s*가능한)\s*언어/i,
     /^언어\s*(종류|목록|리스트)/i,
     /^지원.*언어.*뭐/i,
@@ -183,8 +246,8 @@ export function parseTranslationCommand(message: string): TranslationCommand {
   // Stop Interpretation Commands
   // ============================================
   const stopPatterns = [
-    /^[/\/]?(통역\s*(종료|끝|중지|멈춰|스탑|stop|그만|해제|끄기))/i,
-    /^[/\/]?(통역\s*(꺼|꺼줘|꺼주세요))/i,
+    /^[/]?(통역\s*(종료|끝|중지|멈춰|스탑|stop|그만|해제|끄기))/i,
+    /^[/]?(통역\s*(꺼|꺼줘|꺼주세요))/i,
     /^(통역\s*(그만|멈춰|중단))/i,
     /^(interpret\s*stop|stop\s*interpret)/i,
   ];
@@ -200,7 +263,7 @@ export function parseTranslationCommand(message: string): TranslationCommand {
   // "한영 통역", "영한통역 시작", "한일 통역해줘" etc.
   for (const [shortcut, [src, tgt]] of Object.entries(LANGUAGE_PAIR_SHORTCUTS)) {
     const pairInterpretPatterns = [
-      new RegExp(`^[/\\/]?${shortcut}\\s*(통역|interpret)`, "i"),
+      new RegExp(`^[/]?${shortcut}\\s*(통역|interpret)`, "i"),
       new RegExp(`^${shortcut}\\s*통역\\s*(해|해줘|해주세요|시작|켜)?`, "i"),
     ];
     for (const pattern of pairInterpretPatterns) {
@@ -222,7 +285,7 @@ export function parseTranslationCommand(message: string): TranslationCommand {
 
   // /통역 한국어 영어 or /통역 ko en [양방향]
   const interpretWithLangsMatch = trimmed.match(
-    /^[/\/]?(통역|interpret|실시간\s*통역|동시\s*통역|라이브\s*통역)\s+(\S+)\s+(\S+)(?:\s+(양방향|bidirectional|bi|쌍방향))?$/i,
+    /^[/]?(통역|interpret|실시간\s*통역|동시\s*통역|라이브\s*통역)\s+(\S+)\s+(\S+)(?:\s+(양방향|bidirectional|bi|쌍방향))?$/i,
   );
   if (interpretWithLangsMatch) {
     const srcLang = parseLanguageCode(interpretWithLangsMatch[2]);
@@ -240,7 +303,7 @@ export function parseTranslationCommand(message: string): TranslationCommand {
 
   // Various interpretation start patterns (default to Korean ↔ English)
   const simpleInterpretPatterns = [
-    /^[/\/]?(통역|interpret)$/i,
+    /^[/]?(통역|interpret)$/i,
     /^(통역\s*(해|해줘|해주세요|해줄래|시작|켜|켜줘|켜주세요))$/i,
     /^(통역\s*좀\s*(해|해줘|해주세요))$/i,
     /^(통역\s*부탁\s*(해|해요|드려요|합니다)?)$/i,
@@ -287,7 +350,7 @@ export function parseTranslationCommand(message: string): TranslationCommand {
 
   // /번역 영어 [text] or /번역 ko->en [text]
   const translateWithLangMatch = trimmed.match(
-    /^[/\/]?(번역|translate)\s+(?:(\S+)\s*(?:->|→|에서|to|부터)\s*)?(\S+)\s+(.+)$/i,
+    /^[/]?(번역|translate)\s+(?:(\S+)\s*(?:->|→|에서|to|부터)\s*)?(\S+)\s+(.+)$/i,
   );
   if (translateWithLangMatch) {
     const srcInput = translateWithLangMatch[2];
@@ -312,7 +375,12 @@ export function parseTranslationCommand(message: string): TranslationCommand {
   const writingMatch = trimmed.match(/^(영|일|중|불|독|서)작\s*[:\s]*(.+)$/i);
   if (writingMatch) {
     const langMap: Record<string, LanguageCode> = {
-      "영": "en", "일": "ja", "중": "zh", "불": "fr", "독": "de", "서": "es",
+      영: "en",
+      일: "ja",
+      중: "zh",
+      불: "fr",
+      독: "de",
+      서: "es",
     };
     const tgtLang = langMap[writingMatch[1]];
     if (tgtLang) {
@@ -327,7 +395,7 @@ export function parseTranslationCommand(message: string): TranslationCommand {
   }
 
   // Simple /번역 [text] (auto-detect)
-  const simpleTranslateMatch = trimmed.match(/^[/\/]?(번역|translate)\s+(.+)$/i);
+  const simpleTranslateMatch = trimmed.match(/^[/]?(번역|translate)\s+(.+)$/i);
   if (simpleTranslateMatch) {
     const text = simpleTranslateMatch[2];
     const hasKorean = /[\uAC00-\uD7AF]/.test(text);
@@ -541,9 +609,7 @@ async function handleTextTranslation(
   }
 
   const targetLang = SUPPORTED_LANGUAGES[cmd.targetLanguage];
-  const sourceLang = cmd.sourceLanguage
-    ? SUPPORTED_LANGUAGES[cmd.sourceLanguage]
-    : null;
+  const sourceLang = cmd.sourceLanguage ? SUPPORTED_LANGUAGES[cmd.sourceLanguage] : null;
 
   let message = `${targetLang.flag} **${targetLang.nativeName} 번역**\n\n`;
   message += `${result.translatedText}`;
@@ -617,7 +683,7 @@ ${modeText}
 /**
  * Handle stop interpretation
  */
-function handleStopInterpretation(userId: string): TranslationCommandResult {
+function handleStopInterpretation(_userId: string): TranslationCommandResult {
   // Note: Actual session termination would be done by the voice handler
   return {
     success: true,

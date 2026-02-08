@@ -10,21 +10,19 @@
  */
 
 import {
-  MoltbotGatewayClient,
-  createGatewayClient,
-  discoverLocalGateway,
-  type GatewayConfig,
-  type GatewayResponse,
-} from "./gateway-client.js";
-import { MoltbotToolBridge, createToolBridge, type ToolExecutionResult } from "./tool-bridge.js";
-import {
   MoltbotChannelBridge,
   createChannelBridge,
   parseBridgeCommand,
   type ChannelType,
   type BridgeResult,
 } from "./channel-bridge.js";
+import {
+  MoltbotGatewayClient,
+  createGatewayClient,
+  discoverLocalGateway,
+} from "./gateway-client.js";
 import { isOpenClawInstalled, listAgentIds } from "./memory-adapter.js";
+import { MoltbotToolBridge, createToolBridge, type ToolExecutionResult } from "./tool-bridge.js";
 
 export interface AgentConfig {
   /** Gateway URL (auto-discover if not provided) */
@@ -172,10 +170,7 @@ export class MoltbotAgentIntegration {
    * 2. Check for tool commands
    * 3. Send to Moltbot agent for AI response
    */
-  async processMessage(
-    text: string,
-    context: ConversationContext,
-  ): Promise<AgentResponse> {
+  async processMessage(text: string, context: ConversationContext): Promise<AgentResponse> {
     if (!this.initialized || !this.gateway) {
       return {
         success: false,
@@ -202,10 +197,7 @@ export class MoltbotAgentIntegration {
   /**
    * Send a message to Moltbot agent
    */
-  async sendToAgent(
-    text: string,
-    context: ConversationContext,
-  ): Promise<AgentResponse> {
+  async sendToAgent(text: string, context: ConversationContext): Promise<AgentResponse> {
     if (!this.gateway) {
       return { success: false, error: "Gateway not connected" };
     }
@@ -283,13 +275,7 @@ export class MoltbotAgentIntegration {
       return { success: false, error: "Channel bridge not initialized" };
     }
 
-    return this.channelBridge.forwardToChannel(
-      channel,
-      recipient,
-      context.userId,
-      text,
-      options,
-    );
+    return this.channelBridge.forwardToChannel(channel, recipient, context.userId, text, options);
   }
 
   /**
@@ -355,12 +341,7 @@ export class MoltbotAgentIntegration {
       };
     }
 
-    const result = await this.sendToChannel(
-      cmd.channel,
-      cmd.recipient,
-      cmd.text,
-      context,
-    );
+    const result = await this.sendToChannel(cmd.channel, cmd.recipient, cmd.text, context);
 
     if (!result.success) {
       return {
@@ -388,7 +369,7 @@ export class MoltbotAgentIntegration {
     const trimmed = message.trim();
 
     // Check for tool commands: /도구 <name> or /tool <name>
-    const match = trimmed.match(/^[/\/](도구|tool)\s+(\w+)(?:\s+(.+))?$/i);
+    const match = trimmed.match(/^[/](도구|tool)\s+(\w+)(?:\s+(.+))?$/i);
     if (!match) {
       return { isCommand: false };
     }
@@ -435,11 +416,7 @@ export class MoltbotAgentIntegration {
       };
     }
 
-    const result = await this.executeTool(
-      cmd.toolName,
-      cmd.parameters ?? {},
-      context,
-    );
+    const result = await this.executeTool(cmd.toolName, cmd.parameters ?? {}, context);
 
     if (!result.success) {
       return {
@@ -450,9 +427,8 @@ export class MoltbotAgentIntegration {
 
     return {
       success: true,
-      text: typeof result.result === "string"
-        ? result.result
-        : JSON.stringify(result.result, null, 2),
+      text:
+        typeof result.result === "string" ? result.result : JSON.stringify(result.result, null, 2),
       toolsUsed: [cmd.toolName],
     };
   }
@@ -461,15 +437,23 @@ export class MoltbotAgentIntegration {
    * Extract tool names from tool results
    */
   private extractToolNames(toolResults?: unknown[]): string[] | undefined {
-    if (!toolResults?.length) return undefined;
+    if (!toolResults?.length) {
+      return undefined;
+    }
 
     const names: string[] = [];
     for (const result of toolResults) {
       if (typeof result === "object" && result !== null) {
         const r = result as Record<string, unknown>;
-        if (typeof r.toolName === "string") names.push(r.toolName);
-        if (typeof r.tool === "string") names.push(r.tool);
-        if (typeof r.name === "string") names.push(r.name);
+        if (typeof r.toolName === "string") {
+          names.push(r.toolName);
+        }
+        if (typeof r.tool === "string") {
+          names.push(r.tool);
+        }
+        if (typeof r.name === "string") {
+          names.push(r.name);
+        }
       }
     }
 
@@ -506,9 +490,7 @@ let sharedIntegration: MoltbotAgentIntegration | null = null;
 /**
  * Get or create the shared integration instance
  */
-export async function getSharedIntegration(
-  config?: AgentConfig,
-): Promise<MoltbotAgentIntegration> {
+export async function getSharedIntegration(config?: AgentConfig): Promise<MoltbotAgentIntegration> {
   if (!sharedIntegration) {
     sharedIntegration = createAgentIntegration(config);
     await sharedIntegration.initialize();

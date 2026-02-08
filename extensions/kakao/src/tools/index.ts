@@ -2,20 +2,12 @@
  * Tool Registry - 모든 도구 통합 관리
  */
 
-import { getWeather, type WeatherResult } from './weather.js';
 import {
   getGoogleCalendarEvents,
   getKakaoCalendarEvents,
   getAllCalendarEvents,
   type CalendarEvent,
-} from './calendar.js';
-import { getSportsSchedule, type SportsResult } from './sports.js';
-import {
-  getPublicHolidays,
-  getAirQuality,
-  getCovidStats,
-  type PublicDataResult,
-} from './public-data.js';
+} from "./calendar.js";
 import {
   getDirections,
   parseNavigationCommand,
@@ -24,7 +16,10 @@ import {
   type RouteResult,
   type TransportMode,
   type NavigationProvider,
-} from './navigation.js';
+} from "./navigation.js";
+import { getPublicHolidays, getAirQuality, type PublicDataResult } from "./public-data.js";
+import { getSportsSchedule, type SportsResult } from "./sports.js";
+import { getWeather, type WeatherResult } from "./weather.js";
 
 export interface ToolResult {
   success: boolean;
@@ -36,7 +31,7 @@ export interface ToolResult {
 export interface ToolDefinition {
   name: string;
   description: string;
-  category: 'info' | 'action' | 'search';
+  category: "info" | "action" | "search";
   parameters: {
     name: string;
     type: string;
@@ -52,21 +47,21 @@ export interface ToolDefinition {
 export const tools: Record<string, ToolDefinition> = {
   // 날씨 조회
   getWeather: {
-    name: 'getWeather',
-    description: '특정 지역의 현재 날씨와 예보를 조회합니다',
-    category: 'info',
+    name: "getWeather",
+    description: "특정 지역의 현재 날씨와 예보를 조회합니다",
+    category: "info",
     parameters: [
       {
-        name: 'location',
-        type: 'string',
+        name: "location",
+        type: "string",
         required: true,
-        description: '지역명 (예: 서울, 부산, 제주)',
+        description: "지역명 (예: 서울, 부산, 제주)",
       },
       {
-        name: 'date',
-        type: 'string',
+        name: "date",
+        type: "string",
         required: false,
-        description: '조회할 날짜 (YYYY-MM-DD)',
+        description: "조회할 날짜 (YYYY-MM-DD)",
       },
     ],
     execute: async (params) => {
@@ -75,12 +70,12 @@ export const tools: Record<string, ToolDefinition> = {
           params.location as string,
           params.date as string | undefined,
         );
-        return { success: true, data: result, source: 'weather' };
+        return { success: true, data: result, source: "weather" };
       } catch (error) {
         return {
           success: false,
-          error: error instanceof Error ? error.message : '날씨 조회 실패',
-          source: 'weather',
+          error: error instanceof Error ? error.message : "날씨 조회 실패",
+          source: "weather",
         };
       }
     },
@@ -88,21 +83,21 @@ export const tools: Record<string, ToolDefinition> = {
 
   // Google 캘린더 조회
   getGoogleCalendar: {
-    name: 'getGoogleCalendar',
-    description: 'Google 캘린더에서 일정을 조회합니다',
-    category: 'info',
+    name: "getGoogleCalendar",
+    description: "Google 캘린더에서 일정을 조회합니다",
+    category: "info",
     parameters: [
       {
-        name: 'startDate',
-        type: 'string',
+        name: "startDate",
+        type: "string",
         required: false,
-        description: '시작 날짜 (YYYY-MM-DD)',
+        description: "시작 날짜 (YYYY-MM-DD)",
       },
       {
-        name: 'endDate',
-        type: 'string',
+        name: "endDate",
+        type: "string",
         required: false,
-        description: '종료 날짜 (YYYY-MM-DD)',
+        description: "종료 날짜 (YYYY-MM-DD)",
       },
     ],
     execute: async (params) => {
@@ -111,12 +106,12 @@ export const tools: Record<string, ToolDefinition> = {
           params.startDate as string | undefined,
           params.endDate as string | undefined,
         );
-        return { success: true, data: result, source: 'google_calendar' };
+        return { success: true, data: result, source: "google_calendar" };
       } catch (error) {
         return {
           success: false,
-          error: error instanceof Error ? error.message : '캘린더 조회 실패',
-          source: 'google_calendar',
+          error: error instanceof Error ? error.message : "캘린더 조회 실패",
+          source: "google_calendar",
         };
       }
     },
@@ -124,21 +119,21 @@ export const tools: Record<string, ToolDefinition> = {
 
   // 카카오톡 캘린더 조회
   getKakaoCalendar: {
-    name: 'getKakaoCalendar',
-    description: '카카오톡 캘린더에서 일정을 조회합니다',
-    category: 'info',
+    name: "getKakaoCalendar",
+    description: "카카오톡 캘린더에서 일정을 조회합니다",
+    category: "info",
     parameters: [
       {
-        name: 'startDate',
-        type: 'string',
+        name: "startDate",
+        type: "string",
         required: false,
-        description: '시작 날짜 (YYYY-MM-DD)',
+        description: "시작 날짜 (YYYY-MM-DD)",
       },
       {
-        name: 'endDate',
-        type: 'string',
+        name: "endDate",
+        type: "string",
         required: false,
-        description: '종료 날짜 (YYYY-MM-DD)',
+        description: "종료 날짜 (YYYY-MM-DD)",
       },
     ],
     execute: async (params) => {
@@ -147,12 +142,12 @@ export const tools: Record<string, ToolDefinition> = {
           params.startDate as string | undefined,
           params.endDate as string | undefined,
         );
-        return { success: true, data: result, source: 'kakao_calendar' };
+        return { success: true, data: result, source: "kakao_calendar" };
       } catch (error) {
         return {
           success: false,
-          error: error instanceof Error ? error.message : '톡캘린더 조회 실패',
-          source: 'kakao_calendar',
+          error: error instanceof Error ? error.message : "톡캘린더 조회 실패",
+          source: "kakao_calendar",
         };
       }
     },
@@ -160,21 +155,21 @@ export const tools: Record<string, ToolDefinition> = {
 
   // 전체 캘린더 조회 (Google + Kakao)
   getAllCalendars: {
-    name: 'getAllCalendars',
-    description: 'Google 캘린더와 카카오톡 캘린더의 모든 일정을 조회합니다',
-    category: 'info',
+    name: "getAllCalendars",
+    description: "Google 캘린더와 카카오톡 캘린더의 모든 일정을 조회합니다",
+    category: "info",
     parameters: [
       {
-        name: 'startDate',
-        type: 'string',
+        name: "startDate",
+        type: "string",
         required: false,
-        description: '시작 날짜 (YYYY-MM-DD)',
+        description: "시작 날짜 (YYYY-MM-DD)",
       },
       {
-        name: 'endDate',
-        type: 'string',
+        name: "endDate",
+        type: "string",
         required: false,
-        description: '종료 날짜 (YYYY-MM-DD)',
+        description: "종료 날짜 (YYYY-MM-DD)",
       },
     ],
     execute: async (params) => {
@@ -183,12 +178,12 @@ export const tools: Record<string, ToolDefinition> = {
           params.startDate as string | undefined,
           params.endDate as string | undefined,
         );
-        return { success: true, data: result, source: 'all_calendars' };
+        return { success: true, data: result, source: "all_calendars" };
       } catch (error) {
         return {
           success: false,
-          error: error instanceof Error ? error.message : '캘린더 조회 실패',
-          source: 'all_calendars',
+          error: error instanceof Error ? error.message : "캘린더 조회 실패",
+          source: "all_calendars",
         };
       }
     },
@@ -196,33 +191,33 @@ export const tools: Record<string, ToolDefinition> = {
 
   // 스포츠 일정 조회
   getSportsSchedule: {
-    name: 'getSportsSchedule',
-    description: '스포츠 경기 일정을 조회합니다 (KBO, K리그, NBA 등)',
-    category: 'info',
+    name: "getSportsSchedule",
+    description: "스포츠 경기 일정을 조회합니다 (KBO, K리그, NBA 등)",
+    category: "info",
     parameters: [
       {
-        name: 'sport',
-        type: 'string',
+        name: "sport",
+        type: "string",
         required: true,
-        description: '스포츠 종류 (baseball, soccer, basketball)',
+        description: "스포츠 종류 (baseball, soccer, basketball)",
       },
       {
-        name: 'league',
-        type: 'string',
+        name: "league",
+        type: "string",
         required: false,
-        description: '리그 (KBO, K리그, NBA, EPL 등)',
+        description: "리그 (KBO, K리그, NBA, EPL 등)",
       },
       {
-        name: 'team',
-        type: 'string',
+        name: "team",
+        type: "string",
         required: false,
-        description: '팀명',
+        description: "팀명",
       },
       {
-        name: 'date',
-        type: 'string',
+        name: "date",
+        type: "string",
         required: false,
-        description: '조회할 날짜 (YYYY-MM-DD)',
+        description: "조회할 날짜 (YYYY-MM-DD)",
       },
     ],
     execute: async (params) => {
@@ -233,12 +228,12 @@ export const tools: Record<string, ToolDefinition> = {
           team: params.team as string | undefined,
           date: params.date as string | undefined,
         });
-        return { success: true, data: result, source: 'sports' };
+        return { success: true, data: result, source: "sports" };
       } catch (error) {
         return {
           success: false,
-          error: error instanceof Error ? error.message : '스포츠 일정 조회 실패',
-          source: 'sports',
+          error: error instanceof Error ? error.message : "스포츠 일정 조회 실패",
+          source: "sports",
         };
       }
     },
@@ -246,21 +241,21 @@ export const tools: Record<string, ToolDefinition> = {
 
   // 공휴일 조회
   getHolidays: {
-    name: 'getHolidays',
-    description: '공휴일 정보를 조회합니다',
-    category: 'info',
+    name: "getHolidays",
+    description: "공휴일 정보를 조회합니다",
+    category: "info",
     parameters: [
       {
-        name: 'year',
-        type: 'number',
+        name: "year",
+        type: "number",
         required: false,
-        description: '연도 (기본값: 현재 연도)',
+        description: "연도 (기본값: 현재 연도)",
       },
       {
-        name: 'month',
-        type: 'number',
+        name: "month",
+        type: "number",
         required: false,
-        description: '월 (1-12)',
+        description: "월 (1-12)",
       },
     ],
     execute: async (params) => {
@@ -269,12 +264,12 @@ export const tools: Record<string, ToolDefinition> = {
           params.year as number | undefined,
           params.month as number | undefined,
         );
-        return { success: true, data: result, source: 'public_holidays' };
+        return { success: true, data: result, source: "public_holidays" };
       } catch (error) {
         return {
           success: false,
-          error: error instanceof Error ? error.message : '공휴일 조회 실패',
-          source: 'public_holidays',
+          error: error instanceof Error ? error.message : "공휴일 조회 실패",
+          source: "public_holidays",
         };
       }
     },
@@ -282,26 +277,26 @@ export const tools: Record<string, ToolDefinition> = {
 
   // 대기질 조회
   getAirQuality: {
-    name: 'getAirQuality',
-    description: '대기질 정보를 조회합니다 (미세먼지, 초미세먼지 등)',
-    category: 'info',
+    name: "getAirQuality",
+    description: "대기질 정보를 조회합니다 (미세먼지, 초미세먼지 등)",
+    category: "info",
     parameters: [
       {
-        name: 'location',
-        type: 'string',
+        name: "location",
+        type: "string",
         required: true,
-        description: '지역명 (시/도 또는 시/군/구)',
+        description: "지역명 (시/도 또는 시/군/구)",
       },
     ],
     execute: async (params) => {
       try {
         const result = await getAirQuality(params.location as string);
-        return { success: true, data: result, source: 'air_quality' };
+        return { success: true, data: result, source: "air_quality" };
       } catch (error) {
         return {
           success: false,
-          error: error instanceof Error ? error.message : '대기질 조회 실패',
-          source: 'air_quality',
+          error: error instanceof Error ? error.message : "대기질 조회 실패",
+          source: "air_quality",
         };
       }
     },
@@ -309,58 +304,56 @@ export const tools: Record<string, ToolDefinition> = {
 
   // 길찾기 / 내비게이션
   getDirections: {
-    name: 'getDirections',
-    description: '출발지에서 도착지까지의 경로, 소요 시간, 거리를 조회합니다. 자동차, 대중교통, 도보, 자전거 경로를 지원합니다.',
-    category: 'info',
+    name: "getDirections",
+    description:
+      "출발지에서 도착지까지의 경로, 소요 시간, 거리를 조회합니다. 자동차, 대중교통, 도보, 자전거 경로를 지원합니다.",
+    category: "info",
     parameters: [
       {
-        name: 'origin',
-        type: 'string',
+        name: "origin",
+        type: "string",
         required: true,
-        description: '출발지 (주소 또는 장소명, 예: 서울역, 강남역)',
+        description: "출발지 (주소 또는 장소명, 예: 서울역, 강남역)",
       },
       {
-        name: 'destination',
-        type: 'string',
+        name: "destination",
+        type: "string",
         required: true,
-        description: '도착지 (주소 또는 장소명, 예: 인천공항, 코엑스)',
+        description: "도착지 (주소 또는 장소명, 예: 인천공항, 코엑스)",
       },
       {
-        name: 'mode',
-        type: 'string',
+        name: "mode",
+        type: "string",
         required: false,
-        description: '이동 수단: driving(자동차), transit(대중교통), walking(도보), cycling(자전거). 기본값: driving',
+        description:
+          "이동 수단: driving(자동차), transit(대중교통), walking(도보), cycling(자전거). 기본값: driving",
       },
       {
-        name: 'provider',
-        type: 'string',
+        name: "provider",
+        type: "string",
         required: false,
-        description: '지도 제공자: kakao, naver, google, auto(자동 선택). 기본값: auto',
+        description: "지도 제공자: kakao, naver, google, auto(자동 선택). 기본값: auto",
       },
     ],
     execute: async (params) => {
       try {
-        const result = await getDirections(
-          params.origin as string,
-          params.destination as string,
-          {
-            mode: params.mode as TransportMode | undefined,
-            provider: params.provider as NavigationProvider | undefined,
-          },
-        );
+        const result = await getDirections(params.origin as string, params.destination as string, {
+          mode: params.mode as TransportMode | undefined,
+          provider: params.provider as NavigationProvider | undefined,
+        });
         return {
           success: result.success,
           data: {
             ...result,
             formattedMessage: formatRouteResultForKakao(result),
           },
-          source: 'navigation',
+          source: "navigation",
         };
       } catch (error) {
         return {
           success: false,
-          error: error instanceof Error ? error.message : '경로 조회 실패',
-          source: 'navigation',
+          error: error instanceof Error ? error.message : "경로 조회 실패",
+          source: "navigation",
         };
       }
     },
@@ -379,7 +372,7 @@ export async function executeTool(
     return {
       success: false,
       error: `알 수 없는 도구: ${toolName}`,
-      source: 'tool_registry',
+      source: "tool_registry",
     };
   }
 
@@ -404,11 +397,11 @@ export function getToolsPrompt(): string {
   const toolDescriptions = Object.values(tools)
     .map((tool) => {
       const params = tool.parameters
-        .map((p) => `  - ${p.name} (${p.type}${p.required ? ', 필수' : ''}): ${p.description}`)
-        .join('\n');
+        .map((p) => `  - ${p.name} (${p.type}${p.required ? ", 필수" : ""}): ${p.description}`)
+        .join("\n");
       return `### ${tool.name}\n${tool.description}\n파라미터:\n${params}`;
     })
-    .join('\n\n');
+    .join("\n\n");
 
   return `# 사용 가능한 도구\n\n${toolDescriptions}`;
 }
@@ -421,5 +414,5 @@ export {
   parseNavigationCommand,
   formatRouteResultForKakao,
   isNavigationQuery,
-} from './navigation.js';
-export type { RouteResult, TransportMode, NavigationProvider } from './navigation.js';
+} from "./navigation.js";
+export type { RouteResult, TransportMode, NavigationProvider } from "./navigation.js";

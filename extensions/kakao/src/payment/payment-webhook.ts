@@ -9,21 +9,23 @@
 
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { parse as parseUrl } from "node:url";
-import { confirmPayment, verifyWebhookSignature } from "./toss-payments.js";
+import { updateSubscriptionStatus, recordPayment } from "../installer/subscription.js";
 import { approvePayment } from "./kakao-pay.js";
 import {
   getCheckoutSession,
-  getPaymentIntent,
-  getSubscription,
   verifyWebhookSignature as verifyStripeWebhook,
-  type StripeWebhookEvent,
 } from "./stripe-payments.js";
-import {
-  updateSubscriptionStatus,
-  getUserSubscription,
-  recordPayment,
-  type PaymentRecord,
-} from "../installer/subscription.js";
+import { confirmPayment, verifyWebhookSignature } from "./toss-payments.js";
+
+/** Sanitize a string for safe HTML insertion (prevent XSS) */
+function escapeHtml(str: string): string {
+  return str
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
 
 // ============================================
 // Types
@@ -67,7 +69,7 @@ export interface WebhookPayload {
  */
 async function handleTossSuccess(
   params: URLSearchParams,
-  logger?: Pick<Console, "log" | "error">
+  logger?: Pick<Console, "log" | "error">,
 ): Promise<{ success: boolean; message: string; redirectUrl?: string }> {
   const paymentKey = params.get("paymentKey");
   const orderId = params.get("orderId");
@@ -90,9 +92,10 @@ async function handleTossSuccess(
   });
 
   if (!result.success) {
+    logger?.error(`[Payment] Toss payment approval failed: ${result.error?.message}`);
     return {
       success: false,
-      message: result.error?.message ?? "결제 승인 실패",
+      message: "결제 승인에 실패했습니다. 잠시 후 다시 시도해주세요.",
     };
   }
 
@@ -132,7 +135,7 @@ async function handleTossSuccess(
  */
 function handleTossFail(
   params: URLSearchParams,
-  logger?: Pick<Console, "log" | "error">
+  logger?: Pick<Console, "log" | "error">,
 ): { success: boolean; message: string; redirectUrl?: string } {
   const code = params.get("code");
   const message = params.get("message");
@@ -152,8 +155,11 @@ function handleTossFail(
  */
 async function handleKakaoSuccess(
   params: URLSearchParams,
-  sessionStore: Map<string, { tid: string; orderId: string; userId: string; amount: number; planType?: string }>,
-  logger?: Pick<Console, "log" | "error">
+  sessionStore: Map<
+    string,
+    { tid: string; orderId: string; userId: string; amount: number; planType?: string }
+  >,
+  logger?: Pick<Console, "log" | "error">,
 ): Promise<{ success: boolean; message: string; redirectUrl?: string }> {
   const pgToken = params.get("pg_token");
   const orderId = params.get("orderId");
@@ -185,18 +191,23 @@ async function handleKakaoSuccess(
   });
 
   if (!result.success) {
+    logger?.error(`[Payment] Kakao payment approval failed: ${result.error?.message}`);
     return {
       success: false,
-      message: result.error?.message ?? "결제 승인 실패",
+      message: "결제 승인에 실패했습니다. 잠시 후 다시 시도해주세요.",
     };
   }
 
   // 구독 결제인 경우 처리
   if (session.planType) {
-    await updateSubscriptionStatus(session.userId, session.planType as "basic" | "pro" | "enterprise", {
-      paymentKey: result.tid,
-      provider: "kakao",
-    });
+    await updateSubscriptionStatus(
+      session.userId,
+      session.planType as "basic" | "pro" | "enterprise",
+      {
+        paymentKey: result.tid,
+        provider: "kakao",
+      },
+    );
 
     await recordPayment({
       userId: session.userId,
@@ -225,7 +236,7 @@ async function handleKakaoSuccess(
 function handleKakaoCancel(
   params: URLSearchParams,
   sessionStore: Map<string, unknown>,
-  logger?: Pick<Console, "log" | "error">
+  logger?: Pick<Console, "log" | "error">,
 ): { success: boolean; message: string; redirectUrl?: string } {
   const orderId = params.get("orderId");
 
@@ -253,7 +264,7 @@ function handleKakaoCancel(
 async function handleTossWebhook(
   payload: string,
   signature: string,
-  logger?: Pick<Console, "log" | "error">
+  logger?: Pick<Console, "log" | "error">,
 ): Promise<{ success: boolean; message: string }> {
   // 서명 검증
   if (!verifyWebhookSignature(payload, signature)) {
@@ -302,7 +313,7 @@ async function handleTossWebhook(
  */
 async function handleStripeSuccess(
   params: URLSearchParams,
-  logger?: Pick<Console, "log" | "error">
+  logger?: Pick<Console, "log" | "error">,
 ): Promise<{ success: boolean; message: string; redirectUrl?: string }> {
   const sessionId = params.get("session_id");
 
@@ -318,9 +329,10 @@ async function handleStripeSuccess(
   // 세션 조회
   const sessionResult = await getCheckoutSession(sessionId);
   if (!sessionResult.success || !sessionResult.session) {
+    logger?.error(`[Payment] Stripe session retrieval failed: ${sessionResult.error?.message}`);
     return {
       success: false,
-      message: sessionResult.error?.message ?? "Failed to retrieve session.",
+      message: "결제 세션 조회에 실패했습니다.",
     };
   }
 
@@ -338,10 +350,14 @@ async function handleStripeSuccess(
   const storedSession = stripePaymentSessions.get(sessionId);
   if (storedSession) {
     // 구독 상태 업데이트
-    await updateSubscriptionStatus(storedSession.userId, storedSession.planType as "basic" | "pro" | "enterprise", {
-      paymentKey: session.subscriptionId ?? session.paymentIntentId,
-      provider: "stripe",
-    });
+    await updateSubscriptionStatus(
+      storedSession.userId,
+      storedSession.planType as "basic" | "pro" | "enterprise",
+      {
+        paymentKey: session.subscriptionId ?? session.paymentIntentId,
+        provider: "stripe",
+      },
+    );
 
     // 결제 기록
     await recordPayment({
@@ -370,7 +386,7 @@ async function handleStripeSuccess(
  */
 function handleStripeCancel(
   params: URLSearchParams,
-  logger?: Pick<Console, "log" | "error">
+  logger?: Pick<Console, "log" | "error">,
 ): { success: boolean; message: string; redirectUrl?: string } {
   const sessionId = params.get("session_id");
 
@@ -394,7 +410,7 @@ function handleStripeCancel(
 async function handleStripeWebhook(
   payload: string,
   signature: string,
-  logger?: Pick<Console, "log" | "error">
+  logger?: Pick<Console, "log" | "error">,
 ): Promise<{ success: boolean; message: string }> {
   // 서명 검증
   const verification = verifyStripeWebhook(payload, signature);
@@ -476,7 +492,9 @@ async function handleStripeWebhook(
           cancel_at_period_end: boolean;
           metadata?: Record<string, string>;
         };
-        logger?.log(`[Payment] Subscription updated: ${subscription.id}, status: ${subscription.status}`);
+        logger?.log(
+          `[Payment] Subscription updated: ${subscription.id}, status: ${subscription.status}`,
+        );
         break;
       }
 
@@ -508,7 +526,7 @@ const stripePaymentSessions = new Map<
  */
 export function saveStripePaymentSession(
   sessionId: string,
-  session: { userId: string; amount: number; planType: string; currency: string }
+  session: { userId: string; amount: number; planType: string; currency: string },
 ): void {
   stripePaymentSessions.set(sessionId, session);
 }
@@ -517,7 +535,7 @@ export function saveStripePaymentSession(
  * Stripe 결제 세션 조회
  */
 export function getStripePaymentSession(
-  sessionId: string
+  sessionId: string,
 ): { userId: string; amount: number; planType: string; currency: string } | undefined {
   return stripePaymentSessions.get(sessionId);
 }
@@ -538,7 +556,7 @@ const paymentSessions = new Map<
 export function handlePaymentRequest(
   req: IncomingMessage,
   res: ServerResponse,
-  logger?: Pick<Console, "log" | "error">
+  logger?: Pick<Console, "log" | "error">,
 ): boolean {
   const url = parseUrl(req.url ?? "", true);
   const pathname = url.pathname ?? "";
@@ -624,7 +642,7 @@ export function handlePaymentRequest(
           body += chunk.toString();
         });
         req.on("end", async () => {
-          const signature = req.headers["stripe-signature"] as string ?? "";
+          const signature = (req.headers["stripe-signature"] as string) ?? "";
           const result = await handleStripeWebhook(body, signature, logger);
           sendJson(result.success ? 200 : 400, result);
         });
@@ -637,7 +655,7 @@ export function handlePaymentRequest(
           body += chunk.toString();
         });
         req.on("end", async () => {
-          const signature = req.headers["toss-signature"] as string ?? "";
+          const signature = (req.headers["toss-signature"] as string) ?? "";
           const result = await handleTossWebhook(body, signature, logger);
           sendJson(result.success ? 200 : 400, result);
         });
@@ -675,7 +693,7 @@ export function handlePaymentRequest(
  */
 export function savePaymentSession(
   orderId: string,
-  session: { tid: string; userId: string; amount: number; planType?: string }
+  session: { tid: string; userId: string; amount: number; planType?: string },
 ): void {
   paymentSessions.set(orderId, { ...session, orderId });
 }
@@ -684,7 +702,7 @@ export function savePaymentSession(
  * 결제 세션 조회
  */
 export function getPaymentSession(
-  orderId: string
+  orderId: string,
 ): { tid: string; orderId: string; userId: string; amount: number; planType?: string } | undefined {
   return paymentSessions.get(orderId);
 }
@@ -694,6 +712,7 @@ export function getPaymentSession(
 // ============================================
 
 function generateResultPage(success: boolean, message: string): string {
+  const safeMessage = escapeHtml(message);
   const icon = success ? "&#10004;" : "&#10006;";
   const color = success ? "#4CAF50" : "#f44336";
   const title = success ? "결제 완료" : "결제 실패";
@@ -751,7 +770,7 @@ function generateResultPage(success: boolean, message: string): string {
   <div class="container">
     <div class="icon">${icon}</div>
     <h1>${title}</h1>
-    <p>${message}</p>
+    <p>${safeMessage}</p>
     <a href="/" class="btn">홈으로</a>
   </div>
 </body>
@@ -759,6 +778,7 @@ function generateResultPage(success: boolean, message: string): string {
 }
 
 function generateCompletePage(orderId: string): string {
+  const safeOrderId = escapeHtml(orderId);
   return `<!DOCTYPE html>
 <html lang="ko">
 <head>
@@ -814,7 +834,7 @@ function generateCompletePage(orderId: string): string {
   <div class="container">
     <div class="icon">&#127881;</div>
     <h1>결제가 완료되었습니다!</h1>
-    <p>주문번호: <span class="order-id">${orderId}</span></p>
+    <p>주문번호: <span class="order-id">${safeOrderId}</span></p>
 
     <div class="features">
       <strong>이제 다음 기능을 사용하실 수 있습니다:</strong>
@@ -834,6 +854,8 @@ function generateCompletePage(orderId: string): string {
 }
 
 function generateFailPage(orderId: string, errorCode: string): string {
+  const safeOrderId = escapeHtml(orderId);
+  const safeErrorCode = escapeHtml(errorCode);
   return `<!DOCTYPE html>
 <html lang="ko">
 <head>
@@ -891,9 +913,9 @@ function generateFailPage(orderId: string, errorCode: string): string {
   <div class="container">
     <div class="icon">&#128543;</div>
     <h1>결제에 실패했습니다</h1>
-    ${errorCode ? `<p class="error-code">오류 코드: ${errorCode}</p>` : ""}
+    ${safeErrorCode ? `<p class="error-code">오류 코드: ${safeErrorCode}</p>` : ""}
     <p>결제 중 문제가 발생했습니다.<br>잠시 후 다시 시도해주세요.</p>
-    ${orderId ? `<p>주문번호: ${orderId}</p>` : ""}
+    ${safeOrderId ? `<p>주문번호: ${safeOrderId}</p>` : ""}
     <div>
       <a href="/install" class="btn">다시 시도</a>
       <a href="/" class="btn btn-outline">홈으로</a>

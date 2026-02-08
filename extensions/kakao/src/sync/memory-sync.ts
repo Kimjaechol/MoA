@@ -15,6 +15,13 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database } from "../supabase.js";
 import {
+  exportMoltbotData,
+  importMoltbotData,
+  isOpenClawInstalled,
+  getMoltbotMemoryStats,
+  type MoltbotMemoryExport,
+} from "../moltbot/index.js";
+import {
   compressAndEncrypt,
   decryptAndDecompress,
   decryptJSON,
@@ -23,15 +30,7 @@ import {
   generateSalt,
   keyToRecoveryCode,
   type E2EEncryptedData,
-  type E2EEncryptionKey,
 } from "./encryption.js";
-import {
-  exportMoltbotData,
-  importMoltbotData,
-  isOpenClawInstalled,
-  getMoltbotMemoryStats,
-  type MoltbotMemoryExport,
-} from "../moltbot/index.js";
 
 // Max chunk size for large data (4MB base64 ≈ 3MB binary)
 const MAX_CHUNK_SIZE = 4 * 1024 * 1024;
@@ -122,11 +121,17 @@ export class MemorySyncManager {
    * Initialize sync with a passphrase
    * Creates or retrieves the key salt from server
    */
-  async initWithPassphrase(passphrase: string): Promise<{ success: boolean; isNewUser: boolean; recoveryCode: string }> {
+  async initWithPassphrase(
+    passphrase: string,
+  ): Promise<{ success: boolean; isNewUser: boolean; recoveryCode: string }> {
     const { supabase, userId } = this.config;
 
     // Check if user has existing salt
-    const { data: saltData } = await supabase.from("user_key_salts").select("salt").eq("user_id", userId).single();
+    const { data: saltData } = await supabase
+      .from("user_key_salts")
+      .select("salt")
+      .eq("user_id", userId)
+      .single();
 
     let isNewUser = false;
 
@@ -181,7 +186,10 @@ export class MemorySyncManager {
    */
   async uploadMemory(memoryData: MemoryData): Promise<SyncResult> {
     if (!this.encryptionKey) {
-      return { success: false, error: "Encryption not initialized. Call initWithPassphrase first." };
+      return {
+        success: false,
+        error: "Encryption not initialized. Call initWithPassphrase first.",
+      };
     }
 
     const { supabase, userId, deviceId } = this.config;
@@ -265,9 +273,14 @@ export class MemorySyncManager {
   /**
    * Download and decrypt memory data from cloud
    */
-  async downloadMemory(minVersion: number = 0): Promise<{ success: boolean; data?: MemoryData; version?: number; error?: string }> {
+  async downloadMemory(
+    minVersion: number = 0,
+  ): Promise<{ success: boolean; data?: MemoryData; version?: number; error?: string }> {
     if (!this.encryptionKey) {
-      return { success: false, error: "Encryption not initialized. Call initWithPassphrase first." };
+      return {
+        success: false,
+        error: "Encryption not initialized. Call initWithPassphrase first.",
+      };
     }
 
     const { supabase, userId } = this.config;
@@ -289,7 +302,9 @@ export class MemorySyncManager {
 
       // Group chunks by version
       const latestVersion = data[0].version;
-      const chunks = data.filter((d) => d.version === latestVersion).sort((a, b) => a.chunk_index - b.chunk_index);
+      const chunks = data
+        .filter((d) => d.version === latestVersion)
+        .toSorted((a, b) => a.chunk_index - b.chunk_index);
 
       // Reassemble ciphertext
       const ciphertext = chunks.map((c) => c.encrypted_data).join("");
@@ -366,7 +381,11 @@ export class MemorySyncManager {
   /**
    * Download conversation history
    */
-  async downloadConversations(): Promise<{ success: boolean; data?: ConversationData[]; error?: string }> {
+  async downloadConversations(): Promise<{
+    success: boolean;
+    data?: ConversationData[];
+    error?: string;
+  }> {
     if (!this.encryptionKey) {
       return { success: false, error: "Encryption not initialized" };
     }
@@ -519,9 +538,14 @@ export class MemorySyncManager {
    * This exports the local Moltbot memory and sessions, encrypts them,
    * and uploads to Supabase for cross-device sync.
    */
-  async uploadMoltbotData(agentId: string): Promise<SyncResult & { stats?: { files: number; chunks: number; sessions: number } }> {
+  async uploadMoltbotData(
+    agentId: string,
+  ): Promise<SyncResult & { stats?: { files: number; chunks: number; sessions: number } }> {
     if (!this.encryptionKey) {
-      return { success: false, error: "Encryption not initialized. Call initWithPassphrase first." };
+      return {
+        success: false,
+        error: "Encryption not initialized. Call initWithPassphrase first.",
+      };
     }
 
     if (!isOpenClawInstalled()) {
@@ -636,7 +660,10 @@ export class MemorySyncManager {
     error?: string;
   }> {
     if (!this.encryptionKey) {
-      return { success: false, error: "Encryption not initialized. Call initWithPassphrase first." };
+      return {
+        success: false,
+        error: "Encryption not initialized. Call initWithPassphrase first.",
+      };
     }
 
     const { supabase, userId } = this.config;
@@ -658,7 +685,9 @@ export class MemorySyncManager {
 
       // Group chunks by version
       const latestVersion = data[0].version;
-      const chunks = data.filter((d) => d.version === latestVersion).sort((a, b) => a.chunk_index - b.chunk_index);
+      const chunks = data
+        .filter((d) => d.version === latestVersion)
+        .toSorted((a, b) => a.chunk_index - b.chunk_index);
 
       // Reassemble ciphertext
       const ciphertext = chunks.map((c) => c.encrypted_data).join("");

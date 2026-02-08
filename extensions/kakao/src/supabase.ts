@@ -17,6 +17,7 @@ export interface Database {
           total_spent: number;
           custom_api_key: string | null;
           custom_provider: string | null;
+          phone_number: string | null;
           created_at: string;
           updated_at: string;
         };
@@ -27,6 +28,7 @@ export interface Database {
           total_spent?: number;
           custom_api_key?: string | null;
           custom_provider?: string | null;
+          phone_number?: string | null;
           created_at?: string;
           updated_at?: string;
         };
@@ -37,6 +39,7 @@ export interface Database {
           total_spent?: number;
           custom_api_key?: string | null;
           custom_provider?: string | null;
+          phone_number?: string | null;
           updated_at?: string;
         };
       };
@@ -380,10 +383,16 @@ let supabaseClient: SupabaseClient<Database> | null = null;
  * Get Supabase client (singleton)
  */
 export function getSupabase(): SupabaseClient<Database> {
-  if (supabaseClient) return supabaseClient;
+  if (supabaseClient) { return supabaseClient; }
 
   const supabaseUrl = process.env.SUPABASE_URL;
   const supabaseKey = process.env.SUPABASE_SERVICE_KEY ?? process.env.SUPABASE_ANON_KEY;
+
+  if (!process.env.SUPABASE_SERVICE_KEY && process.env.SUPABASE_ANON_KEY) {
+    console.warn(
+      "[supabase] WARNING: Using SUPABASE_ANON_KEY instead of SUPABASE_SERVICE_KEY. Some operations may fail due to insufficient permissions.",
+    );
+  }
 
   if (!supabaseUrl || !supabaseKey) {
     throw new Error(
@@ -405,7 +414,10 @@ export function getSupabase(): SupabaseClient<Database> {
  * Check if Supabase is configured
  */
 export function isSupabaseConfigured(): boolean {
-  return !!(process.env.SUPABASE_URL && (process.env.SUPABASE_SERVICE_KEY ?? process.env.SUPABASE_ANON_KEY));
+  return !!(
+    process.env.SUPABASE_URL &&
+    (process.env.SUPABASE_SERVICE_KEY ?? process.env.SUPABASE_ANON_KEY)
+  );
 }
 
 /**

@@ -13,10 +13,10 @@
  */
 
 import { spawn, exec } from "child_process";
-import { promisify } from "util";
 import * as fs from "fs";
-import * as path from "path";
 import * as os from "os";
+import * as path from "path";
+import { promisify } from "util";
 
 const execAsync = promisify(exec);
 
@@ -59,7 +59,7 @@ export interface OllamaStatus {
 export const SLM_MODELS: SLMModel[] = [
   {
     name: "moa-core",
-    ollamaName: "qwen3:0.6b-q4_K_M",  // Q4 quantized (~400MB)
+    ollamaName: "qwen3:0.6b-q4_K_M", // Q4 quantized (~400MB)
     tier: 1,
     sizeGB: 0.4,
     description: "Agent core - routing, intent classification, tool calling",
@@ -67,7 +67,7 @@ export const SLM_MODELS: SLMModel[] = [
   },
   {
     name: "moa-advanced",
-    ollamaName: "qwen3:4b-q4_K_M",  // Q4 quantized (~2.6GB)
+    ollamaName: "qwen3:4b-q4_K_M", // Q4 quantized (~2.6GB)
     tier: 2,
     sizeGB: 2.6,
     description: "Advanced processing - offline deep reasoning",
@@ -166,7 +166,7 @@ export async function startOllamaServer(): Promise<boolean> {
 
     // Wait for server to start
     for (let i = 0; i < 30; i++) {
-      await new Promise(resolve => setTimeout(resolve, 500));
+      await new Promise((resolve) => setTimeout(resolve, 500));
       if (await isOllamaRunning()) {
         return true;
       }
@@ -246,10 +246,12 @@ export async function installOllama(onProgress?: ProgressCallback): Promise<bool
 export async function getInstalledModels(): Promise<string[]> {
   try {
     const response = await fetch("http://127.0.0.1:11434/api/tags");
-    if (!response.ok) return [];
+    if (!response.ok) {
+      return [];
+    }
 
-    const data = await response.json() as { models?: Array<{ name: string }> };
-    return data.models?.map(m => m.name) || [];
+    const data = (await response.json()) as { models?: Array<{ name: string }> };
+    return data.models?.map((m) => m.name) || [];
   } catch {
     return [];
   }
@@ -260,7 +262,7 @@ export async function getInstalledModels(): Promise<string[]> {
  */
 export async function isModelInstalled(modelName: string): Promise<boolean> {
   const models = await getInstalledModels();
-  return models.some(m => m.startsWith(modelName.split(":")[0]));
+  return models.some((m) => m.startsWith(modelName.split(":")[0]));
 }
 
 /**
@@ -293,7 +295,9 @@ export async function pullModel(
 
     while (true) {
       const { done, value } = await reader.read();
-      if (done) break;
+      if (done) {
+        break;
+      }
 
       const lines = decoder.decode(value).split("\n").filter(Boolean);
       for (const line of lines) {
@@ -391,19 +395,19 @@ export async function checkMoaSLMStatus(): Promise<{
 }> {
   const installedModels = await getInstalledModels();
 
-  const tier1Model = SLM_MODELS.find(m => m.tier === 1)!;
-  const tier2Model = SLM_MODELS.find(m => m.tier === 2)!;
+  const tier1Model = SLM_MODELS.find((m) => m.tier === 1)!;
+  const tier2Model = SLM_MODELS.find((m) => m.tier === 2)!;
 
-  const tier1Ready = installedModels.some(m =>
-    m.includes(tier1Model.ollamaName.split(":")[0]),
-  );
-  const tier2Ready = installedModels.some(m =>
-    m.includes(tier2Model.ollamaName.split(":")[0]),
-  );
+  const tier1Ready = installedModels.some((m) => m.includes(tier1Model.ollamaName.split(":")[0]));
+  const tier2Ready = installedModels.some((m) => m.includes(tier2Model.ollamaName.split(":")[0]));
 
   const missingModels: SLMModel[] = [];
-  if (!tier1Ready) missingModels.push(tier1Model);
-  if (!tier2Ready) missingModels.push(tier2Model);
+  if (!tier1Ready) {
+    missingModels.push(tier1Model);
+  }
+  if (!tier2Ready) {
+    missingModels.push(tier2Model);
+  }
 
   return { tier1Ready, tier2Ready, missingModels };
 }
@@ -458,7 +462,7 @@ export async function installMoaSLM(
     const slmStatus = await checkMoaSLMStatus();
 
     // Phase 4: Install Tier 1 (always required)
-    const tier1Model = SLM_MODELS.find(m => m.tier === 1)!;
+    const tier1Model = SLM_MODELS.find((m) => m.tier === 1)!;
     if (!slmStatus.tier1Ready || forceReinstall) {
       onProgress?.({
         phase: "pulling-model",
@@ -481,7 +485,7 @@ export async function installMoaSLM(
 
     // Phase 5: Install Tier 2 (optional for mobile)
     if (!skipTier2) {
-      const tier2Model = SLM_MODELS.find(m => m.tier === 2)!;
+      const tier2Model = SLM_MODELS.find((m) => m.tier === 2)!;
       if (!slmStatus.tier2Ready || forceReinstall) {
         onProgress?.({
           phase: "pulling-model",
@@ -547,9 +551,7 @@ export async function healthCheck(): Promise<{
       healthy: status.tier1Ready,
       tier1Loaded: status.tier1Ready,
       tier2Available: status.tier2Ready,
-      message: status.tier1Ready
-        ? "MoA 로컬 AI 정상 작동 중"
-        : "에이전트 코어 모델 없음",
+      message: status.tier1Ready ? "MoA 로컬 AI 정상 작동 중" : "에이전트 코어 모델 없음",
     };
   } catch (error) {
     return {

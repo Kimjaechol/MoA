@@ -88,11 +88,21 @@ export const PLATFORM_INSTALLERS: PlatformInstaller[] = [
 export function detectPlatform(userAgent: string): PlatformInstaller["platform"] | null {
   const ua = userAgent.toLowerCase();
 
-  if (ua.includes("iphone") || ua.includes("ipad")) return "ios";
-  if (ua.includes("android")) return "android";
-  if (ua.includes("win")) return "windows";
-  if (ua.includes("mac")) return "macos";
-  if (ua.includes("linux")) return "linux";
+  if (ua.includes("iphone") || ua.includes("ipad")) {
+    return "ios";
+  }
+  if (ua.includes("android")) {
+    return "android";
+  }
+  if (ua.includes("win")) {
+    return "windows";
+  }
+  if (ua.includes("mac")) {
+    return "macos";
+  }
+  if (ua.includes("linux")) {
+    return "linux";
+  }
 
   return null;
 }
@@ -100,6 +110,8 @@ export function detectPlatform(userAgent: string): PlatformInstaller["platform"]
 /**
  * 플랫폼별 설치 정보 조회
  */
-export function getInstallerForPlatform(platform: PlatformInstaller["platform"]): PlatformInstaller | undefined {
+export function getInstallerForPlatform(
+  platform: PlatformInstaller["platform"],
+): PlatformInstaller | undefined {
   return PLATFORM_INSTALLERS.find((p) => p.platform === platform);
 }

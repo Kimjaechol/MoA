@@ -6,8 +6,8 @@
  * - 크레딧 기반 추가 과금
  */
 
-import { getSupabase, isSupabaseConfigured } from "../supabase.js";
 import { hashUserId } from "../billing.js";
+import { getSupabase, isSupabaseConfigured } from "../supabase.js";
 
 // ============================================
 // 구독 플랜 정의
@@ -138,7 +138,9 @@ export interface UserSubscription {
 export function isBetaPeriod(): boolean {
   // 환경변수로 베타 종료일 설정 가능
   const betaEndDate = process.env.MOA_BETA_END_DATE;
-  if (!betaEndDate) return true; // 기본적으로 베타
+  if (!betaEndDate) {
+    return true;
+  } // 기본적으로 베타
 
   return new Date() < new Date(betaEndDate);
 }
@@ -147,7 +149,9 @@ export function isBetaPeriod(): boolean {
  * 사용자 구독 정보 조회
  */
 export async function getUserSubscription(kakaoUserId: string): Promise<UserSubscription | null> {
-  if (!isSupabaseConfigured()) return null;
+  if (!isSupabaseConfigured()) {
+    return null;
+  }
 
   const supabase = getSupabase();
   const hashedId = hashUserId(kakaoUserId);
@@ -203,8 +207,10 @@ export async function createOrUpdateSubscription(
     plan,
     status: "active",
     start_date: new Date().toISOString(),
-    end_date: plan === "beta" ? null : new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
-    trial_ends_at: plan === "free_trial" ? new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString() : null,
+    end_date:
+      plan === "beta" ? null : new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
+    trial_ends_at:
+      plan === "free_trial" ? new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString() : null,
     auto_renew: false,
     updated_at: new Date().toISOString(),
   };
@@ -330,11 +336,14 @@ export function formatPlanComparison(): string {
   lines.push("");
 
   for (const plan of Object.values(SUBSCRIPTION_PLANS)) {
-    if (plan.type === "beta") continue; // 베타는 표시 안함
+    if (plan.type === "beta") {
+      continue;
+    } // 베타는 표시 안함
 
     const priceText = plan.price === 0 ? "무료 (30일)" : `₩${plan.price.toLocaleString()}/월`;
     const deviceText = `${plan.features.maxDevices}대`;
-    const commandText = plan.features.commandsPerDay >= 99999 ? "무제한" : `${plan.features.commandsPerDay}회`;
+    const commandText =
+      plan.features.commandsPerDay >= 99999 ? "무제한" : `${plan.features.commandsPerDay}회`;
 
     lines.push(`**${plan.nameKo}** - ${priceText}`);
     lines.push(`   ${plan.description}`);
@@ -365,11 +374,15 @@ export function formatPlanComparisonEn(): string {
   lines.push("");
 
   for (const plan of Object.values(SUBSCRIPTION_PLANS)) {
-    if (plan.type === "beta") continue;
+    if (plan.type === "beta") {
+      continue;
+    }
 
-    const priceText = plan.priceUsd === 0 ? "Free (30 days)" : `$${(plan.priceUsd / 100).toFixed(0)}/mo`;
+    const priceText =
+      plan.priceUsd === 0 ? "Free (30 days)" : `$${(plan.priceUsd / 100).toFixed(0)}/mo`;
     const deviceText = `${plan.features.maxDevices}`;
-    const commandText = plan.features.commandsPerDay >= 99999 ? "Unlimited" : `${plan.features.commandsPerDay}`;
+    const commandText =
+      plan.features.commandsPerDay >= 99999 ? "Unlimited" : `${plan.features.commandsPerDay}`;
 
     lines.push(`**${plan.name}** - ${priceText}`);
     lines.push(`   ${plan.descriptionEn}`);
@@ -462,16 +475,14 @@ export interface UserCredits {
  * 사용자 크레딧 조회
  */
 export async function getUserCredits(kakaoUserId: string): Promise<UserCredits | null> {
-  if (!isSupabaseConfigured()) return null;
+  if (!isSupabaseConfigured()) {
+    return null;
+  }
 
   const supabase = getSupabase();
   const hashedId = hashUserId(kakaoUserId);
 
-  const { data } = await supabase
-    .from("moa_credits")
-    .select("*")
-    .eq("user_id", hashedId)
-    .single();
+  const { data } = await supabase.from("moa_credits").select("*").eq("user_id", hashedId).single();
 
   if (!data) {
     return {
@@ -498,7 +509,7 @@ export async function getUserCredits(kakaoUserId: string): Promise<UserCredits |
 export async function addCredits(
   kakaoUserId: string,
   amount: number,
-  reason: string
+  reason: string,
 ): Promise<{ success: boolean; newBalance?: number; error?: string }> {
   if (!isSupabaseConfigured()) {
     return { success: false, error: "서버 설정 오류" };
@@ -511,15 +522,16 @@ export async function addCredits(
   const current = await getUserCredits(kakaoUserId);
   const newBalance = (current?.balance ?? 0) + amount;
 
-  const { error } = await supabase
-    .from("moa_credits")
-    .upsert({
+  const { error } = await supabase.from("moa_credits").upsert(
+    {
       user_id: hashedId,
       balance: newBalance,
       total_purchased: (current?.totalPurchased ?? 0) + amount,
       total_used: current?.totalUsed ?? 0,
       updated_at: new Date().toISOString(),
-    }, { onConflict: "user_id" });
+    },
+    { onConflict: "user_id" },
+  );
 
   if (error) {
     return { success: false, error: error.message };
@@ -544,7 +556,7 @@ export async function addCredits(
 export async function deductCredits(
   kakaoUserId: string,
   amount: number,
-  reason: string
+  reason: string,
 ): Promise<{ success: boolean; newBalance?: number; error?: string }> {
   if (!isSupabaseConfigured()) {
     return { success: false, error: "서버 설정 오류" };
@@ -704,7 +716,9 @@ export async function updateSubscriptionStatus(
 /**
  * 결제 기록 저장
  */
-export async function recordPayment(record: PaymentRecord): Promise<{ success: boolean; error?: string }> {
+export async function recordPayment(
+  record: PaymentRecord,
+): Promise<{ success: boolean; error?: string }> {
   if (!isSupabaseConfigured()) {
     return { success: false, error: "서버 설정 오류" };
   }
@@ -735,11 +749,10 @@ export async function recordPayment(record: PaymentRecord): Promise<{ success: b
 /**
  * 결제 내역 조회
  */
-export async function getPaymentHistory(
-  kakaoUserId: string,
-  limit = 10,
-): Promise<PaymentRecord[]> {
-  if (!isSupabaseConfigured()) return [];
+export async function getPaymentHistory(kakaoUserId: string, limit = 10): Promise<PaymentRecord[]> {
+  if (!isSupabaseConfigured()) {
+    return [];
+  }
 
   const supabase = getSupabase();
   const hashedId = hashUserId(kakaoUserId);
@@ -751,7 +764,9 @@ export async function getPaymentHistory(
     .order("created_at", { ascending: false })
     .limit(limit);
 
-  if (!data) return [];
+  if (!data) {
+    return [];
+  }
 
   return data.map((row) => ({
     userId: row.user_id,
@@ -772,13 +787,14 @@ export function generatePaymentUrl(params: {
   plan: PlanType;
   provider: "toss" | "kakao";
 }): { orderId: string; returnUrl: string } {
-  const plan = SUBSCRIPTION_PLANS[params.plan];
+  const _plan = SUBSCRIPTION_PLANS[params.plan];
   const timestamp = Date.now();
   const orderId = `moa_sub_${hashUserId(params.userId).slice(0, 8)}_${params.plan}_${timestamp}`;
 
   const baseUrl = process.env.MOA_BASE_URL ?? "https://moa.example.com";
-  const successPath = params.provider === "toss" ? "/payment/toss/success" : "/payment/kakao/success";
-  const failPath = params.provider === "toss" ? "/payment/toss/fail" : "/payment/kakao/fail";
+  const successPath =
+    params.provider === "toss" ? "/payment/toss/success" : "/payment/kakao/success";
+  const _failPath = params.provider === "toss" ? "/payment/toss/fail" : "/payment/kakao/fail";
 
   return {
     orderId,
