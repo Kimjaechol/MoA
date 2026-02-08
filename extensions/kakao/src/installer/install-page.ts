@@ -370,8 +370,7 @@ export function handleInstallRequest(req: IncomingMessage, res: ServerResponse):
   // One-click installer for Windows: /install.bat
   if (url.pathname === "/install.bat") {
     const hostHeader = Array.isArray(req.headers.host) ? req.headers.host[0] : req.headers.host;
-    const code = url.searchParams.get("code") ?? undefined;
-    const bat = getOneClickInstaller("windows", hostHeader, code);
+    const bat = getOneClickInstaller("windows", hostHeader);
     res.writeHead(200, {
       "Content-Type": "application/octet-stream",
       "Content-Disposition": 'attachment; filename="MoA-Install.bat"',
@@ -384,8 +383,7 @@ export function handleInstallRequest(req: IncomingMessage, res: ServerResponse):
   // One-click installer for macOS: /install.command
   if (url.pathname === "/install.command") {
     const hostHeader = Array.isArray(req.headers.host) ? req.headers.host[0] : req.headers.host;
-    const code = url.searchParams.get("code") ?? undefined;
-    const cmd = getOneClickInstaller("macos", hostHeader, code);
+    const cmd = getOneClickInstaller("macos", hostHeader);
     res.writeHead(200, {
       "Content-Type": "application/octet-stream",
       "Content-Disposition": 'attachment; filename="MoA-Install.command"',
