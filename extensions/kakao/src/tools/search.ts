@@ -11,7 +11,7 @@ export interface SearchResult {
     url: string;
     snippet?: string;
   }[];
-  provider: 'perplexity' | 'google' | 'fallback';
+  provider: "perplexity" | "google" | "fallback";
   query: string;
   timestamp: string;
 }
@@ -44,10 +44,10 @@ export async function searchWithPerplexity(
   const apiKey = process.env.PERPLEXITY_API_KEY;
 
   if (!apiKey) {
-    throw new Error('Perplexity API 키가 설정되지 않았습니다 (PERPLEXITY_API_KEY)');
+    throw new Error("Perplexity API 키가 설정되지 않았습니다 (PERPLEXITY_API_KEY)");
   }
 
-  const model = options?.model || 'llama-3.1-sonar-large-128k-online';
+  const model = options?.model || "llama-3.1-sonar-large-128k-online";
   const maxTokens = options?.maxTokens || 1024;
   const systemPrompt =
     options?.systemPrompt ||
@@ -55,17 +55,17 @@ export async function searchWithPerplexity(
 질문에 대해 정확하고 최신 정보를 바탕으로 간결하게 답변하세요.
 출처가 있는 경우 반드시 언급하세요.`;
 
-  const response = await fetch('https://api.perplexity.ai/chat/completions', {
-    method: 'POST',
+  const response = await fetch("https://api.perplexity.ai/chat/completions", {
+    method: "POST",
     headers: {
-      'Content-Type': 'application/json',
+      "Content-Type": "application/json",
       Authorization: `Bearer ${apiKey}`,
     },
     body: JSON.stringify({
       model,
       messages: [
-        { role: 'system', content: systemPrompt },
-        { role: 'user', content: query },
+        { role: "system", content: systemPrompt },
+        { role: "user", content: query },
       ],
       max_tokens: maxTokens,
       temperature: 0.2,
@@ -79,7 +79,7 @@ export async function searchWithPerplexity(
   }
 
   const data: PerplexityResponse = await response.json();
-  const answer = data.choices[0]?.message?.content || '';
+  const answer = data.choices[0]?.message?.content || "";
 
   // 인용 URL 파싱
   const sources =
@@ -91,7 +91,7 @@ export async function searchWithPerplexity(
   return {
     answer,
     sources,
-    provider: 'perplexity',
+    provider: "perplexity",
     query,
     timestamp: new Date().toISOString(),
   };
@@ -132,20 +132,19 @@ export async function searchWithGoogle(
   const apiKey = process.env.GOOGLE_AI_API_KEY;
 
   if (!apiKey) {
-    throw new Error('Google AI API 키가 설정되지 않았습니다 (GOOGLE_AI_API_KEY)');
+    throw new Error("Google AI API 키가 설정되지 않았습니다 (GOOGLE_AI_API_KEY)");
   }
 
-  const model = options?.model || 'gemini-1.5-flash';
+  const model = options?.model || "gemini-1.5-flash";
   const systemPrompt =
-    options?.systemPrompt ||
-    '한국어로 응답하세요. 최신 정보를 바탕으로 정확하게 답변하세요.';
+    options?.systemPrompt || "한국어로 응답하세요. 최신 정보를 바탕으로 정확하게 답변하세요.";
 
   const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
 
   const response = await fetch(url, {
-    method: 'POST',
+    method: "POST",
     headers: {
-      'Content-Type': 'application/json',
+      "Content-Type": "application/json",
     },
     body: JSON.stringify({
       contents: [
@@ -160,7 +159,7 @@ export async function searchWithGoogle(
         {
           googleSearchRetrieval: {
             dynamicRetrievalConfig: {
-              mode: 'MODE_DYNAMIC',
+              mode: "MODE_DYNAMIC",
               dynamicThreshold: 0.3,
             },
           },
@@ -180,7 +179,7 @@ export async function searchWithGoogle(
 
   const data: GoogleGroundingResponse = await response.json();
   const candidate = data.candidates[0];
-  const answer = candidate?.content?.parts?.map((p) => p.text).join('') || '';
+  const answer = candidate?.content?.parts?.map((p) => p.text).join("") || "";
 
   // Grounding 출처 추출
   const sources =
@@ -194,7 +193,7 @@ export async function searchWithGoogle(
   return {
     answer,
     sources,
-    provider: 'google',
+    provider: "google",
     query,
     timestamp: new Date().toISOString(),
   };
@@ -208,18 +207,18 @@ export async function searchWithGoogle(
 export async function aiSearch(
   query: string,
   options?: {
-    provider?: 'perplexity' | 'google' | 'auto';
+    provider?: "perplexity" | "google" | "auto";
     systemPrompt?: string;
   },
 ): Promise<SearchResult> {
-  const provider = options?.provider || 'auto';
+  const provider = options?.provider || "auto";
 
   // 지정된 provider 사용
-  if (provider === 'perplexity') {
+  if (provider === "perplexity") {
     return searchWithPerplexity(query, options);
   }
 
-  if (provider === 'google') {
+  if (provider === "google") {
     return searchWithGoogle(query, options);
   }
 
@@ -229,7 +228,7 @@ export async function aiSearch(
       return await searchWithPerplexity(query, options);
     }
   } catch (error) {
-    console.warn('Perplexity 검색 실패, Google로 대체:', error);
+    console.warn("Perplexity 검색 실패, Google로 대체:", error);
   }
 
   try {
@@ -237,14 +236,14 @@ export async function aiSearch(
       return await searchWithGoogle(query, options);
     }
   } catch (error) {
-    console.warn('Google 검색 실패:', error);
+    console.warn("Google 검색 실패:", error);
   }
 
   // 둘 다 실패한 경우
   return {
-    answer: '죄송합니다. 현재 검색 서비스를 이용할 수 없습니다.',
+    answer: "죄송합니다. 현재 검색 서비스를 이용할 수 없습니다.",
     sources: [],
-    provider: 'fallback',
+    provider: "fallback",
     query,
     timestamp: new Date().toISOString(),
   };
@@ -256,54 +255,54 @@ export async function aiSearch(
 export function needsWebSearch(query: string): boolean {
   const searchIndicators = [
     // 최신 정보 요청
-    '최근',
-    '최신',
-    '오늘',
-    '어제',
-    '이번 주',
-    '이번 달',
-    '올해',
-    '2024',
-    '2025',
-    '2026',
+    "최근",
+    "최신",
+    "오늘",
+    "어제",
+    "이번 주",
+    "이번 달",
+    "올해",
+    "2024",
+    "2025",
+    "2026",
     // 뉴스/이슈
-    '뉴스',
-    '소식',
-    '사건',
-    '이슈',
-    '논란',
+    "뉴스",
+    "소식",
+    "사건",
+    "이슈",
+    "논란",
     // 실시간 정보
-    '현재',
-    '지금',
-    '실시간',
-    '상황',
+    "현재",
+    "지금",
+    "실시간",
+    "상황",
     // 가격/시세
-    '가격',
-    '시세',
-    '환율',
-    '주가',
-    '코인',
-    '비트코인',
+    "가격",
+    "시세",
+    "환율",
+    "주가",
+    "코인",
+    "비트코인",
     // 스포츠 결과
-    '경기 결과',
-    '승패',
-    '우승',
-    '순위',
+    "경기 결과",
+    "승패",
+    "우승",
+    "순위",
     // 영화/공연
-    '상영',
-    '개봉',
-    '공연',
-    '티켓',
+    "상영",
+    "개봉",
+    "공연",
+    "티켓",
     // 맛집/장소
-    '맛집',
-    '추천',
-    '어디',
-    '위치',
+    "맛집",
+    "추천",
+    "어디",
+    "위치",
     // 명시적 검색 요청
-    '검색',
-    '찾아',
-    '알려',
-    '알아봐',
+    "검색",
+    "찾아",
+    "알려",
+    "알아봐",
   ];
 
   const lowerQuery = query.toLowerCase();
@@ -317,7 +316,7 @@ export function formatSearchMessage(result: SearchResult): string {
   let message = result.answer;
 
   if (result.sources.length > 0) {
-    message += '\n\n📚 **출처**\n';
+    message += "\n\n📚 **출처**\n";
     for (const source of result.sources.slice(0, 5)) {
       message += `• [${source.title}](${source.url})\n`;
     }
@@ -331,14 +330,7 @@ export function formatSearchMessage(result: SearchResult): string {
  */
 export async function searchTopic(
   topic: string,
-  category:
-    | 'news'
-    | 'weather'
-    | 'sports'
-    | 'entertainment'
-    | 'tech'
-    | 'finance'
-    | 'general',
+  category: "news" | "weather" | "sports" | "entertainment" | "tech" | "finance" | "general",
 ): Promise<SearchResult> {
   const systemPrompts: Record<string, string> = {
     news: `뉴스 전문가로서 최신 뉴스를 요약해서 전달하세요.

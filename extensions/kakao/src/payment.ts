@@ -540,7 +540,7 @@ export function parseApiKey(message: string): {
   // Direct key patterns
   if (message.includes("sk-ant-")) {
     const match = message.match(/sk-ant-[a-zA-Z0-9_-]+/);
-    if (match) return { provider: "anthropic", apiKey: match[0] };
+    if (match) { return { provider: "anthropic", apiKey: match[0] }; }
   }
 
   if (message.match(/sk-[a-zA-Z0-9]{20,}/)) {
@@ -594,7 +594,7 @@ export async function validateApiKey(
 
       return { valid: true };
     }
-  } catch (err) {
+  } catch {
     return { valid: false, error: "API 키 검증 중 오류가 발생했습니다." };
   }
 }

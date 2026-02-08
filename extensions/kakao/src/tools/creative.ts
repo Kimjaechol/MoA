@@ -9,7 +9,7 @@
  */
 
 export interface CreativeResult {
-  type: 'image' | 'music' | 'sticker' | 'qrcode' | 'meme';
+  type: "image" | "music" | "sticker" | "qrcode" | "meme";
   url: string;
   prompt: string;
   provider: string;
@@ -24,30 +24,30 @@ export interface CreativeResult {
 export async function generateImageWithDALLE(
   prompt: string,
   options?: {
-    size?: '1024x1024' | '1024x1792' | '1792x1024';
-    style?: 'vivid' | 'natural';
-    quality?: 'standard' | 'hd';
+    size?: "1024x1024" | "1024x1792" | "1792x1024";
+    style?: "vivid" | "natural";
+    quality?: "standard" | "hd";
   },
 ): Promise<CreativeResult> {
   const apiKey = process.env.OPENAI_API_KEY;
 
   if (!apiKey) {
-    throw new Error('OpenAI API 키가 설정되지 않았습니다 (OPENAI_API_KEY)');
+    throw new Error("OpenAI API 키가 설정되지 않았습니다 (OPENAI_API_KEY)");
   }
 
-  const response = await fetch('https://api.openai.com/v1/images/generations', {
-    method: 'POST',
+  const response = await fetch("https://api.openai.com/v1/images/generations", {
+    method: "POST",
     headers: {
-      'Content-Type': 'application/json',
+      "Content-Type": "application/json",
       Authorization: `Bearer ${apiKey}`,
     },
     body: JSON.stringify({
-      model: 'dall-e-3',
+      model: "dall-e-3",
       prompt: enhancePromptForKorean(prompt),
       n: 1,
-      size: options?.size || '1024x1024',
-      style: options?.style || 'vivid',
-      quality: options?.quality || 'standard',
+      size: options?.size || "1024x1024",
+      style: options?.style || "vivid",
+      quality: options?.quality || "standard",
     }),
   });
 
@@ -60,14 +60,14 @@ export async function generateImageWithDALLE(
   const imageUrl = data.data[0]?.url;
 
   if (!imageUrl) {
-    throw new Error('이미지 생성에 실패했습니다');
+    throw new Error("이미지 생성에 실패했습니다");
   }
 
   return {
-    type: 'image',
+    type: "image",
     url: imageUrl,
     prompt,
-    provider: 'dall-e-3',
+    provider: "dall-e-3",
     metadata: {
       revisedPrompt: data.data[0]?.revised_prompt,
     },
@@ -89,24 +89,22 @@ export async function generateImageWithStableDiffusion(
   const apiKey = process.env.STABILITY_API_KEY;
 
   if (!apiKey) {
-    throw new Error('Stability API 키가 설정되지 않았습니다 (STABILITY_API_KEY)');
+    throw new Error("Stability API 키가 설정되지 않았습니다 (STABILITY_API_KEY)");
   }
 
   const response = await fetch(
-    'https://api.stability.ai/v1/generation/stable-diffusion-xl-1024-v1-0/text-to-image',
+    "https://api.stability.ai/v1/generation/stable-diffusion-xl-1024-v1-0/text-to-image",
     {
-      method: 'POST',
+      method: "POST",
       headers: {
-        'Content-Type': 'application/json',
+        "Content-Type": "application/json",
         Authorization: `Bearer ${apiKey}`,
-        Accept: 'application/json',
+        Accept: "application/json",
       },
       body: JSON.stringify({
         text_prompts: [
           { text: enhancePromptForKorean(prompt), weight: 1 },
-          ...(options?.negativePrompt
-            ? [{ text: options.negativePrompt, weight: -1 }]
-            : []),
+          ...(options?.negativePrompt ? [{ text: options.negativePrompt, weight: -1 }] : []),
         ],
         cfg_scale: 7,
         width: options?.width || 1024,
@@ -126,17 +124,17 @@ export async function generateImageWithStableDiffusion(
   const imageBase64 = data.artifacts?.[0]?.base64;
 
   if (!imageBase64) {
-    throw new Error('이미지 생성에 실패했습니다');
+    throw new Error("이미지 생성에 실패했습니다");
   }
 
   // Base64를 URL로 변환 (데이터 URI)
   const imageUrl = `data:image/png;base64,${imageBase64}`;
 
   return {
-    type: 'image',
+    type: "image",
     url: imageUrl,
     prompt,
-    provider: 'stable-diffusion-xl',
+    provider: "stable-diffusion-xl",
   };
 }
 
@@ -146,38 +144,35 @@ export async function generateImageWithStableDiffusion(
 export async function generateImage(
   prompt: string,
   options?: {
-    provider?: 'dalle' | 'stable-diffusion' | 'auto';
-    style?: 'emoticon' | 'illustration' | 'photo' | 'art' | 'anime';
-    size?: 'square' | 'portrait' | 'landscape';
+    provider?: "dalle" | "stable-diffusion" | "auto";
+    style?: "emoticon" | "illustration" | "photo" | "art" | "anime";
+    size?: "square" | "portrait" | "landscape";
   },
 ): Promise<CreativeResult> {
-  const provider = options?.provider || 'auto';
-  const style = options?.style || 'illustration';
+  const provider = options?.provider || "auto";
+  const style = options?.style || "illustration";
 
   // 스타일에 맞게 프롬프트 강화
   const enhancedPrompt = enhancePromptWithStyle(prompt, style);
 
   // 사이즈 매핑
-  const sizeMap: Record<string, '1024x1024' | '1024x1792' | '1792x1024'> = {
-    square: '1024x1024',
-    portrait: '1024x1792',
-    landscape: '1792x1024',
+  const sizeMap: Record<string, "1024x1024" | "1024x1792" | "1792x1024"> = {
+    square: "1024x1024",
+    portrait: "1024x1792",
+    landscape: "1792x1024",
   };
-  const size = sizeMap[options?.size || 'square'];
+  const size = sizeMap[options?.size || "square"];
 
   // provider 선택
-  if (provider === 'dalle' || (provider === 'auto' && process.env.OPENAI_API_KEY)) {
+  if (provider === "dalle" || (provider === "auto" && process.env.OPENAI_API_KEY)) {
     return generateImageWithDALLE(enhancedPrompt, { size });
   }
 
-  if (
-    provider === 'stable-diffusion' ||
-    (provider === 'auto' && process.env.STABILITY_API_KEY)
-  ) {
+  if (provider === "stable-diffusion" || (provider === "auto" && process.env.STABILITY_API_KEY)) {
     return generateImageWithStableDiffusion(enhancedPrompt);
   }
 
-  throw new Error('사용 가능한 이미지 생성 API가 없습니다');
+  throw new Error("사용 가능한 이미지 생성 API가 없습니다");
 }
 
 // ==================== 이모티콘/스티커 생성 ====================
@@ -187,17 +182,17 @@ export async function generateImage(
  */
 export async function generateEmoticon(
   description: string,
-  emotion: string = 'happy',
+  emotion: string = "happy",
 ): Promise<CreativeResult> {
   const emoticonPrompts: Record<string, string> = {
-    happy: 'cute, joyful, smiling, cheerful expression',
-    sad: 'cute, sad, tearful, melancholic expression',
-    angry: 'cute, angry, frustrated, annoyed expression',
-    love: 'cute, loving, heart eyes, romantic expression',
-    surprised: 'cute, surprised, shocked, wide eyes expression',
-    sleepy: 'cute, sleepy, tired, drowsy expression',
-    excited: 'cute, excited, enthusiastic, energetic expression',
-    confused: 'cute, confused, puzzled, questioning expression',
+    happy: "cute, joyful, smiling, cheerful expression",
+    sad: "cute, sad, tearful, melancholic expression",
+    angry: "cute, angry, frustrated, annoyed expression",
+    love: "cute, loving, heart eyes, romantic expression",
+    surprised: "cute, surprised, shocked, wide eyes expression",
+    sleepy: "cute, sleepy, tired, drowsy expression",
+    excited: "cute, excited, enthusiastic, energetic expression",
+    confused: "cute, confused, puzzled, questioning expression",
   };
 
   const emotionPrompt = emoticonPrompts[emotion] || emoticonPrompts.happy;
@@ -207,8 +202,8 @@ simple clean design, white background, bold outlines, flat colors,
 suitable for messaging app sticker, chibi style, adorable`;
 
   return generateImage(prompt, {
-    style: 'emoticon',
-    size: 'square',
+    style: "emoticon",
+    size: "square",
   });
 }
 
@@ -216,14 +211,14 @@ suitable for messaging app sticker, chibi style, adorable`;
  * 하트 이미지 생성 (연인에게 보낼 용도)
  */
 export async function generateHeartImage(
-  style: 'cute' | 'romantic' | 'playful' | 'elegant' = 'cute',
+  style: "cute" | "romantic" | "playful" | "elegant" = "cute",
   customMessage?: string,
 ): Promise<CreativeResult> {
   const stylePrompts: Record<string, string> = {
-    cute: 'cute kawaii pink hearts, pastel colors, sparkles, adorable style',
-    romantic: 'elegant red roses with hearts, romantic atmosphere, soft lighting',
-    playful: 'colorful hearts, confetti, fun and playful, cartoon style',
-    elegant: 'gold and rose gold hearts, luxurious, sophisticated, minimal',
+    cute: "cute kawaii pink hearts, pastel colors, sparkles, adorable style",
+    romantic: "elegant red roses with hearts, romantic atmosphere, soft lighting",
+    playful: "colorful hearts, confetti, fun and playful, cartoon style",
+    elegant: "gold and rose gold hearts, luxurious, sophisticated, minimal",
   };
 
   let prompt = stylePrompts[style];
@@ -233,8 +228,8 @@ export async function generateHeartImage(
   }
 
   return generateImage(prompt, {
-    style: 'illustration',
-    size: 'square',
+    style: "illustration",
+    size: "square",
   });
 }
 
@@ -261,14 +256,14 @@ export async function generateMusicWithSuno(
   const apiKey = process.env.SUNO_API_KEY;
 
   if (!apiKey) {
-    throw new Error('Suno API 키가 설정되지 않았습니다 (SUNO_API_KEY)');
+    throw new Error("Suno API 키가 설정되지 않았습니다 (SUNO_API_KEY)");
   }
 
   // Suno API 호출 (비공식 API 기준)
-  const response = await fetch('https://api.suno.ai/v1/generate', {
-    method: 'POST',
+  const response = await fetch("https://api.suno.ai/v1/generate", {
+    method: "POST",
     headers: {
-      'Content-Type': 'application/json',
+      "Content-Type": "application/json",
       Authorization: `Bearer ${apiKey}`,
     },
     body: JSON.stringify({
@@ -286,10 +281,10 @@ export async function generateMusicWithSuno(
   const data: SunoResponse = await response.json();
 
   return {
-    type: 'music',
+    type: "music",
     url: data.audio_url,
     prompt,
-    provider: 'suno',
+    provider: "suno",
     metadata: {
       title: data.title,
       duration: data.duration,
@@ -304,25 +299,25 @@ export async function generateMusicWithMubert(
   prompt: string,
   options?: {
     duration?: number;
-    intensity?: 'low' | 'medium' | 'high';
+    intensity?: "low" | "medium" | "high";
   },
 ): Promise<CreativeResult> {
   const apiKey = process.env.MUBERT_API_KEY;
 
   if (!apiKey) {
-    throw new Error('Mubert API 키가 설정되지 않았습니다 (MUBERT_API_KEY)');
+    throw new Error("Mubert API 키가 설정되지 않았습니다 (MUBERT_API_KEY)");
   }
 
-  const response = await fetch('https://api.mubert.com/v2/GetTrackByPrompt', {
-    method: 'POST',
+  const response = await fetch("https://api.mubert.com/v2/GetTrackByPrompt", {
+    method: "POST",
     headers: {
-      'Content-Type': 'application/json',
+      "Content-Type": "application/json",
       Authorization: `Bearer ${apiKey}`,
     },
     body: JSON.stringify({
       prompt,
       duration: options?.duration || 30,
-      intensity: options?.intensity || 'medium',
+      intensity: options?.intensity || "medium",
     }),
   });
 
@@ -334,10 +329,10 @@ export async function generateMusicWithMubert(
   const data = await response.json();
 
   return {
-    type: 'music',
+    type: "music",
     url: data.track_url,
     prompt,
-    provider: 'mubert',
+    provider: "mubert",
     metadata: {
       duration: options?.duration || 30,
     },
@@ -350,23 +345,23 @@ export async function generateMusicWithMubert(
 export async function generateMusic(
   prompt: string,
   options?: {
-    provider?: 'suno' | 'mubert' | 'auto';
+    provider?: "suno" | "mubert" | "auto";
     duration?: number;
     genre?: string;
     instrumental?: boolean;
   },
 ): Promise<CreativeResult> {
-  const provider = options?.provider || 'auto';
+  const provider = options?.provider || "auto";
 
-  if (provider === 'suno' || (provider === 'auto' && process.env.SUNO_API_KEY)) {
+  if (provider === "suno" || (provider === "auto" && process.env.SUNO_API_KEY)) {
     return generateMusicWithSuno(prompt, options);
   }
 
-  if (provider === 'mubert' || (provider === 'auto' && process.env.MUBERT_API_KEY)) {
+  if (provider === "mubert" || (provider === "auto" && process.env.MUBERT_API_KEY)) {
     return generateMusicWithMubert(prompt, options);
   }
 
-  throw new Error('사용 가능한 음악 생성 API가 없습니다');
+  throw new Error("사용 가능한 음악 생성 API가 없습니다");
 }
 
 // ==================== QR 코드 생성 ====================
@@ -384,22 +379,22 @@ export async function generateQRCode(
   },
 ): Promise<CreativeResult> {
   const size = options?.size || 300;
-  const color = (options?.color || '000000').replace('#', '');
-  const bgColor = (options?.backgroundColor || 'FFFFFF').replace('#', '');
+  const color = (options?.color || "000000").replace("#", "");
+  const bgColor = (options?.backgroundColor || "FFFFFF").replace("#", "");
 
   // QR Server API (무료)
-  const url = new URL('https://api.qrserver.com/v1/create-qr-code/');
-  url.searchParams.set('data', content);
-  url.searchParams.set('size', `${size}x${size}`);
-  url.searchParams.set('color', color);
-  url.searchParams.set('bgcolor', bgColor);
-  url.searchParams.set('format', 'png');
+  const url = new URL("https://api.qrserver.com/v1/create-qr-code/");
+  url.searchParams.set("data", content);
+  url.searchParams.set("size", `${size}x${size}`);
+  url.searchParams.set("color", color);
+  url.searchParams.set("bgcolor", bgColor);
+  url.searchParams.set("format", "png");
 
   return {
-    type: 'qrcode',
+    type: "qrcode",
     url: url.toString(),
     prompt: content,
-    provider: 'qr-server',
+    provider: "qr-server",
     metadata: { size, color, backgroundColor: bgColor },
   };
 }
@@ -412,7 +407,7 @@ export async function generateQRCode(
 export async function generateMeme(
   topText: string,
   bottomText: string,
-  template: string = 'drake',
+  template: string = "drake",
 ): Promise<CreativeResult> {
   // Imgflip API 사용
   const apiKey = process.env.IMGFLIP_USERNAME;
@@ -420,14 +415,14 @@ export async function generateMeme(
 
   // 템플릿 ID 매핑
   const templates: Record<string, string> = {
-    drake: '181913649',
-    'distracted-boyfriend': '112126428',
-    'two-buttons': '87743020',
-    'change-my-mind': '129242436',
-    'expanding-brain': '93895088',
-    'this-is-fine': '55311130',
-    success: '61544',
-    facepalm: '124822590',
+    drake: "181913649",
+    "distracted-boyfriend": "112126428",
+    "two-buttons": "87743020",
+    "change-my-mind": "129242436",
+    "expanding-brain": "93895088",
+    "this-is-fine": "55311130",
+    success: "61544",
+    facepalm: "124822590",
   };
 
   const templateId = templates[template] || templates.drake;
@@ -436,18 +431,18 @@ export async function generateMeme(
     // API 키가 없으면 이미지 생성으로 대체
     const prompt = `Meme format image with top text: "${topText}" and bottom text: "${bottomText}",
 funny, internet meme style`;
-    return generateImage(prompt, { style: 'illustration' });
+    return generateImage(prompt, { style: "illustration" });
   }
 
   const formData = new URLSearchParams();
-  formData.append('template_id', templateId);
-  formData.append('username', apiKey);
-  formData.append('password', password);
-  formData.append('text0', topText);
-  formData.append('text1', bottomText);
+  formData.append("template_id", templateId);
+  formData.append("username", apiKey);
+  formData.append("password", password);
+  formData.append("text0", topText);
+  formData.append("text1", bottomText);
 
-  const response = await fetch('https://api.imgflip.com/caption_image', {
-    method: 'POST',
+  const response = await fetch("https://api.imgflip.com/caption_image", {
+    method: "POST",
     body: formData,
   });
 
@@ -458,10 +453,10 @@ funny, internet meme style`;
   }
 
   return {
-    type: 'meme',
+    type: "meme",
     url: data.data.url,
     prompt: `${topText} / ${bottomText}`,
-    provider: 'imgflip',
+    provider: "imgflip",
     metadata: { template, pageUrl: data.data.page_url },
   };
 }
@@ -485,11 +480,11 @@ function enhancePromptForKorean(prompt: string): string {
 function enhancePromptWithStyle(prompt: string, style: string): string {
   const styleEnhancements: Record<string, string> = {
     emoticon:
-      'cute kawaii sticker style, simple clean design, white background, bold outlines, flat colors',
-    illustration: 'digital illustration, detailed, vibrant colors, professional quality',
-    photo: 'photorealistic, 8k, detailed, professional photography',
-    art: 'artistic, creative, expressive, fine art quality',
-    anime: 'anime style, Japanese animation, detailed, colorful',
+      "cute kawaii sticker style, simple clean design, white background, bold outlines, flat colors",
+    illustration: "digital illustration, detailed, vibrant colors, professional quality",
+    photo: "photorealistic, 8k, detailed, professional photography",
+    art: "artistic, creative, expressive, fine art quality",
+    anime: "anime style, Japanese animation, detailed, colorful",
   };
 
   const enhancement = styleEnhancements[style] || styleEnhancements.illustration;
@@ -501,26 +496,24 @@ function enhancePromptWithStyle(prompt: string, style: string): string {
  */
 function enhanceMusicPrompt(prompt: string, genre?: string): string {
   const genreMap: Record<string, string> = {
-    pop: 'upbeat pop music, catchy melody',
-    jazz: 'smooth jazz, sophisticated, relaxing',
-    classical: 'classical music, orchestral, elegant',
-    electronic: 'electronic music, synthesizer, modern',
-    lofi: 'lo-fi hip hop, chill beats, relaxing',
-    acoustic: 'acoustic guitar, warm, intimate',
-    ambient: 'ambient music, atmospheric, peaceful',
+    pop: "upbeat pop music, catchy melody",
+    jazz: "smooth jazz, sophisticated, relaxing",
+    classical: "classical music, orchestral, elegant",
+    electronic: "electronic music, synthesizer, modern",
+    lofi: "lo-fi hip hop, chill beats, relaxing",
+    acoustic: "acoustic guitar, warm, intimate",
+    ambient: "ambient music, atmospheric, peaceful",
   };
 
-  const genrePrompt = genre ? genreMap[genre] || genre : '';
+  const genrePrompt = genre ? genreMap[genre] || genre : "";
   return genrePrompt ? `${prompt}, ${genrePrompt}` : prompt;
 }
 
 /**
  * 창작 요청 감지
  */
-export function detectCreativeRequest(
-  query: string,
-): {
-  type: 'image' | 'music' | 'emoticon' | 'qrcode' | 'meme' | null;
+export function detectCreativeRequest(query: string): {
+  type: "image" | "music" | "emoticon" | "qrcode" | "meme" | null;
   prompt: string;
 } {
   const lowerQuery = query.toLowerCase();
@@ -530,32 +523,32 @@ export function detectCreativeRequest(
     /그림|이미지|그려|만들어|생성|사진|일러스트|배경/.test(query) &&
     /그려|만들|생성|줘/.test(query)
   ) {
-    return { type: 'image', prompt: query };
+    return { type: "image", prompt: query };
   }
 
   // 이모티콘/스티커 감지
   if (/이모티콘|스티커|캐릭터/.test(query)) {
-    return { type: 'emoticon', prompt: query };
+    return { type: "emoticon", prompt: query };
   }
 
   // 하트/연인 이미지 감지
   if (/하트|사랑|연인|애인/.test(query) && /이미지|그림|만들/.test(query)) {
-    return { type: 'image', prompt: query };
+    return { type: "image", prompt: query };
   }
 
   // 음악 생성 감지
   if (/음악|노래|bgm|배경음|멜로디/.test(lowerQuery) && /만들|생성|작곡/.test(query)) {
-    return { type: 'music', prompt: query };
+    return { type: "music", prompt: query };
   }
 
   // QR코드 감지
   if (/qr|큐알/.test(lowerQuery)) {
-    return { type: 'qrcode', prompt: query };
+    return { type: "qrcode", prompt: query };
   }
 
   // 밈 감지
   if (/밈|짤|meme/.test(lowerQuery)) {
-    return { type: 'meme', prompt: query };
+    return { type: "meme", prompt: query };
   }
 
   return { type: null, prompt: query };
@@ -566,16 +559,16 @@ export function detectCreativeRequest(
  */
 export function formatCreativeMessage(result: CreativeResult): string {
   const typeLabels: Record<string, string> = {
-    image: '🎨 이미지',
-    music: '🎵 음악',
-    sticker: '😊 스티커',
-    qrcode: '📱 QR코드',
-    meme: '😂 밈',
+    image: "🎨 이미지",
+    music: "🎵 음악",
+    sticker: "😊 스티커",
+    qrcode: "📱 QR코드",
+    meme: "😂 밈",
   };
 
-  let message = `${typeLabels[result.type] || '🎨 창작물'}이 생성되었습니다!\n\n`;
+  let message = `${typeLabels[result.type] || "🎨 창작물"}이 생성되었습니다!\n\n`;
 
-  if (result.type === 'music') {
+  if (result.type === "music") {
     message += `🎧 **음악 듣기**: ${result.url}\n`;
     if (result.metadata?.duration) {
       message += `⏱️ 재생시간: ${result.metadata.duration}초\n`;

@@ -75,7 +75,7 @@ let cachedRoutes: LawCallRoutes | null = null;
  * Format 2 (Full): {"categories":[...],"defaultUrl":"...","lawyerName":"..."}
  */
 export function parseLawCallRoutes(): LawCallRoutes {
-  if (cachedRoutes) return cachedRoutes;
+  if (cachedRoutes) { return cachedRoutes; }
 
   const envValue = process.env.LAWCALL_ROUTES;
 
@@ -101,7 +101,7 @@ export function parseLawCallRoutes(): LawCallRoutes {
     // Format 1: Simple key-value mapping
     const categories: LawCallCategory[] = [];
     for (const [name, url] of Object.entries(parsed)) {
-      if (name === "기본" || name === "default") continue;
+      if (name === "기본" || name === "default") { continue; }
 
       // Find matching default category for keywords
       const defaultCat = DEFAULT_ROUTES.categories.find(c => c.name === name);

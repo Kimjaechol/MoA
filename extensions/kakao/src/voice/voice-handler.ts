@@ -393,9 +393,7 @@ export class RealtimeVoiceManager {
    * Get all active sessions
    */
   getActiveSessions(): RealtimeVoiceSession[] {
-    return Array.from(this.sessions.values()).filter(
-      (s) => s.status !== "closed",
-    );
+    return Array.from(this.sessions.values()).filter((s) => s.status !== "closed");
   }
 }
 

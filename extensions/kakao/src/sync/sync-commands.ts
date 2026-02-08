@@ -12,7 +12,12 @@
  */
 
 import { getSupabase } from "../supabase.js";
-import { createMemorySyncManager, type ConversationData, type MemoryData, type SyncConfig } from "./memory-sync.js";
+import {
+  createMemorySyncManager,
+  type ConversationData,
+  type MemoryData,
+  type SyncConfig,
+} from "./memory-sync.js";
 
 export interface SyncCommandContext {
   kakaoUserId: string;
@@ -43,7 +48,9 @@ const SESSION_TIMEOUT = 30 * 60 * 1000;
 /**
  * Get or create sync manager for user
  */
-function getSyncManager(context: SyncCommandContext): ReturnType<typeof createMemorySyncManager> | null {
+function getSyncManager(
+  context: SyncCommandContext,
+): ReturnType<typeof createMemorySyncManager> | null {
   const existing = activeSyncManagers.get(context.kakaoUserId);
 
   if (existing && existing.expiresAt > Date.now()) {
@@ -58,7 +65,9 @@ function getSyncManager(context: SyncCommandContext): ReturnType<typeof createMe
 /**
  * Create and cache sync manager
  */
-function createAndCacheSyncManager(context: SyncCommandContext): ReturnType<typeof createMemorySyncManager> {
+function createAndCacheSyncManager(
+  context: SyncCommandContext,
+): ReturnType<typeof createMemorySyncManager> {
   const config: SyncConfig = {
     supabase: getSupabase(),
     userId: context.userId,
@@ -107,7 +116,10 @@ export function parseSyncCommand(message: string): { command: string; args: stri
  * Handle sync setup command
  * /동기화 설정 <암호>
  */
-async function handleSetup(context: SyncCommandContext, passphrase: string): Promise<SyncCommandResult> {
+async function handleSetup(
+  context: SyncCommandContext,
+  passphrase: string,
+): Promise<SyncCommandResult> {
   if (!passphrase || passphrase.length < 8) {
     return {
       success: false,
@@ -152,7 +164,10 @@ async function handleSetup(context: SyncCommandContext, passphrase: string): Pro
  * Handle upload command
  * /동기화 업로드 [agentId]
  */
-async function handleUpload(context: SyncCommandContext, agentId?: string): Promise<SyncCommandResult> {
+async function handleUpload(
+  context: SyncCommandContext,
+  agentId?: string,
+): Promise<SyncCommandResult> {
   const manager = getSyncManager(context);
 
   if (!manager) {
@@ -276,7 +291,8 @@ async function handleDownload(context: SyncCommandContext): Promise<SyncCommandR
       if (!result.data) {
         return {
           success: true,
-          message: "📭 동기화된 메모리가 없습니다.\n\n" + '먼저 다른 기기에서 "/동기화 업로드"를 실행하세요.',
+          message:
+            '📭 동기화된 메모리가 없습니다.\n\n먼저 다른 기기에서 "/동기화 업로드"를 실행하세요.',
         };
       }
 
@@ -316,7 +332,7 @@ async function handleStatus(context: SyncCommandContext): Promise<SyncCommandRes
     return {
       success: false,
       message:
-        "📊 동기화 상태\n\n" + "❌ 동기화가 설정되지 않았습니다.\n\n" + '"/동기화 설정 <암호>"로 시작하세요.',
+        '📊 동기화 상태\n\n❌ 동기화가 설정되지 않았습니다.\n\n"/동기화 설정 <암호>"로 시작하세요.',
     };
   }
 
@@ -366,14 +382,14 @@ async function handleDeviceList(context: SyncCommandContext): Promise<SyncComman
     if (status.devices.length === 0) {
       return {
         success: true,
-        message: "📱 연결된 기기\n\n" + "등록된 기기가 없습니다.",
+        message: "📱 연결된 기기\n\n등록된 기기가 없습니다.",
       };
     }
 
     const deviceList = status.devices
       .map((d, i) => {
         const lastSync = d.lastSyncAt ? new Date(d.lastSyncAt).toLocaleString("ko-KR") : "없음";
-        return `${i + 1}. ${d.deviceName ?? "이름 없음"}\n` + `   ID: ${d.deviceId.slice(0, 12)}...\n` + `   종류: ${d.deviceType ?? "알 수 없음"}\n` + `   마지막 동기화: ${lastSync}`;
+        return `${i + 1}. ${d.deviceName ?? "이름 없음"}\n   ID: ${d.deviceId.slice(0, 12)}...\n   종류: ${d.deviceType ?? "알 수 없음"}\n   마지막 동기화: ${lastSync}`;
       })
       .join("\n\n");
 
@@ -394,7 +410,10 @@ async function handleDeviceList(context: SyncCommandContext): Promise<SyncComman
  * Handle delete command
  * /동기화 삭제
  */
-async function handleDelete(context: SyncCommandContext, confirmed: boolean = false): Promise<SyncCommandResult> {
+async function handleDelete(
+  context: SyncCommandContext,
+  confirmed: boolean = false,
+): Promise<SyncCommandResult> {
   if (!confirmed) {
     return {
       success: false,
@@ -419,7 +438,8 @@ async function handleDelete(context: SyncCommandContext, confirmed: boolean = fa
       activeSyncManagers.delete(context.kakaoUserId);
       return {
         success: true,
-        message: "✅ 모든 동기화 데이터가 삭제되었습니다.\n\n" + '새로 시작하려면 "/동기화 설정 <암호>"를 사용하세요.',
+        message:
+          '✅ 모든 동기화 데이터가 삭제되었습니다.\n\n새로 시작하려면 "/동기화 설정 <암호>"를 사용하세요.',
       };
     } else {
       return {
@@ -436,7 +456,8 @@ async function handleDelete(context: SyncCommandContext, confirmed: boolean = fa
       activeSyncManagers.delete(context.kakaoUserId);
       return {
         success: true,
-        message: "✅ 모든 동기화 데이터가 삭제되었습니다.\n\n" + '새로 시작하려면 "/동기화 설정 <암호>"를 사용하세요.',
+        message:
+          '✅ 모든 동기화 데이터가 삭제되었습니다.\n\n새로 시작하려면 "/동기화 설정 <암호>"를 사용하세요.',
       };
     } else {
       return {
@@ -485,7 +506,7 @@ function handleHelp(): SyncCommandResult {
 export async function handleSyncCommand(
   context: SyncCommandContext,
   message: string,
-  options?: {
+  _options?: {
     memoryData?: MemoryData;
     conversationData?: ConversationData;
   },

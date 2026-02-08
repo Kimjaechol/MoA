@@ -31,7 +31,10 @@ export interface SafetyAnalysis {
 
 /** Critical — always blocked */
 const CRITICAL_PATTERNS: Array<{ pattern: RegExp; reason: string }> = [
-  { pattern: /rm\s+(-[a-zA-Z]*f[a-zA-Z]*\s+)?(-[a-zA-Z]*r[a-zA-Z]*\s+)?\s*\/\s*$/i, reason: "루트 디렉토리 삭제 시도" },
+  {
+    pattern: /rm\s+(-[a-zA-Z]*f[a-zA-Z]*\s+)?(-[a-zA-Z]*r[a-zA-Z]*\s+)?\s*\/\s*$/i,
+    reason: "루트 디렉토리 삭제 시도",
+  },
   { pattern: /rm\s+-[a-zA-Z]*r[a-zA-Z]*f[a-zA-Z]*\s+\/(?!\S)/i, reason: "루트 디렉토리 재귀 삭제" },
   { pattern: /rm\s+-[a-zA-Z]*f[a-zA-Z]*r[a-zA-Z]*\s+\/(?!\S)/i, reason: "루트 디렉토리 재귀 삭제" },
   { pattern: /mkfs\./i, reason: "디스크 포맷 명령" },
@@ -48,7 +51,10 @@ const CRITICAL_PATTERNS: Array<{ pattern: RegExp; reason: string }> = [
 
 /** High risk — require user confirmation */
 const HIGH_RISK_PATTERNS: Array<{ pattern: RegExp; reason: string }> = [
-  { pattern: /rm\s+(-[a-zA-Z]*r[a-zA-Z]*|-[a-zA-Z]*f[a-zA-Z]*)\s/i, reason: "파일/폴더 삭제 (재귀 또는 강제)" },
+  {
+    pattern: /rm\s+(-[a-zA-Z]*r[a-zA-Z]*|-[a-zA-Z]*f[a-zA-Z]*)\s/i,
+    reason: "파일/폴더 삭제 (재귀 또는 강제)",
+  },
   { pattern: /rm\s+/i, reason: "파일 삭제" },
   { pattern: /sudo\s+/i, reason: "관리자 권한 명령" },
   { pattern: /chmod\s+/i, reason: "파일 권한 변경" },
@@ -275,7 +281,11 @@ function isSensitivePath(path: string): boolean {
 /**
  * Format a safety analysis for KakaoTalk display
  */
-export function formatSafetyWarning(analysis: SafetyAnalysis, commandId: string, commandText: string): string {
+export function formatSafetyWarning(
+  analysis: SafetyAnalysis,
+  commandId: string,
+  commandText: string,
+): string {
   if (analysis.blocked) {
     return `🚫 **명령 차단됨**\n\n${analysis.explanation}\n\n명령: \`${commandText.slice(0, 100)}\``;
   }

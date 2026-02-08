@@ -12,10 +12,10 @@
  * - 디바이스 메모리 자동 감지
  */
 
-import * as os from "os";
-import * as fs from "fs";
-import * as path from "path";
 import { spawn, exec } from "child_process";
+import * as fs from "fs";
+import * as os from "os";
+import * as path from "path";
 import { promisify } from "util";
 
 const execAsync = promisify(exec);
@@ -53,16 +53,16 @@ export interface InstallStatus {
 }
 
 export type InstallStep =
-  | "preparing"      // 준비 중
-  | "checking"       // 시스템 확인
-  | "downloading"    // Ollama 다운로드
-  | "installing"     // Ollama 설치
-  | "starting"       // 서버 시작
-  | "model-tier1"    // Tier 1 모델 다운로드
-  | "model-tier2"    // Tier 2 모델 다운로드
-  | "verifying"      // 설치 확인
-  | "complete"       // 완료
-  | "error";         // 에러
+  | "preparing" // 준비 중
+  | "checking" // 시스템 확인
+  | "downloading" // Ollama 다운로드
+  | "installing" // Ollama 설치
+  | "starting" // 서버 시작
+  | "model-tier1" // Tier 1 모델 다운로드
+  | "model-tier2" // Tier 2 모델 다운로드
+  | "verifying" // 설치 확인
+  | "complete" // 완료
+  | "error"; // 에러
 
 export interface InstallResult {
   success: boolean;
@@ -123,8 +123,8 @@ interface DeviceProfile {
 }
 
 function detectDevice(): DeviceProfile {
-  const totalMemoryGB = os.totalmem() / (1024 ** 3);
-  const freeMemoryGB = os.freemem() / (1024 ** 3);
+  const totalMemoryGB = os.totalmem() / 1024 ** 3;
+  const freeMemoryGB = os.freemem() / 1024 ** 3;
   const cpuCores = os.cpus().length;
 
   // 디바이스 타입 추정
@@ -183,9 +183,7 @@ async function getOllamaVersion(): Promise<string | null> {
   }
 }
 
-async function installOllamaAuto(
-  onProgress: (detail: string) => void,
-): Promise<boolean> {
+async function installOllamaAuto(onProgress: (detail: string) => void): Promise<boolean> {
   const platform = os.platform();
 
   try {
@@ -237,9 +235,7 @@ async function installOllamaAuto(
   }
 }
 
-async function startOllamaServer(
-  onProgress: (detail: string) => void,
-): Promise<boolean> {
+async function startOllamaServer(onProgress: (detail: string) => void): Promise<boolean> {
   if (await isOllamaRunning()) {
     onProgress("Ollama 서버가 이미 실행 중입니다");
     return true;
@@ -298,7 +294,9 @@ async function downloadModel(
 
     while (true) {
       const { done, value } = await reader.read();
-      if (done) break;
+      if (done) {
+        break;
+      }
 
       const lines = decoder.decode(value).split("\n").filter(Boolean);
       for (const line of lines) {
@@ -341,11 +339,13 @@ async function downloadModel(
 async function isModelInstalled(modelName: string): Promise<boolean> {
   try {
     const response = await fetch(`${OLLAMA_API}/api/tags`);
-    if (!response.ok) return false;
+    if (!response.ok) {
+      return false;
+    }
 
-    const data = await response.json() as { models?: Array<{ name: string }> };
+    const data = (await response.json()) as { models?: Array<{ name: string }> };
     const baseModel = modelName.split(":")[0];
-    return data.models?.some(m => m.name.startsWith(baseModel)) || false;
+    return data.models?.some((m) => m.name.startsWith(baseModel)) || false;
   } catch {
     return false;
   }
@@ -368,9 +368,7 @@ export async function autoInstallSLM(
   const device = detectDevice();
 
   // 설치 모드 결정
-  const installMode = config.mode === "auto"
-    ? device.recommendedMode
-    : config.mode;
+  const installMode = config.mode === "auto" ? device.recommendedMode : config.mode;
 
   const notify = (step: InstallStep, detail?: string, subProgress?: number) => {
     const baseProgress = STEP_PROGRESS[step];
@@ -378,9 +376,8 @@ export async function autoInstallSLM(
     const nextProgress = nextStep ? STEP_PROGRESS[nextStep] : 100;
     const stepRange = nextProgress - baseProgress;
 
-    const progress = subProgress !== undefined
-      ? baseProgress + (stepRange * subProgress / 100)
-      : baseProgress;
+    const progress =
+      subProgress !== undefined ? baseProgress + (stepRange * subProgress) / 100 : baseProgress;
 
     config.onProgress?.({
       progress: Math.round(progress),
@@ -463,9 +460,11 @@ export async function autoInstallSLM(
         notify("model-tier2", "고급 AI 모델이 이미 설치되어 있습니다", 100);
       }
     } else {
-      notify("model-tier2", device.canRunTier2
-        ? "최소 설치 모드 - 고급 모델 건너뜀"
-        : `메모리 부족 (${device.totalMemoryGB}GB) - 고급 모델 건너뜀`,
+      notify(
+        "model-tier2",
+        device.canRunTier2
+          ? "최소 설치 모드 - 고급 모델 건너뜀"
+          : `메모리 부족 (${device.totalMemoryGB}GB) - 고급 모델 건너뜀`,
       );
     }
 
@@ -488,7 +487,6 @@ export async function autoInstallSLM(
 
     config.onComplete?.(result);
     return result;
-
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : "알 수 없는 오류";
 
@@ -538,22 +536,26 @@ async function verifyInstallation(modelName: string): Promise<void> {
 // ============================================
 
 function sleep(ms: number): Promise<void> {
-  return new Promise(resolve => setTimeout(resolve, ms));
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 function getNextStep(current: InstallStep): InstallStep | null {
   const steps: InstallStep[] = [
-    "preparing", "checking", "downloading", "installing",
-    "starting", "model-tier1", "model-tier2", "verifying", "complete",
+    "preparing",
+    "checking",
+    "downloading",
+    "installing",
+    "starting",
+    "model-tier1",
+    "model-tier2",
+    "verifying",
+    "complete",
   ];
   const index = steps.indexOf(current);
   return index >= 0 && index < steps.length - 1 ? steps[index + 1] : null;
 }
 
-async function retryWithBackoff<T>(
-  fn: () => Promise<T>,
-  maxRetries: number,
-): Promise<T> {
+async function retryWithBackoff<T>(fn: () => Promise<T>, maxRetries: number): Promise<T> {
   let lastError: Error | null = null;
 
   for (let i = 0; i < maxRetries; i++) {
@@ -592,8 +594,7 @@ function createProgressBar(percent: number): string {
  * 카카오톡용 설치 진행 메시지 포맷팅
  */
 export function formatInstallStatusForKakao(status: InstallStatus): string {
-  const emoji = status.step === "complete" ? "✅" :
-                status.step === "error" ? "❌" : "⏳";
+  const emoji = status.step === "complete" ? "✅" : status.step === "error" ? "❌" : "⏳";
 
   let message = `${emoji} ${status.message}`;
 

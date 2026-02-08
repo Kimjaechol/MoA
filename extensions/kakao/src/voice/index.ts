@@ -50,11 +50,7 @@ export {
 } from "./provider-openai.js";
 
 // Gemini Live provider
-export {
-  createGeminiProvider,
-  isGeminiAvailable,
-  GeminiLiveProvider,
-} from "./provider-gemini.js";
+export { createGeminiProvider, isGeminiAvailable, GeminiLiveProvider } from "./provider-gemini.js";
 
 // Voice billing
 export {
@@ -128,9 +124,9 @@ export {
 // ============================================
 
 import type { VoiceProviderType, VoiceProviderConfig } from "./provider-interface.js";
-import { createOpenAIProvider } from "./provider-openai.js";
 import { createGeminiProvider } from "./provider-gemini.js";
 import { VoiceProvider } from "./provider-interface.js";
+import { createOpenAIProvider } from "./provider-openai.js";
 
 /**
  * Create a voice provider by type
@@ -155,8 +151,12 @@ export function createVoiceProvider(
  */
 export function getBestAvailableProvider(): VoiceProviderType | null {
   // Prefer Gemini (cheaper)
-  if (isProviderAvailable("gemini")) return "gemini";
-  if (isProviderAvailable("openai")) return "openai";
+  if (isProviderAvailable("gemini")) {
+    return "gemini";
+  }
+  if (isProviderAvailable("openai")) {
+    return "openai";
+  }
   return null;
 }
 

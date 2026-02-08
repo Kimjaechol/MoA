@@ -15,22 +15,36 @@
  */
 
 import { createCipheriv, createDecipheriv, randomBytes, createHash } from "node:crypto";
+import type { CommandPayload, CommandResult, CommandStatus } from "./types.js";
 import { getSupabase, isSupabaseConfigured } from "../supabase.js";
 import { findDeviceByName, listUserDevices } from "./device-auth.js";
 import { chargeRelayCommand } from "./relay-billing.js";
-import { analyzeCommandSafety, formatSafetyWarning, type SafetyAnalysis } from "./safety-guard.js";
-import type { CommandPayload, CommandResult, CommandStatus } from "./types.js";
+import { analyzeCommandSafety, formatSafetyWarning } from "./safety-guard.js";
 
 // Encryption key derived from env (used for encrypting commands at rest)
+let warnedAboutDefaultKey = false;
 function getRelayEncryptionKey(): Buffer {
-  const key = process.env.LAWCALL_ENCRYPTION_KEY ?? process.env.SUPABASE_SERVICE_KEY ?? "moa-relay-default";
+  const key = process.env.LAWCALL_ENCRYPTION_KEY ?? process.env.SUPABASE_SERVICE_KEY;
+  if (!key) {
+    if (!warnedAboutDefaultKey) {
+      console.warn(
+        "[relay] WARNING: No LAWCALL_ENCRYPTION_KEY or SUPABASE_SERVICE_KEY set. Using insecure default key — NOT safe for production!",
+      );
+      warnedAboutDefaultKey = true;
+    }
+    return createHash("sha256").update("moa-relay-default").digest();
+  }
   return createHash("sha256").update(key).digest();
 }
 
 /**
  * Encrypt a command payload for storage
  */
-function encryptPayload(payload: CommandPayload | CommandResult): { encrypted: string; iv: string; authTag: string } {
+function encryptPayload(payload: CommandPayload | CommandResult): {
+  encrypted: string;
+  iv: string;
+  authTag: string;
+} {
   const key = getRelayEncryptionKey();
   const iv = randomBytes(12);
   const cipher = createCipheriv("aes-256-gcm", key, iv);
@@ -102,10 +116,18 @@ export async function sendRelayCommand(params: {
   if (!device) {
     const devices = await listUserDevices(userId);
     if (devices.length === 0) {
-      return { success: false, error: "등록된 기기가 없습니다. /기기등록 명령으로 먼저 기기를 등록해주세요." };
+      return {
+        success: false,
+        error: "등록된 기기가 없습니다. /기기등록 명령으로 먼저 기기를 등록해주세요.",
+      };
     }
-    const names = devices.map((d) => `• ${d.deviceName} (${d.isOnline ? "온라인" : "오프라인"})`).join("\n");
-    return { success: false, error: `"${targetDeviceName}" 기기를 찾을 수 없습니다.\n\n등록된 기기:\n${names}` };
+    const names = devices
+      .map((d) => `• ${d.deviceName} (${d.isOnline ? "온라인" : "오프라인"})`)
+      .join("\n");
+    return {
+      success: false,
+      error: `"${targetDeviceName}" 기기를 찾을 수 없습니다.\n\n등록된 기기:\n${names}`,
+    };
   }
 
   if (!device.isOnline) {
@@ -139,7 +161,9 @@ export async function sendRelayCommand(params: {
   const { encrypted, iv, authTag } = encryptPayload(payload);
 
   // Determine initial status based on safety analysis
-  const initialStatus: CommandStatus = safety.requiresConfirmation ? "awaiting_confirmation" : "pending";
+  const initialStatus: CommandStatus = safety.requiresConfirmation
+    ? "awaiting_confirmation"
+    : "pending";
 
   // Insert into command queue
   const supabase = getSupabase();
@@ -196,7 +220,10 @@ export async function sendRelayCommand(params: {
  * Confirm a command that is awaiting user confirmation.
  * Changes status from "awaiting_confirmation" to "pending".
  */
-export async function confirmCommand(commandIdPrefix: string, userId: string): Promise<{
+export async function confirmCommand(
+  commandIdPrefix: string,
+  userId: string,
+): Promise<{
   success: boolean;
   commandId?: string;
   commandPreview?: string;
@@ -228,7 +255,13 @@ export async function confirmCommand(commandIdPrefix: string, userId: string): P
     .from("relay_commands")
     .update({
       status: "pending",
-      execution_log: [{ timestamp: new Date().toISOString(), event: "confirmed_by_user", message: "사용자가 실행을 승인했습니다." }],
+      execution_log: [
+        {
+          timestamp: new Date().toISOString(),
+          event: "confirmed_by_user",
+          message: "사용자가 실행을 승인했습니다.",
+        },
+      ],
     })
     .eq("id", cmd.id);
 
@@ -247,7 +280,10 @@ export async function confirmCommand(commandIdPrefix: string, userId: string): P
  * Reject a command that is awaiting confirmation.
  * Credits are refunded.
  */
-export async function rejectCommand(commandIdPrefix: string, userId: string): Promise<{
+export async function rejectCommand(
+  commandIdPrefix: string,
+  userId: string,
+): Promise<{
   success: boolean;
   refundedCredits?: number;
   error?: string;
@@ -274,10 +310,7 @@ export async function rejectCommand(commandIdPrefix: string, userId: string): Pr
   const cmd = commands[0];
 
   // Cancel the command
-  await supabase
-    .from("relay_commands")
-    .update({ status: "cancelled" })
-    .eq("id", cmd.id);
+  await supabase.from("relay_commands").update({ status: "cancelled" }).eq("id", cmd.id);
 
   // Refund credits if any were charged
   if (cmd.credits_charged > 0) {
@@ -304,7 +337,9 @@ export async function appendExecutionLog(
   deviceToken: string,
   logEntry: { event: string; message: string; data?: string },
 ): Promise<boolean> {
-  if (!isSupabaseConfigured()) return false;
+  if (!isSupabaseConfigured()) {
+    return false;
+  }
 
   const supabase = getSupabase();
 
@@ -315,10 +350,14 @@ export async function appendExecutionLog(
     .eq("id", commandId)
     .single();
 
-  if (!cmd) return false;
+  if (!cmd) {
+    return false;
+  }
 
   const deviceData = cmd.relay_devices as unknown as { device_token: string };
-  if (deviceData.device_token !== deviceToken) return false;
+  if (deviceData.device_token !== deviceToken) {
+    return false;
+  }
 
   // Append log entry
   const existingLog = (cmd.execution_log as Array<Record<string, unknown>>) ?? [];
@@ -341,7 +380,10 @@ export async function appendExecutionLog(
 /**
  * Get execution log for a command (for user monitoring)
  */
-export async function getExecutionLog(commandId: string, userId: string): Promise<{
+export async function getExecutionLog(
+  commandId: string,
+  userId: string,
+): Promise<{
   status: CommandStatus;
   riskLevel?: string;
   commandPreview?: string;
@@ -358,7 +400,9 @@ export async function getExecutionLog(commandId: string, userId: string): Promis
 
   const { data, error } = await supabase
     .from("relay_commands")
-    .select("status, risk_level, command_preview, execution_log, encrypted_result, result_iv, result_auth_tag, result_summary")
+    .select(
+      "status, risk_level, command_preview, execution_log, encrypted_result, result_iv, result_auth_tag, result_summary",
+    )
     .eq("id", commandId)
     .eq("user_id", userId)
     .single();
@@ -368,15 +412,19 @@ export async function getExecutionLog(commandId: string, userId: string): Promis
   }
 
   const status = data.status as CommandStatus;
-  const log = (data.execution_log as Array<{ timestamp: string; event: string; message: string; data?: string }>) ?? [];
+  const log =
+    (data.execution_log as Array<{
+      timestamp: string;
+      event: string;
+      message: string;
+      data?: string;
+    }>) ?? [];
 
   let result: CommandResult | undefined;
   if (data.encrypted_result && data.result_iv && data.result_auth_tag) {
-    result = decryptPayload<CommandResult>(
-      data.encrypted_result,
-      data.result_iv,
-      data.result_auth_tag,
-    ) ?? undefined;
+    result =
+      decryptPayload<CommandResult>(data.encrypted_result, data.result_iv, data.result_auth_tag) ??
+      undefined;
   }
 
   return {
@@ -396,7 +444,10 @@ export async function getExecutionLog(commandId: string, userId: string): Promis
 /**
  * Get the result of a relay command
  */
-export async function getCommandResult(commandId: string, userId: string): Promise<{
+export async function getCommandResult(
+  commandId: string,
+  userId: string,
+): Promise<{
   status: CommandStatus;
   result?: CommandResult;
   summary?: string;
@@ -424,11 +475,12 @@ export async function getCommandResult(commandId: string, userId: string): Promi
   if (status === "completed" || status === "failed") {
     let result: CommandResult | undefined;
     if (data.encrypted_result && data.result_iv && data.result_auth_tag) {
-      result = decryptPayload<CommandResult>(
-        data.encrypted_result,
-        data.result_iv,
-        data.result_auth_tag,
-      ) ?? undefined;
+      result =
+        decryptPayload<CommandResult>(
+          data.encrypted_result,
+          data.result_iv,
+          data.result_auth_tag,
+        ) ?? undefined;
     }
     return {
       status,
@@ -443,16 +495,23 @@ export async function getCommandResult(commandId: string, userId: string): Promi
 /**
  * Get recent commands for a user (for status display)
  */
-export async function getRecentCommands(userId: string, limit = 5): Promise<Array<{
-  id: string;
-  deviceName: string;
-  status: CommandStatus;
-  riskLevel?: string;
-  commandPreview?: string;
-  summary?: string;
-  createdAt: Date;
-}>> {
-  if (!isSupabaseConfigured()) return [];
+export async function getRecentCommands(
+  userId: string,
+  limit = 5,
+): Promise<
+  Array<{
+    id: string;
+    deviceName: string;
+    status: CommandStatus;
+    riskLevel?: string;
+    commandPreview?: string;
+    summary?: string;
+    createdAt: Date;
+  }>
+> {
+  if (!isSupabaseConfigured()) {
+    return [];
+  }
 
   const supabase = getSupabase();
 
@@ -471,7 +530,9 @@ export async function getRecentCommands(userId: string, limit = 5): Promise<Arra
     .order("created_at", { ascending: false })
     .limit(limit);
 
-  if (error || !data) return [];
+  if (error || !data) {
+    return [];
+  }
 
   return data.map((cmd) => ({
     id: cmd.id,
@@ -488,7 +549,9 @@ export async function getRecentCommands(userId: string, limit = 5): Promise<Arra
  * Cancel a pending command
  */
 export async function cancelCommand(commandId: string, userId: string): Promise<boolean> {
-  if (!isSupabaseConfigured()) return false;
+  if (!isSupabaseConfigured()) {
+    return false;
+  }
 
   const supabase = getSupabase();
 

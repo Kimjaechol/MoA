@@ -16,7 +16,6 @@ import {
   resolveModel,
   getUserSettings,
   PROVIDERS,
-  FREE_MODELS,
 } from "./user-settings.js";
 import { getCredits } from "./billing.js";
 import {
@@ -27,8 +26,6 @@ import {
 } from "./complexity-classifier.js";
 import {
   classifyPrivacy,
-  canSendToExternalAPI,
-  maskSensitiveData,
   type PrivacyResult,
 } from "./privacy-classifier.js";
 import {
@@ -523,7 +520,7 @@ async function tryFallbackProviders(
 
   for (const fallback of freeFallbacks) {
     const apiKey = settings.apiKeys[fallback.provider] ?? getPlatformKey(fallback.provider);
-    if (!apiKey) continue;
+    if (!apiKey) { continue; }
 
     try {
       const response = await callProvider(
@@ -651,7 +648,7 @@ export function formatResponseWithInfo(result: RouterResult): string {
  * Get warning message when credits are low
  */
 export function getLowCreditWarning(credits: number, hasApiKey: boolean): string | null {
-  if (hasApiKey) return null;
+  if (hasApiKey) { return null; }
 
   if (credits <= 0) {
     return `⚠️ 크레딧이 모두 소진되었습니다.
@@ -1031,7 +1028,7 @@ export function isPremiumConfirmationResponse(message: string): UserConfirmation
  */
 export function hasPendingPremiumRequest(kakaoUserId: string): boolean {
   const pending = pendingPremiumRequests.get(kakaoUserId);
-  if (!pending) return false;
+  if (!pending) { return false; }
 
   // 만료 확인
   if (new Date() > pending.expiresAt) {

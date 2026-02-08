@@ -5,8 +5,8 @@
  * Relay is a premium feature — users pay per command sent through the relay.
  */
 
-import { getSupabase, isSupabaseConfigured } from "../supabase.js";
 import { getOrCreateUser } from "../billing.js";
+import { getSupabase, isSupabaseConfigured } from "../supabase.js";
 import { DEFAULT_RELAY_BILLING, type RelayBillingConfig } from "./types.js";
 
 /**
@@ -16,9 +16,15 @@ export function getRelayBillingConfig(): RelayBillingConfig {
   return {
     commandCost: Number(process.env.RELAY_COMMAND_COST ?? DEFAULT_RELAY_BILLING.commandCost),
     resultCost: Number(process.env.RELAY_RESULT_COST ?? DEFAULT_RELAY_BILLING.resultCost),
-    freeCommandsPerDay: Number(process.env.RELAY_FREE_COMMANDS ?? DEFAULT_RELAY_BILLING.freeCommandsPerDay),
-    maxPendingCommands: Number(process.env.RELAY_MAX_PENDING ?? DEFAULT_RELAY_BILLING.maxPendingCommands),
-    maxDevicesPerUser: Number(process.env.RELAY_MAX_DEVICES ?? DEFAULT_RELAY_BILLING.maxDevicesPerUser),
+    freeCommandsPerDay: Number(
+      process.env.RELAY_FREE_COMMANDS ?? DEFAULT_RELAY_BILLING.freeCommandsPerDay,
+    ),
+    maxPendingCommands: Number(
+      process.env.RELAY_MAX_PENDING ?? DEFAULT_RELAY_BILLING.maxPendingCommands,
+    ),
+    maxDevicesPerUser: Number(
+      process.env.RELAY_MAX_DEVICES ?? DEFAULT_RELAY_BILLING.maxDevicesPerUser,
+    ),
   };
 }
 

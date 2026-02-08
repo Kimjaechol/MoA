@@ -15,13 +15,8 @@ import {
   type InstallResult,
   type DeviceProfile,
 } from "./auto-installer.js";
-import {
-  checkMoaSLMStatus,
-  healthCheck,
-} from "./ollama-installer.js";
-import {
-  getSLMInfo,
-} from "./slm-router.js";
+import { checkMoaSLMStatus, healthCheck } from "./ollama-installer.js";
+import { getSLMInfo } from "./slm-router.js";
 
 // ============================================
 // Types
@@ -66,7 +61,8 @@ export async function handleInstallCommand(
   if (health.healthy) {
     const info = await getSLMInfo();
     return {
-      message: `✅ MoA AI가 이미 설치되어 있습니다!\n\n` +
+      message:
+        `✅ MoA AI가 이미 설치되어 있습니다!\n\n` +
         `📦 설치된 모델:\n` +
         `  • 기본 AI: ${info.tier1.model} ${info.tier1.status === "ready" ? "✅" : "❌"}\n` +
         `  • 고급 AI: ${info.tier2.model} ${info.tier2.status === "ready" ? "✅" : info.tier2.status === "skipped" ? "⏭️" : "❌"}\n\n` +
@@ -82,7 +78,8 @@ export async function handleInstallCommand(
   const estimatedTime = device.canRunTier2 ? "3-5분" : "1-2분";
 
   return {
-    message: `🚀 MoA AI 설치를 시작합니다!\n\n` +
+    message:
+      `🚀 MoA AI 설치를 시작합니다!\n\n` +
       `📱 디바이스 정보:\n` +
       `  • 타입: ${getDeviceTypeKorean(device.type)}\n` +
       `  • 메모리: ${device.totalMemoryGB}GB\n` +
@@ -140,7 +137,8 @@ export async function handleInstallStart(
     session.status = "error";
 
     return {
-      message: `❌ 설치 중 오류가 발생했습니다.\n\n` +
+      message:
+        `❌ 설치 중 오류가 발생했습니다.\n\n` +
         `${error instanceof Error ? error.message : "알 수 없는 오류"}\n\n` +
         `다시 시도하려면 "MoA 설치"라고 말해주세요.`,
       success: false,
@@ -151,18 +149,18 @@ export async function handleInstallStart(
 /**
  * "AI 상태" 명령 처리
  */
-export async function handleStatusCommand(
-  kakaoUserId: string,
-): Promise<string> {
+export async function handleStatusCommand(_kakaoUserId: string): Promise<string> {
   const running = await isOllamaRunning();
 
   if (!running) {
-    return `🔴 MoA AI 상태: 꺼짐\n\n` +
+    return (
+      `🔴 MoA AI 상태: 꺼짐\n\n` +
       `로컬 AI 서버가 실행되고 있지 않습니다.\n\n` +
-      `💡 "MoA 설치"라고 말하면 AI를 설치/시작할 수 있어요.`;
+      `💡 "MoA 설치"라고 말하면 AI를 설치/시작할 수 있어요.`
+    );
   }
 
-  const status = await checkMoaSLMStatus();
+  const _status = await checkMoaSLMStatus();
   const info = await getSLMInfo();
   const device = detectDevice();
 
@@ -197,14 +195,14 @@ export async function handleStatusCommand(
 /**
  * "AI 삭제" 명령 처리
  */
-export async function handleUninstallCommand(
-  kakaoUserId: string,
-): Promise<string> {
-  return `⚠️ MoA AI 삭제\n\n` +
+export async function handleUninstallCommand(_kakaoUserId: string): Promise<string> {
+  return (
+    `⚠️ MoA AI 삭제\n\n` +
     `정말로 로컬 AI를 삭제하시겠습니까?\n` +
     `삭제하면 오프라인 AI 기능을 사용할 수 없게 됩니다.\n\n` +
     `삭제하려면 "삭제 확인"이라고 말해주세요.\n` +
-    `취소하려면 아무 말이나 해주세요.`;
+    `취소하려면 아무 말이나 해주세요.`
+  );
 }
 
 // ============================================
@@ -212,11 +210,11 @@ export async function handleUninstallCommand(
 // ============================================
 
 export type SLMCommand =
-  | "install"      // MoA 설치, AI 설치
+  | "install" // MoA 설치, AI 설치
   | "install-start" // 설치 시작, 설치 진행
-  | "status"       // AI 상태, MoA 상태
-  | "uninstall"    // AI 삭제, MoA 삭제
-  | "help"         // AI 도움말
+  | "status" // AI 상태, MoA 상태
+  | "uninstall" // AI 삭제, MoA 삭제
+  | "help" // AI 도움말
   | null;
 
 /**
@@ -231,15 +229,19 @@ export function detectSLMCommand(message: string): SLMCommand {
   }
 
   // 설치
-  if (/(moa|ai|에이아이)\s*(설치|설정|시작|활성화)/.test(normalized) ||
-      /로컬\s*(ai|에이아이)\s*설치/.test(normalized) ||
-      /^설치$/.test(normalized)) {
+  if (
+    /(moa|ai|에이아이)\s*(설치|설정|시작|활성화)/.test(normalized) ||
+    /로컬\s*(ai|에이아이)\s*설치/.test(normalized) ||
+    /^설치$/.test(normalized)
+  ) {
     return "install";
   }
 
   // 상태
-  if (/(moa|ai|에이아이)\s*(상태|정보|확인)/.test(normalized) ||
-      /로컬\s*(ai|에이아이)\s*상태/.test(normalized)) {
+  if (
+    /(moa|ai|에이아이)\s*(상태|정보|확인)/.test(normalized) ||
+    /로컬\s*(ai|에이아이)\s*상태/.test(normalized)
+  ) {
     return "status";
   }
 
@@ -309,7 +311,8 @@ export async function handleSLMCommand(
 // ============================================
 
 function getSLMHelpMessage(): string {
-  return `🤖 MoA 로컬 AI 안내\n\n` +
+  return (
+    `🤖 MoA 로컬 AI 안내\n\n` +
     `MoA는 개인정보 보호를 위해 로컬 AI를 지원합니다.\n` +
     `민감한 정보가 포함된 질문은 외부 서버로 전송되지 않고\n` +
     `여러분의 기기에서 직접 처리됩니다.\n\n` +
@@ -323,7 +326,8 @@ function getSLMHelpMessage(): string {
     `  • 의료, 금융 관련 민감 정보\n\n` +
     `📱 시스템 요구사항\n` +
     `  • 기본 AI: 4GB 이상의 RAM\n` +
-    `  • 고급 AI: 6GB 이상의 RAM`;
+    `  • 고급 AI: 6GB 이상의 RAM`
+  );
 }
 
 function getDeviceTypeKorean(type: DeviceProfile["type"]): string {

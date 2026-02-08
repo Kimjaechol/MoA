@@ -386,7 +386,7 @@ export class KakaoApiClient {
    * Truncate text to Kakao's limits
    */
   private truncateText(text: string, maxLength = 1000): string {
-    if (text.length <= maxLength) return text;
+    if (text.length <= maxLength) { return text; }
     return text.slice(0, maxLength - 3) + "...";
   }
 
@@ -407,14 +407,14 @@ export class KakaoApiClient {
 
     for (const para of paragraphs) {
       if (currentChunk.length + para.length + 2 > maxLength) {
-        if (currentChunk) chunks.push(currentChunk.trim());
+        if (currentChunk) { chunks.push(currentChunk.trim()); }
         currentChunk = para;
       } else {
         currentChunk += (currentChunk ? "\n\n" : "") + para;
       }
     }
 
-    if (currentChunk) chunks.push(currentChunk.trim());
+    if (currentChunk) { chunks.push(currentChunk.trim()); }
 
     // Further split any chunks that are still too long
     const finalChunks: string[] = [];
@@ -434,7 +434,7 @@ export class KakaoApiClient {
             remaining = remaining.slice(maxLength - 3);
           }
         }
-        if (remaining) finalChunks.push(remaining);
+        if (remaining) { finalChunks.push(remaining); }
       }
     }
 

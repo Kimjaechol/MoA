@@ -63,7 +63,9 @@ export interface ConnectionAlert {
  * 사용자의 모든 디바이스 상태 조회 (상세)
  */
 export async function getDetailedDeviceStatus(userId: string): Promise<DeviceStatus[]> {
-  if (!isSupabaseConfigured()) return [];
+  if (!isSupabaseConfigured()) {
+    return [];
+  }
 
   const supabase = getSupabase();
 
@@ -74,7 +76,9 @@ export async function getDetailedDeviceStatus(userId: string): Promise<DeviceSta
     .eq("user_id", userId)
     .order("last_seen_at", { ascending: false });
 
-  if (error || !devices) return [];
+  if (error || !devices) {
+    return [];
+  }
 
   // 각 디바이스의 활동 정보 조회
   const deviceStatuses: DeviceStatus[] = [];
@@ -127,7 +131,7 @@ export async function getDetailedDeviceStatus(userId: string): Promise<DeviceSta
  */
 export async function getDeviceStatusById(
   userId: string,
-  deviceId: string
+  deviceId: string,
 ): Promise<DeviceStatus | null> {
   const allStatuses = await getDetailedDeviceStatus(userId);
   return allStatuses.find((d) => d.deviceId === deviceId) ?? null;
@@ -147,11 +151,15 @@ export async function getOnlineDevices(userId: string): Promise<DeviceStatus[]> 
 
 function calculateConnectionState(
   isOnline: boolean,
-  lastSeen: Date | null
+  lastSeen: Date | null,
 ): DeviceStatus["connectionState"] {
-  if (!isOnline) return "disconnected";
+  if (!isOnline) {
+    return "disconnected";
+  }
 
-  if (!lastSeen) return "connecting";
+  if (!lastSeen) {
+    return "connecting";
+  }
 
   const now = new Date();
   const diffMs = now.getTime() - lastSeen.getTime();
@@ -162,13 +170,19 @@ function calculateConnectionState(
   // 2분~5분: unstable
   // 5분 이상: disconnected (is_online이 false가 됨)
 
-  if (diffMins < 0.5) return "connected";
-  if (diffMins < 2) return "connecting";
+  if (diffMins < 0.5) {
+    return "connected";
+  }
+  if (diffMins < 2) {
+    return "connecting";
+  }
   return "unstable";
 }
 
 function calculateStability(lastSeen: Date | null, isOnline: boolean): number {
-  if (!isOnline || !lastSeen) return 0;
+  if (!isOnline || !lastSeen) {
+    return 0;
+  }
 
   const now = new Date();
   const diffMs = now.getTime() - lastSeen.getTime();
@@ -181,10 +195,18 @@ function calculateStability(lastSeen: Date | null, isOnline: boolean): number {
   // 3분: 20점
   // 4분 이상: 0점
 
-  if (diffMins < 0.5) return 100;
-  if (diffMins < 1) return 80;
-  if (diffMins < 2) return 50;
-  if (diffMins < 3) return 20;
+  if (diffMins < 0.5) {
+    return 100;
+  }
+  if (diffMins < 1) {
+    return 80;
+  }
+  if (diffMins < 2) {
+    return 50;
+  }
+  if (diffMins < 3) {
+    return 20;
+  }
   return 0;
 }
 
@@ -197,9 +219,11 @@ function calculateStability(lastSeen: Date | null, isOnline: boolean): number {
  */
 export async function logDeviceActivity(
   deviceId: string,
-  activity: Omit<DeviceActivity, "deviceId" | "timestamp">
+  activity: Omit<DeviceActivity, "deviceId" | "timestamp">,
 ): Promise<void> {
-  if (!isSupabaseConfigured()) return;
+  if (!isSupabaseConfigured()) {
+    return;
+  }
 
   const supabase = getSupabase();
 
@@ -217,9 +241,11 @@ export async function logDeviceActivity(
  */
 export async function getDeviceActivityLog(
   deviceId: string,
-  limit = 20
+  limit = 20,
 ): Promise<DeviceActivity[]> {
-  if (!isSupabaseConfigured()) return [];
+  if (!isSupabaseConfigured()) {
+    return [];
+  }
 
   const supabase = getSupabase();
 
@@ -230,7 +256,9 @@ export async function getDeviceActivityLog(
     .order("created_at", { ascending: false })
     .limit(limit);
 
-  if (error || !data) return [];
+  if (error || !data) {
+    return [];
+  }
 
   return data.map((row) => ({
     deviceId: row.device_id,
@@ -250,9 +278,11 @@ export async function getDeviceActivityLog(
  */
 export async function checkConnectionAlerts(
   userId: string,
-  since?: Date
+  since?: Date,
 ): Promise<ConnectionAlert[]> {
-  if (!isSupabaseConfigured()) return [];
+  if (!isSupabaseConfigured()) {
+    return [];
+  }
 
   const supabase = getSupabase();
   const sinceTime = since ?? new Date(Date.now() - 5 * 60 * 1000); // 기본 5분
@@ -265,7 +295,9 @@ export async function checkConnectionAlerts(
     .gte("created_at", sinceTime.toISOString())
     .order("created_at", { ascending: false });
 
-  if (error || !data) return [];
+  if (error || !data) {
+    return [];
+  }
 
   return data
     .filter((row) => {
@@ -433,13 +465,19 @@ function formatTimeAgo(date: Date): string {
   const diffMs = now.getTime() - date.getTime();
   const diffSecs = Math.floor(diffMs / 1000);
 
-  if (diffSecs < 60) return `${diffSecs}초 전`;
+  if (diffSecs < 60) {
+    return `${diffSecs}초 전`;
+  }
 
   const diffMins = Math.floor(diffSecs / 60);
-  if (diffMins < 60) return `${diffMins}분 전`;
+  if (diffMins < 60) {
+    return `${diffMins}분 전`;
+  }
 
   const diffHours = Math.floor(diffMins / 60);
-  if (diffHours < 24) return `${diffHours}시간 전`;
+  if (diffHours < 24) {
+    return `${diffHours}시간 전`;
+  }
 
   const diffDays = Math.floor(diffHours / 24);
   return `${diffDays}일 전`;

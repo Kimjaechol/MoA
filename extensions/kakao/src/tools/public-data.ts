@@ -24,10 +24,7 @@ export interface Holiday {
 /**
  * 공휴일 정보 조회 (공공데이터포털)
  */
-export async function getPublicHolidays(
-  year?: number,
-  month?: number,
-): Promise<Holiday[]> {
+export async function getPublicHolidays(year?: number, month?: number): Promise<Holiday[]> {
   const apiKey = process.env.DATA_GO_KR_API_KEY;
 
   const targetYear = year || new Date().getFullYear();
@@ -40,20 +37,20 @@ export async function getPublicHolidays(
 
   try {
     const url = new URL(
-      'http://apis.data.go.kr/B090041/openapi/service/SpcdeInfoService/getRestDeInfo',
+      "http://apis.data.go.kr/B090041/openapi/service/SpcdeInfoService/getRestDeInfo",
     );
-    url.searchParams.set('serviceKey', apiKey);
-    url.searchParams.set('solYear', targetYear.toString());
+    url.searchParams.set("serviceKey", apiKey);
+    url.searchParams.set("solYear", targetYear.toString());
     if (targetMonth) {
-      url.searchParams.set('solMonth', targetMonth.toString().padStart(2, '0'));
+      url.searchParams.set("solMonth", targetMonth.toString().padStart(2, "0"));
     }
-    url.searchParams.set('numOfRows', '100');
-    url.searchParams.set('_type', 'json');
+    url.searchParams.set("numOfRows", "100");
+    url.searchParams.set("_type", "json");
 
     const response = await fetch(url.toString());
 
     if (!response.ok) {
-      console.warn('공휴일 API 오류, 정적 데이터 사용');
+      console.warn("공휴일 API 오류, 정적 데이터 사용");
       return getStaticHolidays(targetYear, targetMonth);
     }
 
@@ -64,14 +61,14 @@ export async function getPublicHolidays(
     const itemArray = Array.isArray(items) ? items : [items];
 
     return itemArray
-      .filter((item: { isHoliday?: string }) => item.isHoliday === 'Y')
+      .filter((item: { isHoliday?: string }) => item.isHoliday === "Y")
       .map((item: { locdate: number; dateName: string; isHoliday: string }) => ({
-        date: item.locdate.toString().replace(/(\d{4})(\d{2})(\d{2})/, '$1-$2-$3'),
+        date: item.locdate.toString().replace(/(\d{4})(\d{2})(\d{2})/, "$1-$2-$3"),
         name: item.dateName,
-        isHoliday: item.isHoliday === 'Y',
+        isHoliday: item.isHoliday === "Y",
       }));
   } catch (error) {
-    console.error('공휴일 조회 실패:', error);
+    console.error("공휴일 조회 실패:", error);
     return getStaticHolidays(targetYear, targetMonth);
   }
 }
@@ -81,26 +78,26 @@ export async function getPublicHolidays(
  */
 function getStaticHolidays(year: number, month?: number): Holiday[] {
   const holidays: Holiday[] = [
-    { date: `${year}-01-01`, name: '신정', isHoliday: true },
-    { date: `${year}-03-01`, name: '삼일절', isHoliday: true },
-    { date: `${year}-05-05`, name: '어린이날', isHoliday: true },
-    { date: `${year}-06-06`, name: '현충일', isHoliday: true },
-    { date: `${year}-08-15`, name: '광복절', isHoliday: true },
-    { date: `${year}-10-03`, name: '개천절', isHoliday: true },
-    { date: `${year}-10-09`, name: '한글날', isHoliday: true },
-    { date: `${year}-12-25`, name: '크리스마스', isHoliday: true },
+    { date: `${year}-01-01`, name: "신정", isHoliday: true },
+    { date: `${year}-03-01`, name: "삼일절", isHoliday: true },
+    { date: `${year}-05-05`, name: "어린이날", isHoliday: true },
+    { date: `${year}-06-06`, name: "현충일", isHoliday: true },
+    { date: `${year}-08-15`, name: "광복절", isHoliday: true },
+    { date: `${year}-10-03`, name: "개천절", isHoliday: true },
+    { date: `${year}-10-09`, name: "한글날", isHoliday: true },
+    { date: `${year}-12-25`, name: "크리스마스", isHoliday: true },
     // 음력 공휴일은 연도별로 다름 - 대략적인 날짜
-    { date: `${year}-01-28`, name: '설날 전날', isHoliday: true },
-    { date: `${year}-01-29`, name: '설날', isHoliday: true },
-    { date: `${year}-01-30`, name: '설날 다음날', isHoliday: true },
-    { date: `${year}-05-15`, name: '부처님오신날', isHoliday: true },
-    { date: `${year}-09-16`, name: '추석 전날', isHoliday: true },
-    { date: `${year}-09-17`, name: '추석', isHoliday: true },
-    { date: `${year}-09-18`, name: '추석 다음날', isHoliday: true },
+    { date: `${year}-01-28`, name: "설날 전날", isHoliday: true },
+    { date: `${year}-01-29`, name: "설날", isHoliday: true },
+    { date: `${year}-01-30`, name: "설날 다음날", isHoliday: true },
+    { date: `${year}-05-15`, name: "부처님오신날", isHoliday: true },
+    { date: `${year}-09-16`, name: "추석 전날", isHoliday: true },
+    { date: `${year}-09-17`, name: "추석", isHoliday: true },
+    { date: `${year}-09-18`, name: "추석 다음날", isHoliday: true },
   ];
 
   if (month) {
-    return holidays.filter((h) => parseInt(h.date.split('-')[1]) === month);
+    return holidays.filter((h) => parseInt(h.date.split("-")[1]) === month);
   }
 
   return holidays;
@@ -111,7 +108,7 @@ function getStaticHolidays(year: number, month?: number): Holiday[] {
  */
 export function formatHolidaysMessage(holidays: Holiday[], year?: number): string {
   if (holidays.length === 0) {
-    return '해당 기간에 공휴일이 없습니다.';
+    return "해당 기간에 공휴일이 없습니다.";
   }
 
   let message = `📅 **${year || new Date().getFullYear()}년 공휴일**\n\n`;
@@ -126,14 +123,14 @@ export function formatHolidaysMessage(holidays: Holiday[], year?: number): strin
   }
 
   for (const [month, monthHolidays] of Object.entries(monthlyGroups)) {
-    const monthName = parseInt(month.split('-')[1]);
+    const monthName = parseInt(month.split("-")[1]);
     message += `**${monthName}월**\n`;
     for (const holiday of monthHolidays) {
-      const day = parseInt(holiday.date.split('-')[2]);
+      const day = parseInt(holiday.date.split("-")[2]);
       const dayOfWeek = getDayOfWeek(holiday.date);
       message += `• ${day}일 (${dayOfWeek}) - ${holiday.name}\n`;
     }
-    message += '\n';
+    message += "\n";
   }
 
   return message.trim();
@@ -155,31 +152,31 @@ export interface AirQuality {
 }
 
 const AIR_QUALITY_GRADES: Record<number, { grade: string; description: string }> = {
-  1: { grade: '좋음', description: '야외활동 적합' },
-  2: { grade: '보통', description: '민감군 주의' },
-  3: { grade: '나쁨', description: '야외활동 자제' },
-  4: { grade: '매우나쁨', description: '외출 자제' },
+  1: { grade: "좋음", description: "야외활동 적합" },
+  2: { grade: "보통", description: "민감군 주의" },
+  3: { grade: "나쁨", description: "야외활동 자제" },
+  4: { grade: "매우나쁨", description: "외출 자제" },
 };
 
 // 시도별 측정소 코드
 const SIDO_CODES: Record<string, string> = {
-  서울: '서울',
-  부산: '부산',
-  대구: '대구',
-  인천: '인천',
-  광주: '광주',
-  대전: '대전',
-  울산: '울산',
-  세종: '세종',
-  경기: '경기',
-  강원: '강원',
-  충북: '충북',
-  충남: '충남',
-  전북: '전북',
-  전남: '전남',
-  경북: '경북',
-  경남: '경남',
-  제주: '제주',
+  서울: "서울",
+  부산: "부산",
+  대구: "대구",
+  인천: "인천",
+  광주: "광주",
+  대전: "대전",
+  울산: "울산",
+  세종: "세종",
+  경기: "경기",
+  강원: "강원",
+  충북: "충북",
+  충남: "충남",
+  전북: "전북",
+  전남: "전남",
+  경북: "경북",
+  경남: "경남",
+  제주: "제주",
 };
 
 /**
@@ -189,11 +186,11 @@ export async function getAirQuality(location: string): Promise<AirQuality> {
   const apiKey = process.env.DATA_GO_KR_API_KEY;
 
   if (!apiKey) {
-    throw new Error('공공데이터 API 키가 설정되지 않았습니다 (DATA_GO_KR_API_KEY)');
+    throw new Error("공공데이터 API 키가 설정되지 않았습니다 (DATA_GO_KR_API_KEY)");
   }
 
   // 시도명 추출
-  let sidoName = '';
+  let sidoName = "";
   for (const [key, value] of Object.entries(SIDO_CODES)) {
     if (location.includes(key)) {
       sidoName = value;
@@ -202,19 +199,19 @@ export async function getAirQuality(location: string): Promise<AirQuality> {
   }
 
   if (!sidoName) {
-    sidoName = '서울'; // 기본값
+    sidoName = "서울"; // 기본값
   }
 
   try {
     // 시도별 실시간 대기정보 조회
     const url = new URL(
-      'http://apis.data.go.kr/B552584/ArpltnInforInqireSvc/getCtprvnRltmMesureDnsty',
+      "http://apis.data.go.kr/B552584/ArpltnInforInqireSvc/getCtprvnRltmMesureDnsty",
     );
-    url.searchParams.set('serviceKey', apiKey);
-    url.searchParams.set('sidoName', sidoName);
-    url.searchParams.set('returnType', 'json');
-    url.searchParams.set('numOfRows', '100');
-    url.searchParams.set('ver', '1.0');
+    url.searchParams.set("serviceKey", apiKey);
+    url.searchParams.set("sidoName", sidoName);
+    url.searchParams.set("returnType", "json");
+    url.searchParams.set("numOfRows", "100");
+    url.searchParams.set("ver", "1.0");
 
     const response = await fetch(url.toString());
 
@@ -226,10 +223,11 @@ export async function getAirQuality(location: string): Promise<AirQuality> {
     const items = data.response?.body?.items || [];
 
     // 해당 지역의 측정소 찾기
-    const stationData = items.find(
-      (item: { stationName: string }) =>
-        location.includes(item.stationName) || item.stationName.includes(location),
-    ) || items[0];
+    const stationData =
+      items.find(
+        (item: { stationName: string }) =>
+          location.includes(item.stationName) || item.stationName.includes(location),
+      ) || items[0];
 
     if (!stationData) {
       throw new Error(`${location} 지역의 대기질 정보를 찾을 수 없습니다`);
@@ -250,7 +248,7 @@ export async function getAirQuality(location: string): Promise<AirQuality> {
       timestamp: stationData.dataTime,
     };
   } catch (error) {
-    console.error('대기질 조회 실패:', error);
+    console.error("대기질 조회 실패:", error);
     throw error;
   }
 }
@@ -260,13 +258,13 @@ export async function getAirQuality(location: string): Promise<AirQuality> {
  */
 export function formatAirQualityMessage(airQuality: AirQuality): string {
   const gradeEmoji: Record<string, string> = {
-    좋음: '🟢',
-    보통: '🟡',
-    나쁨: '🟠',
-    매우나쁨: '🔴',
+    좋음: "🟢",
+    보통: "🟡",
+    나쁨: "🟠",
+    매우나쁨: "🔴",
   };
 
-  const emoji = gradeEmoji[airQuality.grade] || '⚪';
+  const emoji = gradeEmoji[airQuality.grade] || "⚪";
 
   let message = `🌬️ **${airQuality.location} 대기질**\n\n`;
   message += `${emoji} 종합: **${airQuality.grade}** (${airQuality.gradeDescription})\n\n`;
@@ -300,18 +298,18 @@ export async function getCovidStats(date?: string): Promise<CovidStats> {
   const apiKey = process.env.DATA_GO_KR_API_KEY;
 
   if (!apiKey) {
-    throw new Error('공공데이터 API 키가 설정되지 않았습니다');
+    throw new Error("공공데이터 API 키가 설정되지 않았습니다");
   }
 
-  const targetDate = date || new Date().toISOString().slice(0, 10).replace(/-/g, '');
+  const targetDate = date || new Date().toISOString().slice(0, 10).replace(/-/g, "");
 
   try {
     const url = new URL(
-      'http://openapi.data.go.kr/openapi/service/rest/Covid19/getCovid19InfStateJson',
+      "http://openapi.data.go.kr/openapi/service/rest/Covid19/getCovid19InfStateJson",
     );
-    url.searchParams.set('serviceKey', apiKey);
-    url.searchParams.set('startCreateDt', targetDate);
-    url.searchParams.set('endCreateDt', targetDate);
+    url.searchParams.set("serviceKey", apiKey);
+    url.searchParams.set("startCreateDt", targetDate);
+    url.searchParams.set("endCreateDt", targetDate);
 
     const response = await fetch(url.toString());
 
@@ -323,7 +321,7 @@ export async function getCovidStats(date?: string): Promise<CovidStats> {
     const item = data.response?.body?.items?.item;
 
     if (!item) {
-      throw new Error('코로나19 데이터를 찾을 수 없습니다');
+      throw new Error("코로나19 데이터를 찾을 수 없습니다");
     }
 
     // 배열인 경우 첫 번째 항목 사용
@@ -338,7 +336,7 @@ export async function getCovidStats(date?: string): Promise<CovidStats> {
       recovered: stats.clearCnt || 0,
     };
   } catch (error) {
-    console.error('코로나19 현황 조회 실패:', error);
+    console.error("코로나19 현황 조회 실패:", error);
     throw error;
   }
 }
@@ -346,7 +344,7 @@ export async function getCovidStats(date?: string): Promise<CovidStats> {
 // ==================== 헬퍼 함수 ====================
 
 function getDayOfWeek(dateStr: string): string {
-  const days = ['일', '월', '화', '수', '목', '금', '토'];
+  const days = ["일", "월", "화", "수", "목", "금", "토"];
   const date = new Date(dateStr);
   return days[date.getDay()];
 }

@@ -12,7 +12,7 @@ export interface SportsMatch {
   awayTeam: string;
   startTime: string;
   venue?: string;
-  status: 'scheduled' | 'live' | 'finished' | 'postponed';
+  status: "scheduled" | "live" | "finished" | "postponed";
   score?: {
     home: number;
     away: number;
@@ -29,33 +29,33 @@ export interface SportsResult {
 
 // 한국 스포츠 팀 매핑
 const KBO_TEAMS: Record<string, string> = {
-  두산: 'Doosan Bears',
-  LG: 'LG Twins',
-  삼성: 'Samsung Lions',
-  키움: 'Kiwoom Heroes',
-  KT: 'KT Wiz',
-  SSG: 'SSG Landers',
-  롯데: 'Lotte Giants',
-  한화: 'Hanwha Eagles',
-  NC: 'NC Dinos',
-  KIA: 'KIA Tigers',
-  기아: 'KIA Tigers',
+  두산: "Doosan Bears",
+  LG: "LG Twins",
+  삼성: "Samsung Lions",
+  키움: "Kiwoom Heroes",
+  KT: "KT Wiz",
+  SSG: "SSG Landers",
+  롯데: "Lotte Giants",
+  한화: "Hanwha Eagles",
+  NC: "NC Dinos",
+  KIA: "KIA Tigers",
+  기아: "KIA Tigers",
 };
 
 const KLEAGUE_TEAMS: Record<string, string> = {
-  전북: 'Jeonbuk Hyundai Motors',
-  울산: 'Ulsan HD',
-  포항: 'Pohang Steelers',
-  수원: 'Suwon Samsung Bluewings',
-  FC서울: 'FC Seoul',
-  서울: 'FC Seoul',
-  인천: 'Incheon United',
-  대구: 'Daegu FC',
-  강원: 'Gangwon FC',
-  제주: 'Jeju United',
-  광주: 'Gwangju FC',
-  대전: 'Daejeon Hana Citizen',
-  김천: 'Gimcheon Sangmu',
+  전북: "Jeonbuk Hyundai Motors",
+  울산: "Ulsan HD",
+  포항: "Pohang Steelers",
+  수원: "Suwon Samsung Bluewings",
+  FC서울: "FC Seoul",
+  서울: "FC Seoul",
+  인천: "Incheon United",
+  대구: "Daegu FC",
+  강원: "Gangwon FC",
+  제주: "Jeju United",
+  광주: "Gwangju FC",
+  대전: "Daejeon Hana Citizen",
+  김천: "Gimcheon Sangmu",
 };
 
 /**
@@ -69,7 +69,7 @@ async function fetchFromApiFootball(
   const apiKey = process.env.API_FOOTBALL_KEY;
 
   if (!apiKey) {
-    throw new Error('API-Football 키가 설정되지 않았습니다');
+    throw new Error("API-Football 키가 설정되지 않았습니다");
   }
 
   const targetDate = date || new Date().toISOString().slice(0, 10);
@@ -78,9 +78,9 @@ async function fetchFromApiFootball(
   const leagueIds: Record<string, number> = {
     KBO: 0, // API-Football은 축구 전용
     K리그: 292,
-    'K리그1': 292,
+    K리그1: 292,
     EPL: 39,
-    '프리미어리그': 39,
+    프리미어리그: 39,
     라리가: 140,
     분데스리가: 78,
     세리에A: 135,
@@ -91,17 +91,17 @@ async function fetchFromApiFootball(
 
   const leagueId = league ? leagueIds[league] : undefined;
 
-  if (sport === 'soccer' || sport === 'football') {
-    const url = new URL('https://v3.football.api-sports.io/fixtures');
-    url.searchParams.set('date', targetDate);
+  if (sport === "soccer" || sport === "football") {
+    const url = new URL("https://v3.football.api-sports.io/fixtures");
+    url.searchParams.set("date", targetDate);
     if (leagueId) {
-      url.searchParams.set('league', leagueId.toString());
+      url.searchParams.set("league", leagueId.toString());
     }
 
     const response = await fetch(url.toString(), {
       headers: {
-        'X-RapidAPI-Key': apiKey,
-        'X-RapidAPI-Host': 'v3.football.api-sports.io',
+        "X-RapidAPI-Key": apiKey,
+        "X-RapidAPI-Host": "v3.football.api-sports.io",
       },
     });
 
@@ -127,7 +127,7 @@ async function fetchFromApiFootball(
         goals: { home: number | null; away: number | null };
       }) => ({
         id: match.fixture.id.toString(),
-        sport: 'soccer',
+        sport: "soccer",
         league: match.league.name,
         homeTeam: match.teams.home.name,
         awayTeam: match.teams.away.name,
@@ -145,24 +145,22 @@ async function fetchFromApiFootball(
   return [];
 }
 
-function mapApiFootballStatus(
-  status: string,
-): 'scheduled' | 'live' | 'finished' | 'postponed' {
-  const statusMap: Record<string, 'scheduled' | 'live' | 'finished' | 'postponed'> = {
-    NS: 'scheduled',
-    TBD: 'scheduled',
-    '1H': 'live',
-    HT: 'live',
-    '2H': 'live',
-    ET: 'live',
-    P: 'live',
-    FT: 'finished',
-    AET: 'finished',
-    PEN: 'finished',
-    PST: 'postponed',
-    CANC: 'postponed',
+function mapApiFootballStatus(status: string): "scheduled" | "live" | "finished" | "postponed" {
+  const statusMap: Record<string, "scheduled" | "live" | "finished" | "postponed"> = {
+    NS: "scheduled",
+    TBD: "scheduled",
+    "1H": "live",
+    HT: "live",
+    "2H": "live",
+    ET: "live",
+    P: "live",
+    FT: "finished",
+    AET: "finished",
+    PEN: "finished",
+    PST: "postponed",
+    CANC: "postponed",
   };
-  return statusMap[status] || 'scheduled';
+  return statusMap[status] || "scheduled";
 }
 
 /**
@@ -174,29 +172,29 @@ async function fetchFromESPN(
   date?: string,
 ): Promise<SportsMatch[]> {
   const targetDate = date || new Date().toISOString().slice(0, 10);
-  const formattedDate = targetDate.replace(/-/g, '');
+  const formattedDate = targetDate.replace(/-/g, "");
 
   // ESPN API 엔드포인트 매핑
   const endpoints: Record<string, { sport: string; league: string }> = {
     // 농구
-    NBA: { sport: 'basketball', league: 'nba' },
-    WNBA: { sport: 'basketball', league: 'wnba' },
-    KBL: { sport: 'basketball', league: 'kbl' },
+    NBA: { sport: "basketball", league: "nba" },
+    WNBA: { sport: "basketball", league: "wnba" },
+    KBL: { sport: "basketball", league: "kbl" },
     // 야구
-    MLB: { sport: 'baseball', league: 'mlb' },
-    KBO: { sport: 'baseball', league: 'kbo' },
-    NPB: { sport: 'baseball', league: 'npb' },
+    MLB: { sport: "baseball", league: "mlb" },
+    KBO: { sport: "baseball", league: "kbo" },
+    NPB: { sport: "baseball", league: "npb" },
     // 축구
-    EPL: { sport: 'soccer', league: 'eng.1' },
-    라리가: { sport: 'soccer', league: 'esp.1' },
-    분데스리가: { sport: 'soccer', league: 'ger.1' },
-    세리에A: { sport: 'soccer', league: 'ita.1' },
-    K리그: { sport: 'soccer', league: 'kor.1' },
-    'K리그1': { sport: 'soccer', league: 'kor.1' },
+    EPL: { sport: "soccer", league: "eng.1" },
+    라리가: { sport: "soccer", league: "esp.1" },
+    분데스리가: { sport: "soccer", league: "ger.1" },
+    세리에A: { sport: "soccer", league: "ita.1" },
+    K리그: { sport: "soccer", league: "kor.1" },
+    K리그1: { sport: "soccer", league: "kor.1" },
     // 미식축구
-    NFL: { sport: 'football', league: 'nfl' },
+    NFL: { sport: "football", league: "nfl" },
     // 하키
-    NHL: { sport: 'hockey', league: 'nhl' },
+    NHL: { sport: "hockey", league: "nhl" },
   };
 
   // 리그 찾기
@@ -205,10 +203,10 @@ async function fetchFromESPN(
   if (!endpoint) {
     // 스포츠 종류로 기본 리그 선택
     const defaultLeagues: Record<string, string> = {
-      baseball: 'KBO',
-      basketball: 'NBA',
-      soccer: 'EPL',
-      football: 'NFL',
+      baseball: "KBO",
+      basketball: "NBA",
+      soccer: "EPL",
+      football: "NFL",
     };
     const defaultLeague = defaultLeagues[sport];
     endpoint = defaultLeague ? endpoints[defaultLeague] : null;
@@ -247,15 +245,15 @@ async function fetchFromESPN(
         }[];
       }) => {
         const competition = event.competitions[0];
-        const homeTeam = competition.competitors.find((c) => c.homeAway === 'home');
-        const awayTeam = competition.competitors.find((c) => c.homeAway === 'away');
+        const homeTeam = competition.competitors.find((c) => c.homeAway === "home");
+        const awayTeam = competition.competitors.find((c) => c.homeAway === "away");
 
         return {
           id: event.id,
           sport: endpoint!.sport,
           league: league || endpoint!.league.toUpperCase(),
-          homeTeam: homeTeam?.team.displayName || '',
-          awayTeam: awayTeam?.team.displayName || '',
+          homeTeam: homeTeam?.team.displayName || "",
+          awayTeam: awayTeam?.team.displayName || "",
           startTime: event.date,
           venue: competition.venue?.fullName,
           status: mapESPNStatus(competition.status.type.name),
@@ -266,27 +264,27 @@ async function fetchFromESPN(
                   away: parseInt(awayTeam.score),
                 }
               : undefined,
-          broadcast: competition.broadcasts?.[0]?.names?.join(', '),
+          broadcast: competition.broadcasts?.[0]?.names?.join(", "),
         };
       },
     );
   } catch (error) {
-    console.error('ESPN API 조회 실패:', error);
+    console.error("ESPN API 조회 실패:", error);
     return [];
   }
 }
 
-function mapESPNStatus(status: string): 'scheduled' | 'live' | 'finished' | 'postponed' {
-  const statusMap: Record<string, 'scheduled' | 'live' | 'finished' | 'postponed'> = {
-    STATUS_SCHEDULED: 'scheduled',
-    STATUS_IN_PROGRESS: 'live',
-    STATUS_HALFTIME: 'live',
-    STATUS_FINAL: 'finished',
-    STATUS_FULL_TIME: 'finished',
-    STATUS_POSTPONED: 'postponed',
-    STATUS_CANCELED: 'postponed',
+function mapESPNStatus(status: string): "scheduled" | "live" | "finished" | "postponed" {
+  const statusMap: Record<string, "scheduled" | "live" | "finished" | "postponed"> = {
+    STATUS_SCHEDULED: "scheduled",
+    STATUS_IN_PROGRESS: "live",
+    STATUS_HALFTIME: "live",
+    STATUS_FINAL: "finished",
+    STATUS_FULL_TIME: "finished",
+    STATUS_POSTPONED: "postponed",
+    STATUS_CANCELED: "postponed",
   };
-  return statusMap[status] || 'scheduled';
+  return statusMap[status] || "scheduled";
 }
 
 /**
@@ -307,19 +305,18 @@ export async function getSportsSchedule(params: {
   matches = await fetchFromESPN(sport, league, targetDate);
 
   // API-Football 백업 (축구 전용)
-  if (matches.length === 0 && (sport === 'soccer' || sport === 'football')) {
+  if (matches.length === 0 && (sport === "soccer" || sport === "football")) {
     try {
       matches = await fetchFromApiFootball(sport, league, targetDate);
     } catch {
-      console.warn('API-Football 조회 실패, ESPN 결과 사용');
+      console.warn("API-Football 조회 실패, ESPN 결과 사용");
     }
   }
 
   // 팀 필터링
   if (team && matches.length > 0) {
     const normalizedTeam = team.toLowerCase();
-    const teamMapping =
-      sport === 'baseball' ? KBO_TEAMS : sport === 'soccer' ? KLEAGUE_TEAMS : {};
+    const teamMapping = sport === "baseball" ? KBO_TEAMS : sport === "soccer" ? KLEAGUE_TEAMS : {};
 
     const mappedTeam = teamMapping[team] || team;
 
@@ -347,15 +344,15 @@ export function formatSportsMessage(result: SportsResult): string {
   const { sport, league, matches, date } = result;
 
   const sportNames: Record<string, string> = {
-    baseball: '야구',
-    basketball: '농구',
-    soccer: '축구',
-    football: '미식축구',
-    hockey: '하키',
+    baseball: "야구",
+    basketball: "농구",
+    soccer: "축구",
+    football: "미식축구",
+    hockey: "하키",
   };
 
   const sportName = sportNames[sport] || sport;
-  const leagueName = league || '';
+  const leagueName = league || "";
 
   if (matches.length === 0) {
     return `⚽ ${date} ${leagueName} ${sportName} 경기 일정이 없습니다.`;
@@ -364,17 +361,17 @@ export function formatSportsMessage(result: SportsResult): string {
   let message = `⚽ **${date} ${leagueName} ${sportName} 일정**\n\n`;
 
   for (const match of matches) {
-    const time = new Date(match.startTime).toLocaleTimeString('ko-KR', {
-      hour: '2-digit',
-      minute: '2-digit',
+    const time = new Date(match.startTime).toLocaleTimeString("ko-KR", {
+      hour: "2-digit",
+      minute: "2-digit",
       hour12: false,
     });
 
     const statusEmoji = {
-      scheduled: '🕐',
-      live: '🔴',
-      finished: '✅',
-      postponed: '⚠️',
+      scheduled: "🕐",
+      live: "🔴",
+      finished: "✅",
+      postponed: "⚠️",
     }[match.status];
 
     let matchLine = `${statusEmoji} ${time} | ${match.homeTeam}`;
@@ -382,7 +379,7 @@ export function formatSportsMessage(result: SportsResult): string {
     if (match.score) {
       matchLine += ` ${match.score.home} - ${match.score.away} `;
     } else {
-      matchLine += ' vs ';
+      matchLine += " vs ";
     }
 
     matchLine += match.awayTeam;
@@ -395,7 +392,7 @@ export function formatSportsMessage(result: SportsResult): string {
       matchLine += `\n   📺 ${match.broadcast}`;
     }
 
-    message += matchLine + '\n\n';
+    message += matchLine + "\n\n";
   }
 
   return message.trim();
@@ -413,41 +410,37 @@ export function parseSportsQuery(query: string): {
   const lowerQuery = query.toLowerCase();
 
   // 스포츠 종류 감지
-  let sport = 'soccer';
-  if (
-    lowerQuery.includes('야구') ||
-    lowerQuery.includes('kbo') ||
-    lowerQuery.includes('mlb')
-  ) {
-    sport = 'baseball';
+  let sport = "soccer";
+  if (lowerQuery.includes("야구") || lowerQuery.includes("kbo") || lowerQuery.includes("mlb")) {
+    sport = "baseball";
   } else if (
-    lowerQuery.includes('농구') ||
-    lowerQuery.includes('nba') ||
-    lowerQuery.includes('kbl')
+    lowerQuery.includes("농구") ||
+    lowerQuery.includes("nba") ||
+    lowerQuery.includes("kbl")
   ) {
-    sport = 'basketball';
+    sport = "basketball";
   } else if (
-    lowerQuery.includes('축구') ||
-    lowerQuery.includes('k리그') ||
-    lowerQuery.includes('epl') ||
-    lowerQuery.includes('프리미어')
+    lowerQuery.includes("축구") ||
+    lowerQuery.includes("k리그") ||
+    lowerQuery.includes("epl") ||
+    lowerQuery.includes("프리미어")
   ) {
-    sport = 'soccer';
+    sport = "soccer";
   }
 
   // 리그 감지
   let league: string | undefined;
   const leaguePatterns: [RegExp, string][] = [
-    [/kbo|프로야구/, 'KBO'],
-    [/mlb|메이저리그/, 'MLB'],
-    [/nba/, 'NBA'],
-    [/kbl|프로농구/, 'KBL'],
-    [/k리그|케이리그/, 'K리그'],
-    [/epl|프리미어|잉글랜드/, 'EPL'],
-    [/라리가|스페인/, '라리가'],
-    [/분데스|독일/, '분데스리가'],
-    [/세리에|이탈리아/, '세리에A'],
-    [/챔스|챔피언스리그|ucl/, 'UCL'],
+    [/kbo|프로야구/, "KBO"],
+    [/mlb|메이저리그/, "MLB"],
+    [/nba/, "NBA"],
+    [/kbl|프로농구/, "KBL"],
+    [/k리그|케이리그/, "K리그"],
+    [/epl|프리미어|잉글랜드/, "EPL"],
+    [/라리가|스페인/, "라리가"],
+    [/분데스|독일/, "분데스리가"],
+    [/세리에|이탈리아/, "세리에A"],
+    [/챔스|챔피언스리그|ucl/, "UCL"],
   ];
 
   for (const [pattern, leagueName] of leaguePatterns) {
@@ -471,13 +464,13 @@ export function parseSportsQuery(query: string): {
   let date: string | undefined;
   const today = new Date();
 
-  if (lowerQuery.includes('오늘')) {
+  if (lowerQuery.includes("오늘")) {
     date = today.toISOString().slice(0, 10);
-  } else if (lowerQuery.includes('내일')) {
+  } else if (lowerQuery.includes("내일")) {
     const tomorrow = new Date(today);
     tomorrow.setDate(tomorrow.getDate() + 1);
     date = tomorrow.toISOString().slice(0, 10);
-  } else if (lowerQuery.includes('어제')) {
+  } else if (lowerQuery.includes("어제")) {
     const yesterday = new Date(today);
     yesterday.setDate(yesterday.getDate() - 1);
     date = yesterday.toISOString().slice(0, 10);
@@ -488,8 +481,8 @@ export function parseSportsQuery(query: string): {
       if (dateMatch[1]) {
         date = dateMatch[1];
       } else if (dateMatch[2]) {
-        const [month, day] = dateMatch[2].split('/');
-        date = `${today.getFullYear()}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`;
+        const [month, day] = dateMatch[2].split("/");
+        date = `${today.getFullYear()}-${month.padStart(2, "0")}-${day.padStart(2, "0")}`;
       }
     }
   }

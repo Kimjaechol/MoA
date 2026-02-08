@@ -11,8 +11,8 @@
  */
 
 import { existsSync, readFileSync, readdirSync, statSync, writeFileSync, mkdirSync } from "node:fs";
-import { join, dirname } from "node:path";
 import { homedir } from "node:os";
+import { join } from "node:path";
 
 // OpenClaw paths
 const OPENCLAW_BASE_DIR = join(homedir(), ".openclaw");
@@ -92,7 +92,9 @@ export function isOpenClawInstalled(): boolean {
  * List available agent IDs
  */
 export function listAgentIds(): string[] {
-  if (!existsSync(AGENTS_DIR)) return [];
+  if (!existsSync(AGENTS_DIR)) {
+    return [];
+  }
 
   try {
     return readdirSync(AGENTS_DIR, { withFileTypes: true })
@@ -144,7 +146,9 @@ export async function readMoltbotMemory(agentId: string): Promise<{
     const db = new DatabaseSync(dbPath, { readOnly: true });
 
     // Read files
-    const fileRows = db.prepare("SELECT path, source, hash, mtime, size FROM files").all() as Array<{
+    const fileRows = db
+      .prepare("SELECT path, source, hash, mtime, size FROM files")
+      .all() as Array<{
       path: string;
       source: "memory" | "sessions";
       hash: string;
@@ -193,9 +197,9 @@ export async function readMoltbotMemory(agentId: string): Promise<{
     }));
 
     // Read metadata
-    const metaRow = db.prepare("SELECT value FROM meta WHERE key = ?").get("memory_index_meta_v1") as
-      | { value: string }
-      | undefined;
+    const metaRow = db
+      .prepare("SELECT value FROM meta WHERE key = ?")
+      .get("memory_index_meta_v1") as { value: string } | undefined;
 
     let metadata: MoltbotMemoryExport["memory"]["metadata"] = null;
     if (metaRow?.value) {
@@ -246,7 +250,9 @@ export function readMoltbotSessions(agentId: string): MoltbotSession[] {
           // Session header
           if (record.type === "session") {
             sessionHeader = record;
-            if (record.id) sessionId = record.id;
+            if (record.id) {
+              sessionId = record.id;
+            }
             continue;
           }
 
@@ -467,7 +473,10 @@ export async function importMoltbotData(data: MoltbotMemoryExport): Promise<{
             type: "message",
             message: {
               role: msg.role,
-              content: typeof msg.content === "string" ? [{ type: "text", text: msg.content }] : msg.content,
+              content:
+                typeof msg.content === "string"
+                  ? [{ type: "text", text: msg.content }]
+                  : msg.content,
               timestamp: msg.timestamp ?? Date.now(),
               model: msg.model,
               provider: msg.provider,
@@ -560,7 +569,9 @@ export async function getMoltbotMemoryStats(agentId: string): Promise<{
       for (const file of files) {
         const content = readFileSync(join(sessionsDir, file), "utf-8");
         const messageCount = content.split("\n").filter((line) => {
-          if (!line.trim()) return false;
+          if (!line.trim()) {
+            return false;
+          }
           try {
             const record = JSON.parse(line);
             return record.type === "message";

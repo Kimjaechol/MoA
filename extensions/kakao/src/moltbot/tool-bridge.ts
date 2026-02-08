@@ -47,7 +47,11 @@ export const OPENCLAW_TOOLS: ToolDefinition[] = [
     description: "Send messages to other channels (Telegram, Discord, Slack, etc.)",
     category: "communication",
     parameters: {
-      channel: { type: "string", description: "Target channel (telegram, discord, slack, etc.)", required: true },
+      channel: {
+        type: "string",
+        description: "Target channel (telegram, discord, slack, etc.)",
+        required: true,
+      },
       recipient: { type: "string", description: "Recipient ID or username", required: true },
       text: { type: "string", description: "Message text", required: true },
       mediaUrl: { type: "string", description: "Optional media URL to attach" },
@@ -104,7 +108,11 @@ export const OPENCLAW_TOOLS: ToolDefinition[] = [
     description: "Automate web browser actions (open, navigate, click, etc.)",
     category: "execution",
     parameters: {
-      action: { type: "string", description: "Action to perform (open, navigate, click, type, screenshot)", required: true },
+      action: {
+        type: "string",
+        description: "Action to perform (open, navigate, click, type, screenshot)",
+        required: true,
+      },
       url: { type: "string", description: "URL for open/navigate actions" },
       selector: { type: "string", description: "CSS selector for click/type actions" },
       text: { type: "string", description: "Text for type action" },
@@ -159,7 +167,11 @@ export const OPENCLAW_TOOLS: ToolDefinition[] = [
     description: "Get conversation history from a session",
     category: "session",
     parameters: {
-      sessionId: { type: "string", description: "Session ID to retrieve history from", required: true },
+      sessionId: {
+        type: "string",
+        description: "Session ID to retrieve history from",
+        required: true,
+      },
       limit: { type: "number", description: "Maximum messages to retrieve" },
     },
     requiresGateway: true,
@@ -203,7 +215,11 @@ export const OPENCLAW_TOOLS: ToolDefinition[] = [
     description: "Telegram-specific actions (delete message, pin, etc.)",
     category: "channel",
     parameters: {
-      action: { type: "string", description: "Action (delete, pin, unpin, forward)", required: true },
+      action: {
+        type: "string",
+        description: "Action (delete, pin, unpin, forward)",
+        required: true,
+      },
       messageId: { type: "string", description: "Message ID to act on" },
       chatId: { type: "string", description: "Chat ID" },
     },
@@ -214,7 +230,11 @@ export const OPENCLAW_TOOLS: ToolDefinition[] = [
     description: "Discord-specific actions (delete, react, guild management)",
     category: "channel",
     parameters: {
-      action: { type: "string", description: "Action (delete, react, createChannel, etc.)", required: true },
+      action: {
+        type: "string",
+        description: "Action (delete, react, createChannel, etc.)",
+        required: true,
+      },
       messageId: { type: "string", description: "Message ID" },
       channelId: { type: "string", description: "Channel ID" },
       guildId: { type: "string", description: "Guild/Server ID" },
@@ -389,33 +409,21 @@ Please execute this tool and return the result.`;
    * Search the web
    */
   async webSearch(query: string, maxResults = 5): Promise<ToolExecutionResult> {
-    return this.executeTool(
-      "web_search",
-      { query, maxResults },
-      { userId: "kakaomolt-search" },
-    );
+    return this.executeTool("web_search", { query, maxResults }, { userId: "kakaomolt-search" });
   }
 
   /**
    * Fetch URL content
    */
   async webFetch(url: string, selector?: string): Promise<ToolExecutionResult> {
-    return this.executeTool(
-      "web_fetch",
-      { url, selector },
-      { userId: "kakaomolt-fetch" },
-    );
+    return this.executeTool("web_fetch", { url, selector }, { userId: "kakaomolt-fetch" });
   }
 
   /**
    * Analyze an image
    */
   async analyzeImage(imageUrl: string, prompt?: string): Promise<ToolExecutionResult> {
-    return this.executeTool(
-      "image_analyze",
-      { imageUrl, prompt },
-      { userId: "kakaomolt-vision" },
-    );
+    return this.executeTool("image_analyze", { imageUrl, prompt }, { userId: "kakaomolt-vision" });
   }
 
   /**
@@ -446,7 +454,9 @@ Please execute this tool and return the result.`;
    * Check if gateway is connected
    */
   async isGatewayConnected(): Promise<boolean> {
-    if (!this.gateway) return false;
+    if (!this.gateway) {
+      return false;
+    }
     const status = await this.gateway.checkStatus();
     return status.online;
   }
@@ -484,9 +494,7 @@ export function createToolBridge(options?: {
  * Format tool list for display (e.g., in KakaoTalk response)
  */
 export function formatToolList(category?: ToolCategory): string {
-  const tools = category
-    ? OPENCLAW_TOOLS.filter((t) => t.category === category)
-    : OPENCLAW_TOOLS;
+  const tools = category ? OPENCLAW_TOOLS.filter((t) => t.category === category) : OPENCLAW_TOOLS;
 
   if (tools.length === 0) {
     return "사용 가능한 도구가 없습니다.";
@@ -494,7 +502,9 @@ export function formatToolList(category?: ToolCategory): string {
 
   const grouped = tools.reduce(
     (acc, tool) => {
-      if (!acc[tool.category]) acc[tool.category] = [];
+      if (!acc[tool.category]) {
+        acc[tool.category] = [];
+      }
       acc[tool.category].push(tool);
       return acc;
     },

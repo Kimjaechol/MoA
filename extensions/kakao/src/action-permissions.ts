@@ -697,7 +697,7 @@ export async function logAction(
 ): Promise<void> {
   const hashedId = hashUserId(kakaoUserId);
 
-  const entry: AuditLogEntry = {
+  const _entry: AuditLogEntry = {
     userId: hashedId,
     action,
     details,

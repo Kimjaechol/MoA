@@ -23,7 +23,7 @@ import {
   listUserDevices,
   removeDevice,
 } from "./device-auth.js";
-import { decryptPayload, appendExecutionLog } from "./relay-handler.js";
+import { appendExecutionLog } from "./relay-handler.js";
 
 const LONG_POLL_TIMEOUT_MS = 30_000; // 30 seconds
 const POLL_INTERVAL_MS = 2_000; // Check every 2 seconds during long-poll
@@ -43,7 +43,9 @@ export async function handleRelayRequest(
 ): Promise<boolean> {
   const url = req.url ?? "";
 
-  if (!url.startsWith("/api/relay/")) return false;
+  if (!url.startsWith("/api/relay/")) {
+    return false;
+  }
 
   // CORS headers for device clients
   res.setHeader("Access-Control-Allow-Origin", "*");
@@ -395,7 +397,9 @@ async function handleProgress(
 
 async function authFromHeader(req: IncomingMessage) {
   const authHeader = req.headers.authorization;
-  if (!authHeader?.startsWith("Bearer ")) return null;
+  if (!authHeader?.startsWith("Bearer ")) {
+    return null;
+  }
   const token = authHeader.slice(7);
   return authenticateDevice(token);
 }

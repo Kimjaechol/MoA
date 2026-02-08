@@ -178,7 +178,10 @@ export class MoltbotGatewayClient {
   /**
    * Search memory for relevant context
    */
-  async searchMemory(query: string, options?: { maxResults?: number; minScore?: number }): Promise<{
+  async searchMemory(
+    query: string,
+    options?: { maxResults?: number; minScore?: number },
+  ): Promise<{
     success: boolean;
     results?: MemorySearchResult[];
     error?: string;
@@ -389,10 +392,7 @@ export class MoltbotGatewayClient {
   /**
    * Internal fetch wrapper with auth and timeout
    */
-  private async fetch(
-    path: string,
-    options: { method: string; body?: string },
-  ): Promise<Response> {
+  private async fetch(path: string, options: { method: string; body?: string }): Promise<Response> {
     const url = `${this.config.url}${path}`;
 
     const headers: Record<string, string> = {

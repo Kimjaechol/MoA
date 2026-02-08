@@ -191,26 +191,26 @@ export function classifyComplexity(message: string): ComplexityResult {
   let score = 2; // 기본 점수
 
   // 코드 관련 → +2
-  if (factors.hasCode) score += 2;
+  if (factors.hasCode) { score += 2; }
 
   // 전문 분야 → +2
-  if (factors.hasExpertDomain) score += 2;
+  if (factors.hasExpertDomain) { score += 2; }
 
   // 창작 요청 → +1
-  if (factors.hasCreativeRequest) score += 1;
+  if (factors.hasCreativeRequest) { score += 1; }
 
   // 분석/비교 요청 → +1
-  if (factors.hasAnalysisRequest || factors.hasComparisonRequest) score += 1;
+  if (factors.hasAnalysisRequest || factors.hasComparisonRequest) { score += 1; }
 
   // 복수 질문 → +1
-  if (factors.hasMultipleQuestions) score += 1;
+  if (factors.hasMultipleQuestions) { score += 1; }
 
   // 긴 컨텍스트 → +1
-  if (factors.hasLongContext) score += 1;
+  if (factors.hasLongContext) { score += 1; }
 
   // 긴 문장 (20단어 이상) → +0.5
-  if (factors.wordCount > 20) score += 0.5;
-  if (factors.wordCount > 50) score += 0.5;
+  if (factors.wordCount > 20) { score += 0.5; }
+  if (factors.wordCount > 50) { score += 0.5; }
 
   // 점수 정규화 (1-5)
   score = Math.min(5, Math.max(1, Math.round(score)));
@@ -266,37 +266,37 @@ export function classifyComplexity(message: string): ComplexityResult {
 
 function buildComplexReason(factors: ComplexityFactors): string {
   const reasons: string[] = [];
-  if (factors.hasAnalysisRequest) reasons.push("분석 요청");
-  if (factors.hasComparisonRequest) reasons.push("비교 요청");
-  if (factors.hasCreativeRequest) reasons.push("창작 요청");
-  if (factors.hasMultipleQuestions) reasons.push("복수 질문");
+  if (factors.hasAnalysisRequest) { reasons.push("분석 요청"); }
+  if (factors.hasComparisonRequest) { reasons.push("비교 요청"); }
+  if (factors.hasCreativeRequest) { reasons.push("창작 요청"); }
+  if (factors.hasMultipleQuestions) { reasons.push("복수 질문"); }
   return reasons.length > 0 ? reasons.join(", ") : "복잡한 질문";
 }
 
 function buildComplexReasonEn(factors: ComplexityFactors): string {
   const reasons: string[] = [];
-  if (factors.hasAnalysisRequest) reasons.push("analysis request");
-  if (factors.hasComparisonRequest) reasons.push("comparison request");
-  if (factors.hasCreativeRequest) reasons.push("creative request");
-  if (factors.hasMultipleQuestions) reasons.push("multiple questions");
+  if (factors.hasAnalysisRequest) { reasons.push("analysis request"); }
+  if (factors.hasComparisonRequest) { reasons.push("comparison request"); }
+  if (factors.hasCreativeRequest) { reasons.push("creative request"); }
+  if (factors.hasMultipleQuestions) { reasons.push("multiple questions"); }
   return reasons.length > 0 ? reasons.join(", ") : "complex question";
 }
 
 function buildExpertReason(factors: ComplexityFactors): string {
   const reasons: string[] = [];
-  if (factors.hasCode) reasons.push("코드/기술 분석");
-  if (factors.hasExpertDomain) reasons.push("전문 분야");
-  if (factors.hasCreativeRequest) reasons.push("고급 창작");
-  if (factors.hasLongContext) reasons.push("긴 컨텍스트");
+  if (factors.hasCode) { reasons.push("코드/기술 분석"); }
+  if (factors.hasExpertDomain) { reasons.push("전문 분야"); }
+  if (factors.hasCreativeRequest) { reasons.push("고급 창작"); }
+  if (factors.hasLongContext) { reasons.push("긴 컨텍스트"); }
   return reasons.length > 0 ? reasons.join(", ") : "전문가 수준 분석";
 }
 
 function buildExpertReasonEn(factors: ComplexityFactors): string {
   const reasons: string[] = [];
-  if (factors.hasCode) reasons.push("code/technical analysis");
-  if (factors.hasExpertDomain) reasons.push("expert domain");
-  if (factors.hasCreativeRequest) reasons.push("advanced creative");
-  if (factors.hasLongContext) reasons.push("long context");
+  if (factors.hasCode) { reasons.push("code/technical analysis"); }
+  if (factors.hasExpertDomain) { reasons.push("expert domain"); }
+  if (factors.hasCreativeRequest) { reasons.push("advanced creative"); }
+  if (factors.hasLongContext) { reasons.push("long context"); }
   return reasons.length > 0 ? reasons.join(", ") : "expert-level analysis";
 }
 
@@ -342,7 +342,7 @@ export function buildPremiumModelNotification(
     { provider: "google", model: "gemini-3-pro-preview", displayName: "Gemini 3 Pro" },
   ];
 
-  const modelNames = suggestedModels.map(m => `"${m.displayName}"`).join(", ");
+  const _modelNames = suggestedModels.map(m => `"${m.displayName}"`).join(", ");
 
   if (userHasApiKey) {
     // 사용자가 이미 API 키를 등록한 경우 → 자동 사용

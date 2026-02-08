@@ -148,7 +148,7 @@ export interface BillingPaymentRequest {
 async function tossApiRequest<T>(
   endpoint: string,
   method: "GET" | "POST",
-  body?: unknown
+  body?: unknown,
 ): Promise<T> {
   const config = getTossConfig();
 
@@ -165,7 +165,7 @@ async function tossApiRequest<T>(
       Authorization: `Basic ${authHeader}`,
       "Content-Type": "application/json",
     },
-    body: body ? JSON.stringify(body) : undefined,
+    ...(body ? { body: JSON.stringify(body) } : {}),
   });
 
   const data = await response.json();
@@ -187,9 +187,7 @@ async function tossApiRequest<T>(
 /**
  * 결제 승인 (결제창에서 돌아온 후 호출)
  */
-export async function confirmPayment(
-  confirmation: PaymentConfirmation
-): Promise<PaymentResult> {
+export async function confirmPayment(confirmation: PaymentConfirmation): Promise<PaymentResult> {
   try {
     const result = await tossApiRequest<{
       paymentKey: string;
@@ -276,7 +274,7 @@ export async function getPayment(paymentKey: string): Promise<PaymentResult> {
 export async function cancelPayment(
   paymentKey: string,
   cancelReason: string,
-  cancelAmount?: number
+  cancelAmount?: number,
 ): Promise<PaymentResult> {
   try {
     const body: { cancelReason: string; cancelAmount?: number } = { cancelReason };
@@ -315,9 +313,7 @@ export async function cancelPayment(
 /**
  * 빌링키 발급 (카드 정보로)
  */
-export async function issueBillingKey(
-  request: BillingKeyRequest
-): Promise<BillingKeyResult> {
+export async function issueBillingKey(request: BillingKeyRequest): Promise<BillingKeyResult> {
   try {
     const result = await tossApiRequest<{
       billingKey: string;
@@ -356,9 +352,7 @@ export async function issueBillingKey(
 /**
  * 빌링키로 결제 (자동 결제)
  */
-export async function chargeBilling(
-  request: BillingPaymentRequest
-): Promise<PaymentResult> {
+export async function chargeBilling(request: BillingPaymentRequest): Promise<PaymentResult> {
   try {
     const result = await tossApiRequest<{
       paymentKey: string;
@@ -402,12 +396,11 @@ export async function chargeBilling(
 /**
  * 웹훅 서명 검증
  */
-export function verifyWebhookSignature(
-  payload: string,
-  signature: string
-): boolean {
+export function verifyWebhookSignature(payload: string, signature: string): boolean {
   const config = getTossConfig();
-  if (!config.webhookSecret) return false;
+  if (!config.webhookSecret) {
+    return false;
+  }
 
   const expectedSignature = createHmac("sha256", config.webhookSecret)
     .update(payload)

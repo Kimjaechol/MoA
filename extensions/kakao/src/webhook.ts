@@ -28,11 +28,9 @@ import {
 import { storeUserPhoneNumber } from "./proactive-messaging.js";
 import {
   generatePairingCode,
-  listUserDevices,
   removeDevice,
   sendRelayCommand,
   getRecentCommands,
-  getCommandResult,
   getExecutionLog,
   getRelayUsageStats,
   getRelayBillingConfig,
@@ -48,7 +46,6 @@ import {
   getDetailedDeviceStatus,
   formatDeviceStatusSummary,
   formatDeviceStatusDetail,
-  getDeviceStatusById,
 } from "./relay/index.js";
 import { getSupabase, isSupabaseConfigured } from "./supabase.js";
 import { handleSyncCommand, isSyncCommand, type SyncCommandContext } from "./sync/index.js";
@@ -120,7 +117,7 @@ export async function startKakaoWebhook(opts: KakaoWebhookOptions): Promise<{
     // Request interceptor (e.g., relay API routes)
     if (requestInterceptor) {
       const handled = await requestInterceptor(req, res);
-      if (handled) return;
+      if (handled) { return; }
     }
 
     // Only accept POST to webhook path
@@ -540,63 +537,63 @@ function parseMoltbotCommand(message: string): MoltbotCommand {
   }
 
   // Tool list command: /도구, /도구목록, /tools
-  if (/^[/\/](도구|도구목록|tools?)(\s|$)/i.test(trimmed)) {
+  if (/^[/](도구|도구목록|tools?)(\s|$)/i.test(trimmed)) {
     const args = trimmed.split(/\s+/).slice(1);
     return { isCommand: true, type: "tools", args };
   }
 
   // Channel list command: /채널, /채널목록, /channels
-  if (/^[/\/](채널|채널목록|channels?)(\s|$)/i.test(trimmed)) {
+  if (/^[/](채널|채널목록|channels?)(\s|$)/i.test(trimmed)) {
     return { isCommand: true, type: "channels" };
   }
 
   // Status command: /상태, /status
-  if (/^[/\/](상태|status)$/i.test(trimmed)) {
+  if (/^[/](상태|status)$/i.test(trimmed)) {
     return { isCommand: true, type: "status" };
   }
 
   // Memory search command: /기억, /memory
-  if (/^[/\/](기억|memory)\s+(.+)$/i.test(trimmed)) {
-    const match = trimmed.match(/^[/\/](기억|memory)\s+(.+)$/i);
+  if (/^[/](기억|memory)\s+(.+)$/i.test(trimmed)) {
+    const match = trimmed.match(/^[/](기억|memory)\s+(.+)$/i);
     return { isCommand: true, type: "memory", args: match ? [match[2]] : [] };
   }
 
   // Help command: /도움말, /help
-  if (/^[/\/](도움말|help)$/i.test(trimmed)) {
+  if (/^[/](도움말|help)$/i.test(trimmed)) {
     return { isCommand: true, type: "help" };
   }
 
   // Install command: /설치, /install
-  if (/^[/\/](설치|install)$/i.test(trimmed)) {
+  if (/^[/](설치|install)$/i.test(trimmed)) {
     return { isCommand: true, type: "install" };
   }
 
   // Subscribe command: /구독, /subscribe [plan]
-  const subscribeMatch = trimmed.match(/^[/\/](구독|subscribe)(\s+(.+))?$/i);
+  const subscribeMatch = trimmed.match(/^[/](구독|subscribe)(\s+(.+))?$/i);
   if (subscribeMatch) {
     const planArg = subscribeMatch[3]?.trim();
     return { isCommand: true, type: "subscribe", args: planArg ? [planArg] : [] };
   }
 
   // Subscription status: /구독상태, /subscription
-  if (/^[/\/](구독상태|subscription|나의구독)$/i.test(trimmed)) {
+  if (/^[/](구독상태|subscription|나의구독)$/i.test(trimmed)) {
     return { isCommand: true, type: "subscribe_status" };
   }
 
   // Device status: /연결상태, /device-status
-  if (/^[/\/](연결상태|연결|device[-_]?status|connection)$/i.test(trimmed)) {
+  if (/^[/](연결상태|연결|device[-_]?status|connection)$/i.test(trimmed)) {
     return { isCommand: true, type: "device_status" };
   }
 
   // Device detail: /기기상태 <name>, /device <name>
-  const deviceDetailMatch = trimmed.match(/^[/\/](기기상태|기기정보|device)\s+(.+)$/i);
+  const deviceDetailMatch = trimmed.match(/^[/](기기상태|기기정보|device)\s+(.+)$/i);
   if (deviceDetailMatch) {
     return { isCommand: true, type: "device_detail", args: [deviceDetailMatch[2].trim()] };
   }
 
   // Relay commands: /원격, /기기등록, /기기, /기기삭제, /원격상태
   // /원격 <device_name> <command>
-  const relayMatch = trimmed.match(/^[/\/](원격|remote)\s+(\S+)\s+(.+)$/is);
+  const relayMatch = trimmed.match(/^[/](원격|remote)\s+(\S+)\s+(.+)$/is);
   if (relayMatch) {
     return {
       isCommand: true,
@@ -607,52 +604,52 @@ function parseMoltbotCommand(message: string): MoltbotCommand {
   }
 
   // /기기등록, /register-device
-  if (/^[/\/](기기등록|register[-_]?device)$/i.test(trimmed)) {
+  if (/^[/](기기등록|register[-_]?device)$/i.test(trimmed)) {
     return { isCommand: true, type: "relay_register" };
   }
 
   // /기기, /devices — list devices
-  if (/^[/\/](기기|기기목록|devices?)$/i.test(trimmed)) {
+  if (/^[/](기기|기기목록|devices?)$/i.test(trimmed)) {
     return { isCommand: true, type: "relay_devices" };
   }
 
   // /기기삭제 <name>, /remove-device <name>
-  const removeMatch = trimmed.match(/^[/\/](기기삭제|remove[-_]?device)\s+(.+)$/i);
+  const removeMatch = trimmed.match(/^[/](기기삭제|remove[-_]?device)\s+(.+)$/i);
   if (removeMatch) {
     return { isCommand: true, type: "relay_remove", args: [removeMatch[2].trim()] };
   }
 
   // /원격상태, /relay-status
-  if (/^[/\/](원격상태|relay[-_]?status)$/i.test(trimmed)) {
+  if (/^[/](원격상태|relay[-_]?status)$/i.test(trimmed)) {
     return { isCommand: true, type: "relay_status" };
   }
 
   // /확인 <id_prefix> — confirm a dangerous command
-  const confirmMatch = trimmed.match(/^[/\/](확인|confirm)\s+(\S+)$/i);
+  const confirmMatch = trimmed.match(/^[/](확인|confirm)\s+(\S+)$/i);
   if (confirmMatch) {
     return { isCommand: true, type: "relay_confirm", args: [confirmMatch[2]] };
   }
 
   // /거부 <id_prefix> — reject a dangerous command
-  const rejectMatch = trimmed.match(/^[/\/](거부|reject|취소)\s+(\S+)$/i);
+  const rejectMatch = trimmed.match(/^[/](거부|reject|취소)\s+(\S+)$/i);
   if (rejectMatch) {
     return { isCommand: true, type: "relay_reject", args: [rejectMatch[2]] };
   }
 
   // /원격결과 <id_prefix> — view execution log and result
-  const resultMatch = trimmed.match(/^[/\/](원격결과|relay[-_]?result|결과)\s+(\S+)$/i);
+  const resultMatch = trimmed.match(/^[/](원격결과|relay[-_]?result|결과)\s+(\S+)$/i);
   if (resultMatch) {
     return { isCommand: true, type: "relay_result", args: [resultMatch[2]] };
   }
 
   // /전화번호 010-XXXX-XXXX — register phone number for proactive notifications
-  const phoneMatch = trimmed.match(/^[/\/]?전화번호\s+([\d\-]+)$/i);
+  const phoneMatch = trimmed.match(/^[/]?전화번호\s+([\d-]+)$/i);
   if (phoneMatch) {
     return { isCommand: true, type: "phone_register", args: [phoneMatch[1]] };
   }
 
   // Pure phone number pattern (010으로 시작하는 메시지)
-  const purePhoneMatch = trimmed.match(/^(010[\d\-]{8,12})$/);
+  const purePhoneMatch = trimmed.match(/^(010[\d-]{8,12})$/);
   if (purePhoneMatch) {
     return { isCommand: true, type: "phone_register", args: [purePhoneMatch[1]] };
   }
@@ -1547,8 +1544,8 @@ function formatPairingCodeResponse(
 
 function formatTimeAgo(date: Date): string {
   const seconds = Math.floor((Date.now() - date.getTime()) / 1000);
-  if (seconds < 60) return "방금 전";
-  if (seconds < 3600) return `${Math.floor(seconds / 60)}분 전`;
-  if (seconds < 86400) return `${Math.floor(seconds / 3600)}시간 전`;
+  if (seconds < 60) { return "방금 전"; }
+  if (seconds < 3600) { return `${Math.floor(seconds / 60)}분 전`; }
+  if (seconds < 86400) { return `${Math.floor(seconds / 3600)}시간 전`; }
   return `${Math.floor(seconds / 86400)}일 전`;
 }

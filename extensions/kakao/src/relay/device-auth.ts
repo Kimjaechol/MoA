@@ -12,13 +12,7 @@
  */
 
 import { randomBytes, createHmac } from "node:crypto";
-import type {
-  DeviceRegistration,
-  PairingCode,
-  PairingResult,
-  RelayDevice,
-  DEFAULT_RELAY_BILLING,
-} from "./types.js";
+import type { DeviceRegistration, PairingResult, RelayDevice } from "./types.js";
 import { getSupabase, isSupabaseConfigured } from "../supabase.js";
 
 const PAIRING_CODE_TTL_MINUTES = 10;
@@ -178,7 +172,9 @@ export async function completePairing(
  * Authenticate a device by its token. Returns the device if valid.
  */
 export async function authenticateDevice(deviceToken: string): Promise<RelayDevice | null> {
-  if (!isSupabaseConfigured()) return null;
+  if (!isSupabaseConfigured()) {
+    return null;
+  }
 
   const supabase = getSupabase();
 
@@ -188,7 +184,9 @@ export async function authenticateDevice(deviceToken: string): Promise<RelayDevi
     .eq("device_token", deviceToken)
     .single();
 
-  if (error || !data) return null;
+  if (error || !data) {
+    return null;
+  }
 
   return {
     id: data.id,
@@ -208,7 +206,9 @@ export async function authenticateDevice(deviceToken: string): Promise<RelayDevi
  * List all devices for a user
  */
 export async function listUserDevices(userId: string): Promise<RelayDevice[]> {
-  if (!isSupabaseConfigured()) return [];
+  if (!isSupabaseConfigured()) {
+    return [];
+  }
 
   const supabase = getSupabase();
 
@@ -218,7 +218,9 @@ export async function listUserDevices(userId: string): Promise<RelayDevice[]> {
     .eq("user_id", userId)
     .order("created_at", { ascending: true });
 
-  if (error || !data) return [];
+  if (error || !data) {
+    return [];
+  }
 
   return data.map((d) => ({
     id: d.id,
@@ -241,7 +243,9 @@ export async function findDeviceByName(
   userId: string,
   deviceName: string,
 ): Promise<RelayDevice | null> {
-  if (!isSupabaseConfigured()) return null;
+  if (!isSupabaseConfigured()) {
+    return null;
+  }
 
   const supabase = getSupabase();
 
@@ -252,7 +256,9 @@ export async function findDeviceByName(
     .ilike("device_name", deviceName)
     .single();
 
-  if (error || !data) return null;
+  if (error || !data) {
+    return null;
+  }
 
   return {
     id: data.id,
@@ -272,7 +278,9 @@ export async function findDeviceByName(
  * Remove a device
  */
 export async function removeDevice(userId: string, deviceName: string): Promise<boolean> {
-  if (!isSupabaseConfigured()) return false;
+  if (!isSupabaseConfigured()) {
+    return false;
+  }
 
   const supabase = getSupabase();
 
@@ -289,7 +297,9 @@ export async function removeDevice(userId: string, deviceName: string): Promise<
  * Update device heartbeat
  */
 export async function updateHeartbeat(deviceToken: string): Promise<number> {
-  if (!isSupabaseConfigured()) return 0;
+  if (!isSupabaseConfigured()) {
+    return 0;
+  }
 
   const supabase = getSupabase();
 
@@ -301,7 +311,9 @@ export async function updateHeartbeat(deviceToken: string): Promise<number> {
 
   // Count pending commands
   const device = await authenticateDevice(deviceToken);
-  if (!device) return 0;
+  if (!device) {
+    return 0;
+  }
 
   const { count } = await supabase
     .from("relay_commands")
@@ -324,9 +336,20 @@ function generateSixDigitCode(): string {
   return num.toString();
 }
 
+let warnedAboutDefaultHmacKey = false;
+
 function generateDeviceToken(): string {
   const token = randomBytes(DEVICE_TOKEN_BYTES).toString("hex");
-  const hmac = createHmac("sha256", process.env.LAWCALL_ENCRYPTION_KEY ?? "moa-relay-secret");
+  const hmacKey = process.env.LAWCALL_ENCRYPTION_KEY ?? process.env.SUPABASE_SERVICE_KEY;
+  if (!hmacKey) {
+    if (!warnedAboutDefaultHmacKey) {
+      console.warn(
+        "[relay] WARNING: No LAWCALL_ENCRYPTION_KEY or SUPABASE_SERVICE_KEY set for device token HMAC. Using insecure fallback — NOT safe for production!",
+      );
+      warnedAboutDefaultHmacKey = true;
+    }
+  }
+  const hmac = createHmac("sha256", hmacKey ?? "moa-relay-default-dev-only");
   hmac.update(token);
   return `moa_${token}_${hmac.digest("hex").slice(0, 8)}`;
 }

@@ -377,7 +377,7 @@ export function maskSensitiveData(message: string): string {
         masked = masked.replace(pattern, (match) => sensitivePattern.maskFn!(match));
       } else {
         masked = masked.replace(pattern, (match) => {
-          if (match.length <= 6) return "***";
+          if (match.length <= 6) { return "***"; }
           return match.slice(0, 3) + "***" + match.slice(-2);
         });
       }

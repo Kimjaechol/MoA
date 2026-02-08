@@ -167,7 +167,7 @@ export interface StripeWebhookEvent {
 async function stripeRequest<T>(
   endpoint: string,
   method: "GET" | "POST" | "DELETE",
-  body?: Record<string, unknown>
+  body?: Record<string, unknown>,
 ): Promise<T> {
   const config = getStripeConfig();
 
@@ -190,7 +190,7 @@ async function stripeRequest<T>(
   const response = await fetch(`${STRIPE_API_BASE}${endpoint}`, {
     method,
     headers,
-    body: bodyStr,
+    ...(bodyStr ? { body: bodyStr } : {}),
   });
 
   const data = await response.json();
@@ -210,7 +210,9 @@ function buildFormData(obj: Record<string, unknown>, prefix = ""): string {
   const parts: string[] = [];
 
   for (const [key, value] of Object.entries(obj)) {
-    if (value === undefined || value === null) continue;
+    if (value === undefined || value === null) {
+      continue;
+    }
 
     const fullKey = prefix ? `${prefix}[${key}]` : key;
 
@@ -243,7 +245,11 @@ export async function createCustomer(params: {
   email?: string;
   name?: string;
   metadata?: Record<string, string>;
-}): Promise<{ success: boolean; customer?: StripeCustomer; error?: { code: string; message: string } }> {
+}): Promise<{
+  success: boolean;
+  customer?: StripeCustomer;
+  error?: { code: string; message: string };
+}> {
   try {
     const result = await stripeRequest<{
       id: string;
@@ -317,7 +323,10 @@ export async function getCustomer(customerId: string): Promise<{
 /**
  * 이메일로 고객 검색 또는 생성
  */
-export async function getOrCreateCustomer(email: string, name?: string): Promise<{
+export async function getOrCreateCustomer(
+  email: string,
+  name?: string,
+): Promise<{
   success: boolean;
   customer?: StripeCustomer;
   created?: boolean;
@@ -372,9 +381,11 @@ export async function getOrCreateCustomer(email: string, name?: string): Promise
 /**
  * PaymentIntent 생성 (Link 간편결제 포함)
  */
-export async function createPaymentIntent(
-  request: CreatePaymentIntentRequest
-): Promise<{ success: boolean; paymentIntent?: StripePaymentIntent; error?: { code: string; message: string } }> {
+export async function createPaymentIntent(request: CreatePaymentIntentRequest): Promise<{
+  success: boolean;
+  paymentIntent?: StripePaymentIntent;
+  error?: { code: string; message: string };
+}> {
   try {
     // 기본 결제 수단에 Link 추가
     const paymentMethodTypes = request.paymentMethodTypes ?? ["card"];
@@ -536,9 +547,11 @@ export async function cancelPaymentIntent(paymentIntentId: string): Promise<{
 /**
  * Checkout Session 생성 (Link 간편결제 포함)
  */
-export async function createCheckoutSession(
-  request: CreateCheckoutSessionRequest
-): Promise<{ success: boolean; session?: StripeCheckoutSession; error?: { code: string; message: string } }> {
+export async function createCheckoutSession(request: CreateCheckoutSessionRequest): Promise<{
+  success: boolean;
+  session?: StripeCheckoutSession;
+  error?: { code: string; message: string };
+}> {
   try {
     const paymentMethodTypes = ["card"];
     if (request.allowLink !== false) {
@@ -663,7 +676,11 @@ export async function createSubscription(params: {
   priceId: string;
   trialDays?: number;
   metadata?: Record<string, string>;
-}): Promise<{ success: boolean; subscription?: StripeSubscription; error?: { code: string; message: string } }> {
+}): Promise<{
+  success: boolean;
+  subscription?: StripeSubscription;
+  error?: { code: string; message: string };
+}> {
   try {
     const reqParams: Record<string, unknown> = {
       customer: params.customerId,
@@ -783,8 +800,12 @@ export async function getSubscription(subscriptionId: string): Promise<{
  */
 export async function cancelSubscription(
   subscriptionId: string,
-  cancelImmediately = false
-): Promise<{ success: boolean; subscription?: StripeSubscription; error?: { code: string; message: string } }> {
+  cancelImmediately = false,
+): Promise<{
+  success: boolean;
+  subscription?: StripeSubscription;
+  error?: { code: string; message: string };
+}> {
   try {
     if (cancelImmediately) {
       const result = await stripeRequest<{
@@ -969,7 +990,7 @@ export async function createRefund(params: {
 export function verifyWebhookSignature(
   payload: string,
   signature: string,
-  tolerance = 300 // 5분
+  tolerance = 300, // 5분
 ): { valid: boolean; event?: StripeWebhookEvent; error?: string } {
   const config = getStripeConfig();
 
@@ -1019,7 +1040,7 @@ export function verifyWebhookSignature(
     const event = JSON.parse(payload) as StripeWebhookEvent;
 
     return { valid: true, event };
-  } catch (error) {
+  } catch {
     return { valid: false, error: "서명 검증 중 오류가 발생했습니다." };
   }
 }
@@ -1090,7 +1111,12 @@ export async function createLinkPaymentUrl(params: {
   successUrl: string;
   cancelUrl: string;
   metadata?: Record<string, string>;
-}): Promise<{ success: boolean; url?: string; sessionId?: string; error?: { code: string; message: string } }> {
+}): Promise<{
+  success: boolean;
+  url?: string;
+  sessionId?: string;
+  error?: { code: string; message: string };
+}> {
   try {
     // Payment Links API 사용
     const result = await stripeRequest<{
