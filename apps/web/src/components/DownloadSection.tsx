@@ -150,7 +150,7 @@ export default function DownloadSection() {
           >
             {info.downloadUrl && (
               <a href={info.downloadUrl} className="btn btn-primary">
-                다운로드
+                설치하기
               </a>
             )}
             {info.storeUrl && (
