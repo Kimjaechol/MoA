@@ -17,3 +17,16 @@ export {
   type OwnerOnlyAction,
   type GuestPermission,
 } from "./owner-auth.js";
+
+export {
+  hasUserSecret,
+  hasAnyUserSecret,
+  getUserSecretCount,
+  setUserSecret,
+  verifyUserSecret,
+  removeUserSecret,
+  changeUserSecret,
+  listUserSecrets,
+  makeUserKey,
+  type UserSecretEntry,
+} from "./user-secrets.js";

@@ -125,6 +125,10 @@ import {
   getGuestDeniedResponse,
   wrapUserMessageForLLM,
   getSecuritySystemPrompt,
+  hasUserSecret,
+  setUserSecret,
+  changeUserSecret,
+  getUserSecretCount,
 } from "./src/auth/index.js";
 
 const PORT = parseInt(process.env.PORT ?? process.env.KAKAO_WEBHOOK_PORT ?? "8788", 10);
@@ -438,7 +442,9 @@ MoA는 카카오톡, 텔레그램, WhatsApp, Discord 등 여러 메신저에서 
 
 ## 주요 명령어
 - 설치 : MoA 간편 설치 안내
-- /기기등록 : 새 기기 페어링
+- !비밀구문 [구문] : 본인 인증용 비밀구문 설정 (기기 등록 전 필수)
+- !인증 [비밀구문] : 본인 인증 (기기 제어 활성화)
+- /기기등록 : 새 기기 페어링 (비밀구문 설정 + 인증 후)
 - /기기 : 연결된 기기 목록
 - @기기명 명령 : 특정 기기에 원격 명령 (예: @노트북 ls ~/Desktop)
 - /도움말 : 전체 명령어 보기
@@ -563,6 +569,47 @@ async function aiOnMessage(params: {
     return {
       text: auth.authMessage ?? "인증 처리 중 오류가 발생했습니다.",
       quickReplies: auth.authSuccess ? ["기기 목록", "도움말"] : ["설치", "기능 소개"],
+    };
+  }
+
+  // ── Secret Phrase Setup (비밀구문 설정 — 누구나 가능) ─────
+  const secretSetMatch = utterance.match(/^[!!/](?:비밀구문|비밀 구문|secret)\s+(.+)$/i);
+  if (secretSetMatch) {
+    const newSecret = secretSetMatch[1].trim();
+
+    // Check if user already has a secret → need to use change command
+    if (hasUserSecret(params.userId, channelId)) {
+      return {
+        text: "이미 비밀구문이 설정되어 있습니다.\n\n변경하려면:\n!비밀구문 변경 [현재구문] [새구문]\n\n인증하려면:\n!인증 [비밀구문]",
+        quickReplies: ["!인증", "도움말"],
+      };
+    }
+
+    const error = setUserSecret(params.userId, channelId, newSecret);
+    if (error) {
+      return { text: `비밀구문 설정 실패: ${error}`, quickReplies: ["도움말"] };
+    }
+
+    return {
+      text: `비밀구문이 설정되었습니다!\n\n이제 "!인증 [비밀구문]"으로 본인 인증을 할 수 있습니다.\n인증 후 기기 등록과 제어가 가능합니다.\n\n기기를 등록하시려면 "기기등록"을 입력하세요.`,
+      quickReplies: ["!인증", "기기등록", "도움말"],
+    };
+  }
+
+  // !비밀구문 변경 [현재구문] [새구문]
+  const secretChangeMatch = utterance.match(
+    /^[!!/](?:비밀구문|비밀 구문|secret)\s*(?:변경|change)\s+(\S+)\s+(\S+)$/i,
+  );
+  if (secretChangeMatch) {
+    const oldSecret = secretChangeMatch[1];
+    const newSecret = secretChangeMatch[2];
+    const error = changeUserSecret(params.userId, channelId, oldSecret, newSecret);
+    if (error) {
+      return { text: `비밀구문 변경 실패: ${error}`, quickReplies: ["도움말"] };
+    }
+    return {
+      text: "비밀구문이 변경되었습니다.\n다음 인증 시 새 비밀구문을 사용해주세요.",
+      quickReplies: ["!인증", "도움말"],
     };
   }
 
@@ -965,8 +1012,24 @@ async function aiOnMessage(params: {
     };
   }
 
-  // 3) Device registration → Generate pairing code
+  // 3) Device registration → Check secret first, then generate pairing code
   if (isDeviceRegistration(utterance)) {
+    // Step 1: Must set a secret phrase before pairing
+    if (!hasUserSecret(params.userId, channelId)) {
+      return {
+        text: `기기 등록 전에 비밀구문을 먼저 설정해주세요.\n\n비밀구문은 본인 확인에 사용되며, 다른 사람이 내 기기를 제어하는 것을 방지합니다.\n\n아래와 같이 입력하세요:\n!비밀구문 [나만 아는 문장]\n\n예시:\n!비밀구문 커피는아메리카노가좋아\n\n비밀구문 설정 후 다시 "기기등록"을 입력하시면 됩니다.`,
+        quickReplies: ["설치", "도움말"],
+      };
+    }
+
+    // Step 2: Must be authenticated (after setting secret)
+    if (auth.role !== "owner") {
+      return {
+        text: `기기를 등록하려면 먼저 인증해주세요.\n\n!인증 [내 비밀구문]`,
+        quickReplies: ["도움말"],
+      };
+    }
+
     if (!isSupabaseConfigured()) {
       return {
         text: `기기 등록 기능이 현재 준비 중입니다.\n\nMoA가 설치되어 있지 않다면, 먼저 설치를 진행해주세요!`,
@@ -1185,11 +1248,15 @@ async function main() {
   }
 
   // Check owner authentication
-  if (isOwnerAuthEnabled()) {
-    console.log("[MoA] Owner auth: ENABLED (MOA_OWNER_SECRET set — only authenticated owners can control devices)");
+  const userSecretCount = getUserSecretCount();
+  if (userSecretCount > 0 || process.env.MOA_OWNER_SECRET) {
+    const parts = [];
+    if (userSecretCount > 0) parts.push(`${userSecretCount} user(s) with secrets`);
+    if (process.env.MOA_OWNER_SECRET) parts.push("admin master key set");
+    console.log(`[MoA] Owner auth: ENABLED (${parts.join(", ")})`);
   } else {
-    console.warn(
-      "[MoA] Owner auth: DISABLED (set MOA_OWNER_SECRET to restrict device control to owner only)",
+    console.log(
+      "[MoA] Owner auth: DISABLED (users can set secrets via !비밀구문, or set MOA_OWNER_SECRET for admin)",
     );
   }
 
@@ -1294,6 +1361,7 @@ async function main() {
             whatsapp: isWhatsAppConfigured(),
             discord: isDiscordConfigured(),
             ownerAuth: isOwnerAuthEnabled(),
+            registeredUsers: getUserSecretCount(),
             vault: !!process.env.MOA_OWNER_SECRET,
             skills: getLoadedSkills().length,
             eligibleSkills: getLoadedSkills().filter((s) => s.eligible).length,
