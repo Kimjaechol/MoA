@@ -97,6 +97,15 @@ import {
   formatActionHistory,
   formatCheckpointList,
   formatMemoryHistory,
+  assessCommandGravity,
+  executePanic,
+  isPanicLocked,
+  releasePanicLock,
+  cancelPendingCommand,
+  getPendingCommands,
+  guardianAngelCheck,
+  formatGravityAssessment,
+  formatPendingCommands,
 } from "./src/safety/index.js";
 import {
   authenticateUser,
@@ -427,6 +436,9 @@ MoA는 카카오톡, 텔레그램, WhatsApp, Discord 등 여러 메신저에서 
 - !되돌리기 [ID] : 특정 작업 되돌리기
 - !복원 [체크포인트ID] : 체크포인트 시점으로 전체 복원
 - !기억내역 : 장기 기억 버전 히스토리
+- !비상정지 : 모든 대기 명령 취소 + 기기 잠금
+- !취소 [ID] : 대기 중인 명령 취소
+- !대기목록 : 실행 대기 중인 명령 조회
 ${skillsPrompt}
 ## 응답 규칙
 - 한국어로 친절하고 자연스럽게 대화합니다
@@ -528,9 +540,58 @@ async function aiOnMessage(params: {
 
   // Handle auth attempts (!인증 <secret>)
   if (auth.isAuthAttempt) {
+    // Release panic lock on successful re-auth
+    if (auth.authSuccess && isPanicLocked()) {
+      releasePanicLock();
+    }
     return {
       text: auth.authMessage ?? "인증 처리 중 오류가 발생했습니다.",
       quickReplies: auth.authSuccess ? ["기기 목록", "도움말"] : ["설치", "기능 소개"],
+    };
+  }
+
+  // ── Panic Button (누구나, 언제든) ─────────────────────────
+  if (utterance.match(/^[!!/](?:비상정지|비상 정지|panic|stop|긴급|emergency)$/i)) {
+    if (auth.role !== "owner") {
+      return { text: "비상정지는 인증된 주인만 사용할 수 있습니다.", quickReplies: ["설치"] };
+    }
+    const result = executePanic(params.userId, channelId);
+    return { text: result.message, quickReplies: ["!작업내역"] };
+  }
+
+  // ── Cancel pending command ─────────────────────────────────
+  const cancelMatch = utterance.match(/^[!!/](?:취소|cancel)\s*(\S+)?$/i);
+  if (cancelMatch && auth.role === "owner") {
+    const commandId = cancelMatch[1];
+    if (commandId) {
+      const cancelled = cancelPendingCommand(commandId);
+      return {
+        text: cancelled ? `명령 ${commandId}가 취소되었습니다.` : `대기 중인 명령 ${commandId}를 찾을 수 없습니다.`,
+        quickReplies: ["!대기목록", "!작업내역"],
+      };
+    }
+    // No ID — show pending list
+    const pending = getPendingCommands();
+    return {
+      text: formatPendingCommands(pending),
+      quickReplies: ["!비상정지", "!작업내역"],
+    };
+  }
+
+  // ── Show pending commands ──────────────────────────────────
+  if (utterance.match(/^[!!/](?:대기목록|대기 목록|pending)$/i) && auth.role === "owner") {
+    const pending = getPendingCommands();
+    return {
+      text: formatPendingCommands(pending),
+      quickReplies: ["!비상정지", "!작업내역"],
+    };
+  }
+
+  // ── Panic lock check (block device commands during lockdown) ─
+  if (isPanicLocked() && auth.role === "owner" && utterance.startsWith("@")) {
+    return {
+      text: "🚨 비상정지 상태입니다. 기기 제어가 잠겨 있습니다.\n\n재개하려면 \"!인증 [비밀구문]\"으로 다시 인증하세요.",
+      quickReplies: ["!작업내역", "!체크포인트 목록"],
     };
   }
 
@@ -655,23 +716,91 @@ async function aiOnMessage(params: {
     }
   }
 
-  // ── Device command logging (owner only) ──────────────────
-  // Log device commands to the action journal before execution
+  // ── Device command: Gravity + Guardian Angel + Logging ─────
   if (auth.role === "owner" && utterance.startsWith("@")) {
     const deviceMatch = utterance.match(/^@(\S+)\s+(.+)$/);
     if (deviceMatch) {
+      const commandText = deviceMatch[2];
+      const deviceName = deviceMatch[1];
+
+      // 1. Gravity assessment
+      const gravity = assessCommandGravity(commandText);
+
+      // 2. Guardian Angel check (for medium+ gravity)
+      if (gravity.score >= 5) {
+        const guardian = guardianAngelCheck(commandText, gravity);
+        if (guardian.shouldBlock) {
+          logAction({
+            type: "device_command",
+            summary: `@${deviceName} 명령 보류 (Guardian Angel)`,
+            detail: utterance,
+            reversibility: "reversible",
+            userId: params.userId,
+            channelId,
+            deviceName,
+          });
+          return {
+            text: guardian.additionalWarning ?? "이 명령의 실행이 보류되었습니다.",
+            quickReplies: ["!취소", "!작업내역"],
+          };
+        }
+        // Non-blocking warning
+        if (guardian.additionalWarning && gravity.action === "confirm_required") {
+          logAction({
+            type: "device_command",
+            summary: `@${deviceName} — 확인 대기 (위험도 ${gravity.score}/10)`,
+            detail: utterance,
+            reversibility: "partially_reversible",
+            userId: params.userId,
+            channelId,
+            deviceName,
+          });
+          return {
+            text: `${formatGravityAssessment(gravity)}\n${gravity.warning ?? ""}\n\n${guardian.additionalWarning}`,
+            quickReplies: ["!확인", "!취소"],
+          };
+        }
+      }
+
+      // 3. Heavy commands → require confirmation
+      if (gravity.action === "confirm_required" || gravity.action === "delayed_execution") {
+        logAction({
+          type: "device_command",
+          summary: `@${deviceName} — 확인 대기 (위험도 ${gravity.score}/10)`,
+          detail: utterance,
+          reversibility: "partially_reversible",
+          userId: params.userId,
+          channelId,
+          deviceName,
+        });
+        return {
+          text: `${formatGravityAssessment(gravity)}\n${gravity.warning ?? ""}`,
+          quickReplies: ["!확인", "!취소", "!작업내역"],
+        };
+      }
+
+      // 4. Medium commands → auto checkpoint before execution
+      if (gravity.action === "checkpoint_and_execute") {
+        createCheckpoint({
+          name: `pre-${deviceName}-${new Date().toISOString().slice(11, 19)}`,
+          description: `@${deviceName} 명령 실행 전 자동 체크포인트`,
+          auto: true,
+          userId: params.userId,
+          channelId,
+        });
+      }
+
+      // 5. Log the action
       const action = logAction({
         type: "device_command",
-        summary: `@${deviceMatch[1]}에 명령 전송`,
+        summary: `@${deviceName}에 명령 전송`,
         detail: utterance,
-        reversibility: "partially_reversible",
+        reversibility: gravity.score >= 7 ? "partially_reversible" : "reversible",
         userId: params.userId,
         channelId,
-        deviceName: deviceMatch[1],
+        deviceName,
       });
-      // Store action ID for later status update (would be used by relay system)
-      // The relay system would call updateActionStatus() when command completes
-      console.log(`[Safety] Logged device command: ${action.id} — ${utterance.slice(0, 80)}`);
+      console.log(`[Safety] Device command ${action.id}: gravity=${gravity.score} — ${commandText.slice(0, 60)}`);
     }
   }
 

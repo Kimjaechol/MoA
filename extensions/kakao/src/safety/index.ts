@@ -1,5 +1,5 @@
 /**
- * Safety System — 작업 기록, 체크포인트, 되돌리기
+ * Safety System — 작업 기록, 체크포인트, 되돌리기, 위험도 평가, 비상정지
  */
 export {
   // Action Journal
@@ -35,3 +35,27 @@ export {
   type MemorySnapshot,
   type RollbackResult,
 } from "./action-journal.js";
+
+export {
+  // Command Gravity
+  assessCommandGravity,
+  // Dead Man's Switch
+  queueCommand,
+  cancelPendingCommand,
+  cancelAllPending,
+  getPendingCommands,
+  // Panic Button
+  executePanic,
+  releasePanicLock,
+  isPanicLocked,
+  // Guardian Angel
+  guardianAngelCheck,
+  // Formatting
+  formatGravityAssessment,
+  formatPendingCommands,
+  // Types
+  type GravityLevel,
+  type GravityAssessment,
+  type PendingCommand,
+  type PanicResult,
+} from "./command-gravity.js";
