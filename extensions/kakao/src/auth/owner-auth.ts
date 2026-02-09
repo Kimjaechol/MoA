@@ -34,6 +34,7 @@ import {
   hasAnyUserSecret,
   verifyUserSecret,
 } from "./user-secrets.js";
+import { hasAnyAccount } from "./user-accounts.js";
 
 // ============================================
 // Types
@@ -167,7 +168,7 @@ function getPreConfiguredOwners(): Map<string, string> {
  * If neither is set, auth is disabled (all users treated as owners for backward compat).
  */
 export function isOwnerAuthEnabled(): boolean {
-  return hasAnyUserSecret() || !!getOwnerSecret();
+  return hasAnyUserSecret() || hasAnyAccount() || !!getOwnerSecret();
 }
 
 /**
@@ -319,6 +320,16 @@ function isAuthenticated(compositeKey: string): boolean {
   if (preConfigured.has(compositeKey)) return true;
 
   return false;
+}
+
+/**
+ * Programmatically grant owner authentication (e.g., after account login in KakaoTalk).
+ */
+export function grantOwnerAuth(userId: string, channelId: string): void {
+  const compositeKey = `${channelId}:${userId}`;
+  authenticatedOwners.set(compositeKey, Date.now());
+  saveOwnerStore();
+  console.log(`[Auth] Owner granted: ${channelId}/${userId.slice(0, 8)}...`);
 }
 
 /**
@@ -546,17 +557,11 @@ export function getGuestDeniedResponse(action: OwnerOnlyAction): {
   const actionName = actionNames[action] ?? "이 기능";
 
   return {
-    text: `${actionName} 기능은 인증된 주인만 사용할 수 있습니다.
+    text: `${actionName} 기능은 인증된 사용자만 이용할 수 있습니다.
 
-비밀구문을 설정하셨다면:
-!인증 [내 비밀구문]
+"사용자 인증" 버튼을 눌러 가입시 설정하신 아이디와 비밀번호로 인증해주세요.
 
-아직 비밀구문을 설정하지 않으셨다면:
-!비밀구문 [설정할 구문]
-
-인증 후 기기 제어, 파일 관리, 원격 명령 등 모든 기능을 사용할 수 있습니다.
-
-MoA가 아직 없으시다면 "설치"를 입력하여 설치 안내를 받아보세요!`,
-    quickReplies: ["설치", "기능 소개", "도움말"],
+아직 MoA 계정이 없으시다면 "설치"를 입력하여 MoA를 설치하고 회원가입해주세요!`,
+    quickReplies: ["사용자 인증", "설치", "도움말"],
   };
 }

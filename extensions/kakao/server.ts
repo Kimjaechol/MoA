@@ -62,7 +62,7 @@ import {
   sendWelcomeAfterPairing,
   isProactiveMessagingConfigured,
 } from "./src/proactive-messaging.js";
-import { generatePairingCode, handleRelayRequest } from "./src/relay/index.js";
+import { handleRelayRequest } from "./src/relay/index.js";
 import { isSupabaseConfigured } from "./src/supabase.js";
 import { startKakaoWebhook } from "./src/webhook.js";
 import {
@@ -121,6 +121,7 @@ import {
 import {
   authenticateUser,
   isOwnerAuthEnabled,
+  grantOwnerAuth,
   getRequiredPermission,
   getGuestDeniedResponse,
   wrapUserMessageForLLM,
@@ -129,6 +130,13 @@ import {
   setUserSecret,
   changeUserSecret,
   getUserSecretCount,
+  // User Accounts
+  findAccountByUsername,
+  findAccountByChannel,
+  verifyPassword,
+  linkChannel,
+  hasAnyAccount,
+  getAccountCount,
 } from "./src/auth/index.js";
 
 const PORT = parseInt(process.env.PORT ?? process.env.KAKAO_WEBHOOK_PORT ?? "8788", 10);
@@ -187,13 +195,22 @@ const MOA_INSTALL_GUIDE = `MoA 설치는 아주 간단합니다!
 [1단계] 아래 "MoA 설치하기" 버튼을 클릭하세요.
 사용하시는 기기(Windows/Mac/Linux)에 맞는 설치 파일이 다운로드됩니다. 다운로드된 파일을 더블클릭하면 자동으로 설치됩니다.
 
-[2단계] 설치 완료 후 자동으로 열리는 페이지에서 "이 기기등록" 버튼을 클릭하세요.
-6자리 페어링 코드가 발급됩니다.
+[2단계] 설치 완료 후 자동으로 열리는 페이지에서 회원가입을 해주세요.
+아이디, 비밀번호, 기기 이름을 설정하면 자동으로 기기가 등록됩니다.
 
-[3단계] 같은 페이지에서 받은 6자리 코드를 입력하면 끝!
-터미널이나 명령어 입력은 필요없습니다.
+[3단계] 이미 회원가입을 하셨다면 로그인만 하면 됩니다!
+새 기기에서 로그인하면 자동으로 새 기기가 등록됩니다.
 
-추가 기기도 같은 방법으로 등록하면 모든 기기가 하나의 AI로 연결됩니다!`;
+[4단계] 카카오톡에서 "사용자 인증" 버튼을 눌러 아이디와 비밀번호로 인증하세요.
+인증 후 카카오톡에서 기기를 제어할 수 있습니다!`;
+
+// ============================================
+// Pending Auth State (카카오톡 GUI 인증)
+// ============================================
+
+/** Track users who clicked "사용자 인증" and are expected to type credentials */
+const pendingAuthUsers = new Map<string, { expiresAt: number }>();
+const AUTH_PENDING_TTL_MS = 5 * 60 * 1000; // 5분
 
 // ============================================
 // Account Config Builder
@@ -442,9 +459,7 @@ MoA는 카카오톡, 텔레그램, WhatsApp, Discord 등 여러 메신저에서 
 
 ## 주요 명령어
 - 설치 : MoA 간편 설치 안내
-- !비밀구문 [구문] : 본인 인증용 비밀구문 설정 (기기 등록 전 필수)
-- !인증 [비밀구문] : 본인 인증 (기기 제어 활성화)
-- /기기등록 : 새 기기 페어링 (비밀구문 설정 + 인증 후)
+- 사용자 인증 : 가입한 아이디/비밀번호로 인증 (버튼 클릭)
 - /기기 : 연결된 기기 목록
 - @기기명 명령 : 특정 기기에 원격 명령 (예: @노트북 ls ~/Desktop)
 - /도움말 : 전체 명령어 보기
@@ -473,7 +488,8 @@ ${skillsPrompt}
 
 ## 설치 안내 시
 사용자가 설치에 관심을 보이면: "설치"라고 입력해주세요! 간편 설치 안내를 바로 보내드립니다.
-설치 후 https://moa.lawith.kr/welcome 페이지에서 기기 등록(페어링)을 할 수 있습니다.
+설치 후 https://moa.lawith.kr/welcome 페이지에서 회원가입/로그인으로 기기를 등록할 수 있습니다.
+카카오톡에서는 "사용자 인증" 버튼을 눌러 가입시 설정한 아이디와 비밀번호로 인증합니다.
 
 ## 사용 사례 (사용자에게 설명할 때 활용)
 - "회사에서 퇴근 후 집 컴퓨터에 있는 파일 확인"
@@ -557,10 +573,74 @@ async function aiOnMessage(params: {
   const channelId = params.channel?.channelId ?? "kakao";
   const maxLen = params.channel?.maxMessageLength ?? 950;
 
+  // ── Pending Auth Check (GUI 인증 — "사용자 인증" 버튼 클릭 후 자격증명 입력) ──
+  const pendingKey = `${channelId}:${params.userId}`;
+  const pending = pendingAuthUsers.get(pendingKey);
+  if (pending && Date.now() < pending.expiresAt) {
+    // User is in auth mode — treat this message as credentials
+    const linkedAccount = findAccountByChannel(channelId, params.userId);
+
+    if (linkedAccount) {
+      // Already linked — just need password
+      if (verifyPassword(linkedAccount.username, utterance)) {
+        grantOwnerAuth(params.userId, channelId);
+        pendingAuthUsers.delete(pendingKey);
+        return {
+          text: `인증 성공! ${linkedAccount.username}님, 환영합니다.\n\n이제 모든 MoA 기능을 사용할 수 있습니다.`,
+          quickReplies: ["기기 목록", "도움말"],
+        };
+      }
+    }
+
+    // Not linked or password-only failed — try "username password" format
+    const parts = utterance.split(/\s+/);
+    if (parts.length >= 2) {
+      const tryUsername = parts[0];
+      const tryPassword = parts.slice(1).join(" ");
+      if (verifyPassword(tryUsername, tryPassword)) {
+        linkChannel(tryUsername, channelId, params.userId);
+        grantOwnerAuth(params.userId, channelId);
+        pendingAuthUsers.delete(pendingKey);
+        return {
+          text: `인증 성공! ${tryUsername}님, 환영합니다.\n\n카카오톡 계정이 연동되었습니다.\n이제 모든 MoA 기능을 사용할 수 있습니다.`,
+          quickReplies: ["기기 목록", "도움말"],
+        };
+      }
+    }
+
+    // Failed
+    return {
+      text: "인증에 실패했습니다.\n\n아이디와 비밀번호를 정확히 입력해주세요.\n형식: 아이디 비밀번호\n\n예: myid mypassword",
+      quickReplies: ["사용자 인증", "설치", "도움말"],
+    };
+  }
+  // Clean up expired pending
+  if (pending) pendingAuthUsers.delete(pendingKey);
+
+  // ── "사용자 인증" 버튼 처리 (GUI 방식 인증 진입) ──────────
+  if (/^(?:사용자\s*인증|인증하기|인증)$/i.test(utterance)) {
+    const linkedAccount = findAccountByChannel(channelId, params.userId);
+
+    pendingAuthUsers.set(pendingKey, {
+      expiresAt: Date.now() + AUTH_PENDING_TTL_MS,
+    });
+
+    if (linkedAccount) {
+      return {
+        text: `MoA에 접속하기 위하여 가입시 설정하신 비밀번호를 입력해주세요.\n\n(${linkedAccount.username} 계정)`,
+      };
+    }
+
+    return {
+      text: `MoA에 접속하기 위하여 가입시 설정하신 아이디와 비밀번호를 입력해주세요.\n\n형식: 아이디 비밀번호\n예: myid mypassword\n\n아직 MoA 계정이 없으시다면 "설치"를 입력하여 MoA를 설치하고 회원가입해주세요!`,
+      quickReplies: ["설치", "도움말"],
+    };
+  }
+
   // ── Owner Authentication Gate ──────────────────────────────
   const auth = authenticateUser(params.userId, channelId, utterance);
 
-  // Handle auth attempts (!인증 <secret>)
+  // Handle auth attempts (!인증 <secret> — backward compat)
   if (auth.isAuthAttempt) {
     // Release panic lock on successful re-auth
     if (auth.authSuccess && isPanicLocked()) {
@@ -568,20 +648,19 @@ async function aiOnMessage(params: {
     }
     return {
       text: auth.authMessage ?? "인증 처리 중 오류가 발생했습니다.",
-      quickReplies: auth.authSuccess ? ["기기 목록", "도움말"] : ["설치", "기능 소개"],
+      quickReplies: auth.authSuccess ? ["기기 목록", "도움말"] : ["사용자 인증", "설치"],
     };
   }
 
-  // ── Secret Phrase Setup (비밀구문 설정 — 누구나 가능) ─────
+  // ── Secret Phrase Setup (비밀구문 설정 — backward compat) ─────
   const secretSetMatch = utterance.match(/^[!!/](?:비밀구문|비밀 구문|secret)\s+(.+)$/i);
   if (secretSetMatch) {
     const newSecret = secretSetMatch[1].trim();
 
-    // Check if user already has a secret → need to use change command
     if (hasUserSecret(params.userId, channelId)) {
       return {
-        text: "이미 비밀구문이 설정되어 있습니다.\n\n변경하려면:\n!비밀구문 변경 [현재구문] [새구문]\n\n인증하려면:\n!인증 [비밀구문]",
-        quickReplies: ["!인증", "도움말"],
+        text: "이미 비밀구문이 설정되어 있습니다.\n\n변경하려면:\n!비밀구문 변경 [현재구문] [새구문]",
+        quickReplies: ["사용자 인증", "도움말"],
       };
     }
 
@@ -591,8 +670,8 @@ async function aiOnMessage(params: {
     }
 
     return {
-      text: `비밀구문이 설정되었습니다!\n\n이제 "!인증 [비밀구문]"으로 본인 인증을 할 수 있습니다.\n인증 후 기기 등록과 제어가 가능합니다.\n\n기기를 등록하시려면 "기기등록"을 입력하세요.`,
-      quickReplies: ["!인증", "기기등록", "도움말"],
+      text: `비밀구문이 설정되었습니다!\n\n"사용자 인증" 버튼을 눌러 인증할 수 있습니다.`,
+      quickReplies: ["사용자 인증", "도움말"],
     };
   }
 
@@ -653,8 +732,8 @@ async function aiOnMessage(params: {
   // ── Panic lock check (block device commands during lockdown) ─
   if (isPanicLocked() && auth.role === "owner" && utterance.startsWith("@")) {
     return {
-      text: "🚨 비상정지 상태입니다. 기기 제어가 잠겨 있습니다.\n\n재개하려면 \"!인증 [비밀구문]\"으로 다시 인증하세요.",
-      quickReplies: ["!작업내역", "!체크포인트 목록"],
+      text: "비상정지 상태입니다. 기기 제어가 잠겨 있습니다.\n\n재개하려면 \"사용자 인증\" 버튼을 눌러 다시 인증해주세요.",
+      quickReplies: ["사용자 인증", "!작업내역"],
     };
   }
 
@@ -674,8 +753,8 @@ async function aiOnMessage(params: {
     const { revokeOwnerAuth } = await import("./src/auth/index.js");
     revokeOwnerAuth(params.userId, channelId);
     return {
-      text: "주인 인증이 해제되었습니다.\n다시 인증하려면 \"!인증 [비밀구문]\"을 입력하세요.",
-      quickReplies: ["도움말"],
+      text: "인증이 해제되었습니다.\n다시 인증하려면 \"사용자 인증\" 버튼을 눌러주세요.",
+      quickReplies: ["사용자 인증", "도움말"],
     };
   }
 
@@ -994,70 +1073,56 @@ async function aiOnMessage(params: {
     }
   }
 
+  // ── Auto Auth Prompt for guests with accounts ──────────────
+  if (auth.role === "guest" && hasAnyAccount()) {
+    const requiredAction = getRequiredPermission(utterance);
+    if (requiredAction) {
+      return {
+        text: `이 기능은 인증된 사용자만 이용할 수 있습니다.\n\n아래 "사용자 인증" 버튼을 눌러주세요.\nMoA에 접속하기 위하여 가입시 설정하신 아이디와 비밀번호로 인증해주세요.`,
+        quickReplies: ["사용자 인증", "설치", "도움말"],
+      };
+    }
+  }
+
   // 1) Greeting → Return welcome message with install button
   if (isGreeting(utterance)) {
+    const quickReplies = hasAnyAccount()
+      ? ["사용자 인증", "설치", "기능 소개"]
+      : ["설치", "기능 소개"];
     return {
       text: MOA_WELCOME_MESSAGE,
       buttons: [{ label: "MoA 설치하기", url: getInstallUrl() }],
-      quickReplies: ["설치", "이 기기등록", "기능 소개"],
+      quickReplies,
     };
   }
 
-  // 2) Install request → Return install guide with install + register buttons
+  // 2) Install request → Return install guide with install + welcome buttons
   if (isInstallRequest(utterance)) {
     return {
       text: MOA_INSTALL_GUIDE,
       buttons: [{ label: "MoA 설치하기", url: getInstallUrl() }],
-      quickReplies: ["이 기기등록", "기능 소개", "도움말"],
+      quickReplies: ["사용자 인증", "기능 소개", "도움말"],
     };
   }
 
-  // 3) Device registration → Check secret first, then generate pairing code
+  // 3) Device registration → Direct to welcome page for login/signup
   if (isDeviceRegistration(utterance)) {
-    // Step 1: Must set a secret phrase before pairing
-    if (!hasUserSecret(params.userId, channelId)) {
-      return {
-        text: `기기 등록 전에 비밀구문을 먼저 설정해주세요.\n\n비밀구문은 본인 확인에 사용되며, 다른 사람이 내 기기를 제어하는 것을 방지합니다.\n\n아래와 같이 입력하세요:\n!비밀구문 [나만 아는 문장]\n\n예시:\n!비밀구문 커피는아메리카노가좋아\n\n비밀구문 설정 후 다시 "기기등록"을 입력하시면 됩니다.`,
-        quickReplies: ["설치", "도움말"],
-      };
-    }
+    return {
+      text: `기기 등록은 MoA를 설치한 후 웹 페이지에서 진행됩니다.
 
-    // Step 2: Must be authenticated (after setting secret)
-    if (auth.role !== "owner") {
-      return {
-        text: `기기를 등록하려면 먼저 인증해주세요.\n\n!인증 [내 비밀구문]`,
-        quickReplies: ["도움말"],
-      };
-    }
+[기기 등록 방법]
+1. 기기에 MoA를 설치합니다.
+2. 설치 후 자동으로 열리는 페이지에서 회원가입 또는 로그인을 합니다.
+3. 로그인하면 기기가 자동으로 등록됩니다!
 
-    if (!isSupabaseConfigured()) {
-      return {
-        text: `기기 등록 기능이 현재 준비 중입니다.\n\nMoA가 설치되어 있지 않다면, 먼저 설치를 진행해주세요!`,
-        buttons: [{ label: "MoA 설치하기", url: getInstallUrl() }],
-        quickReplies: ["설치", "도움말"],
-      };
-    }
-
-    try {
-      const result = await generatePairingCode(params.userId);
-      if (result.success && result.code) {
-        return {
-          text: `기기 등록을 위한 페어링 코드가 발급되었습니다!\n\n🔑 페어링 코드: ${result.code}\n⏰ 유효시간: 10분\n\n[사용 방법]\nMoA가 설치된 PC의 브라우저에서 아래 페이지를 열고 코드를 입력하세요:\nhttps://moa.lawith.kr/welcome\n\n(설치 직후라면 이미 열려 있습니다!)\n\n연결이 완료되면 카카오톡에서 바로 PC를 제어할 수 있습니다!`,
-          quickReplies: ["기능 소개", "사용 사례", "도움말"],
-        };
-      }
-      return {
-        text: `페어링 코드 발급 중 문제가 발생했습니다.\n${result.error ?? "잠시 후 다시 시도해주세요."}\n\nMoA가 아직 설치되어 있지 않다면, 먼저 설치를 진행해주세요!`,
-        buttons: [{ label: "MoA 설치하기", url: getInstallUrl() }],
-        quickReplies: ["이 기기등록", "설치", "도움말"],
-      };
-    } catch (err) {
-      console.error("[MoA] Pairing code generation error:", err);
-      return {
-        text: `페어링 코드 발급 중 오류가 발생했습니다.\n잠시 후 다시 시도해주세요.`,
-        quickReplies: ["이 기기등록", "설치", "도움말"],
-      };
-    }
+이미 MoA를 설치하셨다면 아래 페이지에서 로그인해주세요:
+https://moa.lawith.kr/welcome`,
+      buttons: [
+        { label: "MoA 설치하기", url: getInstallUrl() },
+        { label: "기기 등록 (로그인)", url: "https://moa.lawith.kr/welcome" },
+      ],
+      quickReplies: ["설치", "도움말"],
+    };
   }
 
   // 4) Feature inquiry
@@ -1248,15 +1313,17 @@ async function main() {
   }
 
   // Check owner authentication
+  const accountCount = getAccountCount();
   const userSecretCount = getUserSecretCount();
-  if (userSecretCount > 0 || process.env.MOA_OWNER_SECRET) {
+  if (accountCount > 0 || userSecretCount > 0 || process.env.MOA_OWNER_SECRET) {
     const parts = [];
-    if (userSecretCount > 0) parts.push(`${userSecretCount} user(s) with secrets`);
+    if (accountCount > 0) parts.push(`${accountCount} account(s)`);
+    if (userSecretCount > 0) parts.push(`${userSecretCount} user secret(s)`);
     if (process.env.MOA_OWNER_SECRET) parts.push("admin master key set");
     console.log(`[MoA] Owner auth: ENABLED (${parts.join(", ")})`);
   } else {
     console.log(
-      "[MoA] Owner auth: DISABLED (users can set secrets via !비밀구문, or set MOA_OWNER_SECRET for admin)",
+      "[MoA] Owner auth: DISABLED (users can register at /welcome, or set MOA_OWNER_SECRET for admin)",
     );
   }
 
@@ -1361,6 +1428,7 @@ async function main() {
             whatsapp: isWhatsAppConfigured(),
             discord: isDiscordConfigured(),
             ownerAuth: isOwnerAuthEnabled(),
+            accounts: getAccountCount(),
             registeredUsers: getUserSecretCount(),
             vault: !!process.env.MOA_OWNER_SECRET,
             skills: getLoadedSkills().length,

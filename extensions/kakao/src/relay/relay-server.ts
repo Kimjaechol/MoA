@@ -24,6 +24,10 @@ import {
   removeDevice,
 } from "./device-auth.js";
 import { appendExecutionLog } from "./relay-handler.js";
+import {
+  signup,
+  login,
+} from "../auth/user-accounts.js";
 
 const LONG_POLL_TIMEOUT_MS = 30_000; // 30 seconds
 const POLL_INTERVAL_MS = 2_000; // Check every 2 seconds during long-poll
@@ -101,6 +105,18 @@ export async function handleRelayRequest(
       case "/api/relay/progress":
         if (req.method === "POST") {
           await handleProgress(req, res, logger);
+          return true;
+        }
+        break;
+      case "/api/relay/auth/signup":
+        if (req.method === "POST") {
+          await handleAuthSignup(req, res, logger);
+          return true;
+        }
+        break;
+      case "/api/relay/auth/login":
+        if (req.method === "POST") {
+          await handleAuthLogin(req, res, logger);
           return true;
         }
         break;
@@ -388,6 +404,78 @@ async function handleProgress(
     sendJSON(res, 200, { success: true });
   } else {
     sendJSON(res, 404, { success: false, error: "Command not found or not owned by device" });
+  }
+}
+
+/**
+ * POST /api/relay/auth/signup
+ * Body: { username: string, password: string, device: { deviceName, deviceType, platform } }
+ */
+async function handleAuthSignup(
+  req: IncomingMessage,
+  res: ServerResponse,
+  logger: ReturnType<typeof console>,
+) {
+  const body = await readBody<{
+    username: string;
+    password: string;
+    device: { deviceName: string; deviceType: string; platform: string };
+  }>(req);
+
+  if (!body?.username || !body?.password || !body?.device?.deviceName) {
+    sendJSON(res, 400, { success: false, error: "username, password, device.deviceName are required" });
+    return;
+  }
+
+  const result = signup(body.username, body.password, body.device);
+
+  if (result.success) {
+    logger.info(`[relay] Account created: ${body.username} (device: ${body.device.deviceName})`);
+    sendJSON(res, 200, {
+      success: true,
+      deviceToken: result.deviceToken,
+    });
+  } else {
+    sendJSON(res, 400, { success: false, error: result.error });
+  }
+}
+
+/**
+ * POST /api/relay/auth/login
+ * Body: { username: string, password: string, device?: { deviceName, deviceType, platform } }
+ *
+ * device가 포함되면 새 기기를 자동 등록합니다.
+ */
+async function handleAuthLogin(
+  req: IncomingMessage,
+  res: ServerResponse,
+  logger: ReturnType<typeof console>,
+) {
+  const body = await readBody<{
+    username: string;
+    password: string;
+    device?: { deviceName: string; deviceType: string; platform: string };
+  }>(req);
+
+  if (!body?.username || !body?.password) {
+    sendJSON(res, 400, { success: false, error: "username and password are required" });
+    return;
+  }
+
+  const result = login(body.username, body.password, body.device);
+
+  if (result.success) {
+    const deviceNote = result.isNewDevice
+      ? ` (new device: ${body.device?.deviceName})`
+      : body.device ? ` (existing device: ${body.device.deviceName})` : "";
+    logger.info(`[relay] Login: ${body.username}${deviceNote}`);
+    sendJSON(res, 200, {
+      success: true,
+      deviceToken: result.deviceToken,
+      isNewDevice: result.isNewDevice,
+    });
+  } else {
+    sendJSON(res, 400, { success: false, error: result.error });
   }
 }
 

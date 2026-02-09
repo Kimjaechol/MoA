@@ -338,9 +338,9 @@ export function generateInstallPage(userAgent: string, pairingCode?: string): st
 }
 
 /**
- * 설치 완료 후 안내 페이지 (GUI)
+ * 설치 완료 후 로그인/회원가입 페이지
  * 설치 스크립트가 완료되면 브라우저에서 이 페이지를 자동으로 엽니다.
- * 페어링 코드 입력 폼이 포함되어 터미널 없이 기기 등록이 가능합니다.
+ * 로그인 폼(기본) + 회원가입 폼(전환) → 기기 자동 등록
  */
 function generateWelcomePage(): string {
   return `<!DOCTYPE html>
@@ -348,163 +348,140 @@ function generateWelcomePage(): string {
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>MoA 설치 완료 - 시작하기</title>
+  <title>MoA - 로그인</title>
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
     body {
       font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Malgun Gothic', sans-serif;
       background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
       min-height: 100vh;
-      padding: 30px 20px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 20px;
     }
     .container {
       background: white;
       border-radius: 20px;
       padding: 40px;
-      max-width: 680px;
-      margin: 0 auto;
+      max-width: 440px;
+      width: 100%;
       box-shadow: 0 20px 60px rgba(0,0,0,0.3);
     }
     .header {
       text-align: center;
       margin-bottom: 32px;
     }
-    .header .icon { font-size: 48px; }
-    .header h1 { font-size: 24px; color: #1a1a2e; margin: 12px 0 4px; }
-    .header .subtitle { color: #16a34a; font-weight: 600; font-size: 16px; }
-    .section {
-      background: #f8f9fa;
-      border-radius: 16px;
-      padding: 24px;
-      margin-bottom: 20px;
-    }
-    .section h2 {
-      font-size: 18px;
-      color: #1a1a2e;
+    .header .logo { font-size: 48px; }
+    .header h1 { font-size: 24px; color: #1a1a2e; margin: 8px 0 4px; }
+    .header .subtitle { color: #666; font-size: 14px; }
+    .form-group {
       margin-bottom: 16px;
-      display: flex;
-      align-items: center;
-      gap: 8px;
     }
-    .section h2 .num {
-      background: linear-gradient(135deg, #667eea, #764ba2);
-      color: white;
-      width: 28px; height: 28px;
-      border-radius: 50%;
-      display: inline-flex;
-      align-items: center;
-      justify-content: center;
-      font-size: 14px;
-      font-weight: 700;
-      flex-shrink: 0;
-    }
-    .channel {
-      background: white;
-      border-radius: 12px;
-      padding: 16px 20px;
-      margin-bottom: 12px;
-      border: 1px solid #e5e7eb;
-    }
-    .channel:last-child { margin-bottom: 0; }
-    .channel h3 {
-      font-size: 16px;
-      color: #333;
-      margin-bottom: 8px;
-      display: flex;
-      align-items: center;
-      gap: 8px;
-    }
-    .channel .steps {
+    .form-group label {
+      display: block;
+      font-size: 13px;
+      font-weight: 600;
       color: #555;
-      font-size: 14px;
-      line-height: 1.8;
+      margin-bottom: 6px;
     }
-    .channel .steps b { color: #1a1a2e; }
-
-    /* Pairing code input form */
-    .pairing-form {
-      background: white;
-      border-radius: 16px;
-      padding: 24px;
-      border: 2px solid #667eea;
-      text-align: center;
-    }
-    .pairing-form h3 {
-      font-size: 16px;
-      color: #1a1a2e;
-      margin-bottom: 16px;
-    }
-    .code-inputs {
-      display: flex;
-      gap: 8px;
-      justify-content: center;
-      margin-bottom: 20px;
-    }
-    .code-inputs input {
-      width: 52px;
-      height: 60px;
-      text-align: center;
-      font-size: 28px;
-      font-weight: 700;
-      border: 2px solid #d1d5db;
-      border-radius: 12px;
+    .form-group input {
+      width: 100%;
+      padding: 12px 16px;
+      border: 2px solid #e5e7eb;
+      border-radius: 10px;
+      font-size: 15px;
       outline: none;
       transition: border-color 0.2s;
-      font-family: 'Menlo', 'Consolas', monospace;
     }
-    .code-inputs input:focus {
+    .form-group input:focus {
       border-color: #667eea;
-      box-shadow: 0 0 0 3px rgba(102,126,234,0.2);
+      box-shadow: 0 0 0 3px rgba(102,126,234,0.15);
     }
-    .pair-btn {
+    .form-group input::placeholder { color: #aaa; }
+    .submit-btn {
       background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
       color: white;
       border: none;
-      padding: 16px 40px;
+      padding: 14px;
       border-radius: 12px;
       font-size: 16px;
       font-weight: 700;
       cursor: pointer;
       width: 100%;
+      margin-top: 8px;
       transition: transform 0.2s, box-shadow 0.2s, opacity 0.2s;
     }
-    .pair-btn:hover:not(:disabled) {
+    .submit-btn:hover:not(:disabled) {
       transform: translateY(-2px);
       box-shadow: 0 8px 24px rgba(102,126,234,0.4);
     }
-    .pair-btn:disabled {
+    .submit-btn:disabled {
       opacity: 0.5;
       cursor: not-allowed;
     }
-    .pair-status {
-      margin-top: 16px;
+    .status-msg {
+      margin-top: 12px;
       font-size: 14px;
-      min-height: 24px;
+      text-align: center;
+      min-height: 20px;
     }
-    .pair-status.success {
-      color: #16a34a;
-      font-weight: 600;
+    .status-msg.error { color: #dc2626; }
+    .status-msg.loading { color: #667eea; }
+    .status-msg.success { color: #16a34a; font-weight: 600; }
+    .toggle-link {
+      text-align: center;
+      margin-top: 20px;
+      font-size: 14px;
+      color: #666;
     }
-    .pair-status.error {
-      color: #dc2626;
-    }
-    .pair-status.loading {
+    .toggle-link a {
       color: #667eea;
+      text-decoration: none;
+      font-weight: 600;
+      cursor: pointer;
     }
+    .toggle-link a:hover { text-decoration: underline; }
+    .divider {
+      display: flex;
+      align-items: center;
+      margin: 24px 0;
+      color: #ccc;
+      font-size: 13px;
+    }
+    .divider::before, .divider::after {
+      content: '';
+      flex: 1;
+      border-bottom: 1px solid #e5e7eb;
+    }
+    .divider span { padding: 0 12px; }
 
-    /* Success activation section */
-    .activation-section {
-      background: #f0fdf4;
-      border: 2px solid #22c55e;
-      border-radius: 16px;
-      padding: 24px;
+    /* Success section */
+    .success-section {
       text-align: center;
       display: none;
     }
-    .activation-section.visible { display: block; }
-    .activation-section .success-icon { font-size: 48px; margin-bottom: 12px; }
-    .activation-section h3 { font-size: 18px; color: #16a34a; margin-bottom: 12px; }
-    .activation-section p { font-size: 14px; color: #555; margin-bottom: 8px; line-height: 1.6; }
+    .success-section.visible { display: block; }
+    .success-section .icon { font-size: 56px; margin-bottom: 16px; }
+    .success-section h2 { font-size: 20px; color: #16a34a; margin-bottom: 8px; }
+    .success-section .detail { font-size: 14px; color: #555; margin-bottom: 20px; line-height: 1.7; }
+    .success-section .device-info {
+      background: #f0fdf4;
+      border: 1px solid #bbf7d0;
+      border-radius: 12px;
+      padding: 16px;
+      margin-bottom: 20px;
+      text-align: left;
+      font-size: 14px;
+      color: #333;
+    }
+    .success-section .device-info .row {
+      display: flex;
+      justify-content: space-between;
+      padding: 4px 0;
+    }
+    .success-section .device-info .row .label { color: #666; }
+    .success-section .device-info .row .value { font-weight: 600; }
     .activate-btn {
       background: #22c55e;
       color: white;
@@ -514,148 +491,115 @@ function generateWelcomePage(): string {
       font-size: 16px;
       font-weight: 700;
       cursor: pointer;
-      margin-top: 12px;
+      width: 100%;
       transition: transform 0.2s;
     }
     .activate-btn:hover {
       transform: translateY(-2px);
       box-shadow: 0 8px 24px rgba(34,197,94,0.3);
     }
-
-    .device-name-input {
-      width: 100%;
-      max-width: 280px;
-      padding: 10px 16px;
-      border: 2px solid #d1d5db;
-      border-radius: 10px;
-      font-size: 14px;
-      outline: none;
-      margin-bottom: 16px;
-      text-align: center;
-    }
-    .device-name-input:focus {
-      border-color: #667eea;
-      box-shadow: 0 0 0 3px rgba(102,126,234,0.2);
-    }
-
-    .tip {
+    .success-section .next-steps {
       background: #fffbeb;
       border: 1px solid #fde68a;
       border-radius: 12px;
-      padding: 16px 20px;
+      padding: 16px;
       margin-top: 20px;
+      text-align: left;
+      font-size: 13px;
+      color: #78350f;
+      line-height: 1.7;
     }
-    .tip h3 { font-size: 14px; color: #92400e; margin-bottom: 6px; }
-    .tip p { font-size: 13px; color: #78350f; line-height: 1.6; }
+    .success-section .next-steps b { color: #92400e; }
     .footer {
       text-align: center;
       margin-top: 24px;
       color: #999;
-      font-size: 13px;
+      font-size: 12px;
     }
     .footer a { color: #667eea; text-decoration: none; }
-    .footer a:hover { text-decoration: underline; }
+    @media (max-width: 480px) {
+      .container { padding: 28px 20px; }
+      .header .logo { font-size: 40px; }
+      .header h1 { font-size: 20px; }
+    }
   </style>
 </head>
 <body>
   <div class="container">
     <div class="header">
-      <div class="icon">🎉</div>
-      <h1>MoA 설치가 완료되었습니다!</h1>
-      <p class="subtitle">이제 기기를 등록하면 메신저로 이 컴퓨터를 제어할 수 있습니다</p>
+      <div class="logo">&#x1F916;</div>
+      <h1>MoA</h1>
+      <p class="subtitle">Master of AI - AI 어시스턴트</p>
     </div>
 
-    <!-- Step 1: Get pairing code from KakaoTalk -->
-    <div class="section">
-      <h2><span class="num">1</span> 페어링 코드 받기</h2>
-      <div class="channel">
-        <div class="steps">
-          <b>카카오톡</b>에서 <b>MoA 채널</b>을 열고<br>
-          <b>"이 기기등록"</b> 버튼을 클릭하세요.<br>
-          6자리 페어링 코드가 발급됩니다.
-        </div>
+    <!-- Login Form (default) -->
+    <div id="login-form">
+      <div class="form-group">
+        <label for="login-username">아이디</label>
+        <input type="text" id="login-username" placeholder="아이디를 입력하세요" autocomplete="username">
       </div>
-    </div>
-
-    <!-- Step 2: Enter pairing code here -->
-    <div class="section" id="pairing-section">
-      <h2><span class="num">2</span> 페어링 코드 입력</h2>
-      <div class="pairing-form" id="pairing-form">
-        <h3>카카오톡에서 받은 6자리 코드를 입력하세요</h3>
-        <div class="code-inputs" id="code-inputs">
-          <input type="text" maxlength="1" inputmode="numeric" pattern="[0-9]" autocomplete="off">
-          <input type="text" maxlength="1" inputmode="numeric" pattern="[0-9]" autocomplete="off">
-          <input type="text" maxlength="1" inputmode="numeric" pattern="[0-9]" autocomplete="off">
-          <input type="text" maxlength="1" inputmode="numeric" pattern="[0-9]" autocomplete="off">
-          <input type="text" maxlength="1" inputmode="numeric" pattern="[0-9]" autocomplete="off">
-          <input type="text" maxlength="1" inputmode="numeric" pattern="[0-9]" autocomplete="off">
-        </div>
-        <input type="text" class="device-name-input" id="device-name"
-          placeholder="기기 이름 (예: 내 노트북)"
-          value="">
-        <br>
-        <button class="pair-btn" id="pair-btn" disabled onclick="submitPairing()">
-          연결하기
-        </button>
-        <div class="pair-status" id="pair-status"></div>
+      <div class="form-group">
+        <label for="login-password">비밀번호</label>
+        <input type="password" id="login-password" placeholder="비밀번호를 입력하세요" autocomplete="current-password">
       </div>
-
-      <!-- Success: activation download -->
-      <div class="activation-section" id="activation-section">
-        <div class="success-icon">🎊</div>
-        <h3>기기 연결 성공!</h3>
-        <p>마지막 단계: 아래 버튼을 클릭하여 설정 파일을 다운로드한 후,<br>
-        다운로드된 파일을 <b>더블클릭</b>하면 설정이 완료됩니다.</p>
-        <button class="activate-btn" id="activate-btn" onclick="downloadActivation()">
-          설정 파일 다운로드
-        </button>
-        <div class="pair-status success" style="margin-top:12px;" id="activate-status"></div>
+      <div class="form-group">
+        <label for="login-device">기기 이름</label>
+        <input type="text" id="login-device" placeholder="이 기기의 이름 (예: 내 노트북)">
+      </div>
+      <button class="submit-btn" id="login-btn" onclick="handleLogin()">로그인</button>
+      <div class="status-msg" id="login-status"></div>
+      <div class="toggle-link">
+        계정이 없으신가요? <a onclick="showSignup()">회원가입</a>
       </div>
     </div>
 
-    <!-- Step 3: Chat methods -->
-    <div class="section">
-      <h2><span class="num">3</span> MoA와 대화하는 방법</h2>
-      <p style="color:#555; font-size:14px; margin-bottom:12px;">
-        한 번 기기를 등록하면, 아래 모든 메신저에서 이 컴퓨터에 명령을 보낼 수 있습니다.
-      </p>
-
-      <div class="channel">
-        <h3>💬 카카오톡</h3>
-        <div class="steps">
-          카카오톡에서 <b>MoA 채널</b>로 메시지를 보내면 됩니다.<br>
-          예시: <b>"바탕화면 파일 목록 보여줘"</b>
-        </div>
+    <!-- Signup Form (hidden) -->
+    <div id="signup-form" style="display:none;">
+      <div class="form-group">
+        <label for="signup-username">아이디</label>
+        <input type="text" id="signup-username" placeholder="사용할 아이디 (2자 이상)" autocomplete="username">
       </div>
-
-      <div class="channel">
-        <h3>✈️ 텔레그램</h3>
-        <div class="steps">
-          텔레그램에서 <b>MoA 봇</b>을 검색하여 대화를 시작합니다.<br>
-          <span style="color:#999;">(준비 중 — 곧 지원 예정)</span>
-        </div>
+      <div class="form-group">
+        <label for="signup-password">비밀번호</label>
+        <input type="password" id="signup-password" placeholder="비밀번호 (4자 이상)" autocomplete="new-password">
       </div>
-
-      <div class="channel">
-        <h3>📱 WhatsApp</h3>
-        <div class="steps">
-          WhatsApp에서 <b>MoA 번호</b>로 메시지를 보냅니다.<br>
-          <span style="color:#999;">(준비 중 — 곧 지원 예정)</span>
-        </div>
+      <div class="form-group">
+        <label for="signup-confirm">비밀번호 확인</label>
+        <input type="password" id="signup-confirm" placeholder="비밀번호를 다시 입력하세요" autocomplete="new-password">
+      </div>
+      <div class="form-group">
+        <label for="signup-device">기기 이름</label>
+        <input type="text" id="signup-device" placeholder="이 기기의 이름 (예: 내 노트북)">
+      </div>
+      <button class="submit-btn" id="signup-btn" onclick="handleSignup()">회원가입</button>
+      <div class="status-msg" id="signup-status"></div>
+      <div class="toggle-link">
+        이미 계정이 있으신가요? <a onclick="showLogin()">로그인</a>
       </div>
     </div>
 
-    <div class="tip">
-      <h3>💡 팁</h3>
-      <p>
-        기기 등록은 메신저와 무관하게 작동합니다. 카카오톡으로 등록한 기기에
-        텔레그램이나 WhatsApp으로도 명령을 보낼 수 있습니다.
-        추가 기기도 같은 방법으로 등록하면 모든 기기를 하나의 AI로 제어할 수 있습니다.
-      </p>
+    <!-- Success Section (hidden) -->
+    <div id="success-section" class="success-section">
+      <div class="icon">&#x1F389;</div>
+      <h2 id="success-title">기기 등록 완료!</h2>
+      <div class="detail" id="success-detail">이제 카카오톡에서 이 컴퓨터를 제어할 수 있습니다.</div>
+      <div class="device-info" id="device-info">
+        <div class="row"><span class="label">기기 이름</span><span class="value" id="info-device"></span></div>
+        <div class="row"><span class="label">플랫폼</span><span class="value" id="info-platform"></span></div>
+        <div class="row"><span class="label">등록 상태</span><span class="value" id="info-status"></span></div>
+      </div>
+      <button class="activate-btn" onclick="downloadActivation()">설정 파일 다운로드</button>
+      <div class="status-msg success" id="activate-status" style="margin-top:12px;"></div>
+      <div class="next-steps">
+        <b>다음 단계:</b><br>
+        1. 다운로드된 파일을 <b>더블클릭</b>하여 설정을 완료하세요.<br>
+        2. <b>카카오톡</b>에서 MoA 채널을 열고 "사용자 인증" 버튼을 눌러주세요.<br>
+        3. 가입시 설정한 아이디와 비밀번호로 인증하면 기기 제어가 활성화됩니다!
+      </div>
     </div>
 
     <div class="footer">
-      <p><a href="https://moa.lawith.kr">moa.lawith.kr</a> · Master of AI</p>
+      <a href="https://moa.lawith.kr">moa.lawith.kr</a> &middot; Master of AI
     </div>
   </div>
 
@@ -663,135 +607,187 @@ function generateWelcomePage(): string {
     // Platform detection
     var isWindows = navigator.userAgent.indexOf('Win') !== -1;
     var isMac = navigator.userAgent.indexOf('Mac') !== -1;
+    var isAndroid = navigator.userAgent.indexOf('Android') !== -1;
+    var isiOS = /iPhone|iPad|iPod/.test(navigator.userAgent);
 
-    // Auto-set device name from platform
-    var deviceNameInput = document.getElementById('device-name');
-    if (isWindows) deviceNameInput.value = 'My Windows PC';
-    else if (isMac) deviceNameInput.value = 'My Mac';
-    else deviceNameInput.value = 'My Linux PC';
+    var detectedPlatform = 'Linux';
+    var detectedType = 'desktop';
+    if (isWindows) { detectedPlatform = 'Windows'; detectedType = 'desktop'; }
+    else if (isMac) { detectedPlatform = 'macOS'; detectedType = 'laptop'; }
+    else if (isAndroid) { detectedPlatform = 'Android'; detectedType = 'mobile'; }
+    else if (isiOS) { detectedPlatform = 'iOS'; detectedType = 'mobile'; }
 
-    // Pairing code input handling
-    var inputs = document.querySelectorAll('#code-inputs input');
-    var pairBtn = document.getElementById('pair-btn');
+    // Auto-suggest device names
+    var defaultDeviceName = detectedPlatform === 'Windows' ? 'My Windows PC'
+      : detectedPlatform === 'macOS' ? 'My Mac'
+      : detectedPlatform === 'Android' ? 'My Android'
+      : detectedPlatform === 'iOS' ? 'My iPhone'
+      : 'My Linux PC';
 
-    inputs.forEach(function(input, index) {
-      input.addEventListener('input', function(e) {
-        var val = e.target.value.replace(/[^0-9]/g, '');
-        e.target.value = val;
-        if (val && index < inputs.length - 1) {
-          inputs[index + 1].focus();
-        }
-        checkCodeComplete();
-      });
-      input.addEventListener('keydown', function(e) {
-        if (e.key === 'Backspace' && !e.target.value && index > 0) {
-          inputs[index - 1].focus();
-        }
-        if (e.key === 'Enter') {
-          submitPairing();
-        }
-      });
-      // Handle paste of full code
-      input.addEventListener('paste', function(e) {
-        e.preventDefault();
-        var pasted = (e.clipboardData || window.clipboardData).getData('text').replace(/[^0-9]/g, '');
-        for (var i = 0; i < Math.min(pasted.length, inputs.length); i++) {
-          inputs[i].value = pasted[i];
-        }
-        if (pasted.length >= inputs.length) {
-          inputs[inputs.length - 1].focus();
-        } else {
-          inputs[Math.min(pasted.length, inputs.length - 1)].focus();
-        }
-        checkCodeComplete();
-      });
-    });
+    document.getElementById('login-device').value = defaultDeviceName;
+    document.getElementById('signup-device').value = defaultDeviceName;
 
-    // Focus first input on load
-    inputs[0].focus();
+    // Focus first input
+    document.getElementById('login-username').focus();
 
-    function checkCodeComplete() {
-      var code = getCode();
-      pairBtn.disabled = code.length !== 6;
+    // Store result for activation download
+    var authResult = null;
+
+    function showSignup() {
+      document.getElementById('login-form').style.display = 'none';
+      document.getElementById('signup-form').style.display = 'block';
+      document.getElementById('signup-username').focus();
+      document.title = 'MoA - \\ud68c\\uc6d0\\uac00\\uc785';
     }
 
-    function getCode() {
-      var code = '';
-      inputs.forEach(function(input) { code += input.value; });
-      return code;
+    function showLogin() {
+      document.getElementById('signup-form').style.display = 'none';
+      document.getElementById('login-form').style.display = 'block';
+      document.getElementById('login-username').focus();
+      document.title = 'MoA - \\ub85c\\uadf8\\uc778';
     }
 
-    // Store pairing result for activation download
-    var pairingResult = null;
+    function showSuccess(deviceName, platform, isNew) {
+      document.getElementById('login-form').style.display = 'none';
+      document.getElementById('signup-form').style.display = 'none';
+      var sec = document.getElementById('success-section');
+      sec.classList.add('visible');
+      document.getElementById('success-title').textContent = isNew ? '\\uae30\\uae30 \\ub4f1\\ub85d \\uc644\\ub8cc!' : '\\ub85c\\uadf8\\uc778 \\uc131\\uacf5!';
+      document.getElementById('success-detail').textContent = isNew
+        ? '\\uc0c8 \\uae30\\uae30\\uac00 \\ub4f1\\ub85d\\ub418\\uc5c8\\uc2b5\\ub2c8\\ub2e4. \\uc544\\ub798 \\uc124\\uc815 \\ud30c\\uc77c\\uc744 \\ub2e4\\uc6b4\\ub85c\\ub4dc\\ud574\\uc8fc\\uc138\\uc694.'
+        : '\\uae30\\uc874 \\uae30\\uae30\\ub85c \\ub85c\\uadf8\\uc778\\ub418\\uc5c8\\uc2b5\\ub2c8\\ub2e4.';
+      document.getElementById('info-device').textContent = deviceName;
+      document.getElementById('info-platform').textContent = platform;
+      document.getElementById('info-status').textContent = isNew ? '\\uc2e0\\uaddc \\ub4f1\\ub85d' : '\\uae30\\uc874 \\uae30\\uae30';
+      document.title = 'MoA - \\uc644\\ub8cc';
+      // Auto-trigger download
+      downloadActivation();
+    }
 
-    function submitPairing() {
-      var code = getCode();
-      if (code.length !== 6) return;
+    function getDevicePayload(formPrefix) {
+      return {
+        deviceName: document.getElementById(formPrefix + '-device').value.trim() || defaultDeviceName,
+        deviceType: detectedType,
+        platform: detectedPlatform
+      };
+    }
 
-      var deviceName = deviceNameInput.value.trim() || 'My PC';
-      var status = document.getElementById('pair-status');
-      status.className = 'pair-status loading';
-      status.textContent = '연결 중...';
-      pairBtn.disabled = true;
+    function handleLogin() {
+      var username = document.getElementById('login-username').value.trim();
+      var password = document.getElementById('login-password').value;
+      var status = document.getElementById('login-status');
+      var btn = document.getElementById('login-btn');
 
-      // Detect device info
-      var platform = 'Unknown';
-      var deviceType = 'desktop';
-      if (isWindows) platform = 'Windows';
-      else if (isMac) { platform = 'macOS'; deviceType = 'laptop'; }
-      else platform = 'Linux';
+      if (!username || !password) {
+        status.className = 'status-msg error';
+        status.textContent = '\\uc544\\uc774\\ub514\\uc640 \\ube44\\ubc00\\ubc88\\ud638\\ub97c \\uc785\\ub825\\ud574\\uc8fc\\uc138\\uc694.';
+        return;
+      }
 
-      fetch('/api/relay/pair', {
+      status.className = 'status-msg loading';
+      status.textContent = '\\ub85c\\uadf8\\uc778 \\uc911...';
+      btn.disabled = true;
+
+      var device = getDevicePayload('login');
+
+      fetch('/api/relay/auth/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          code: code,
-          device: {
-            deviceName: deviceName,
-            deviceType: deviceType,
-            platform: platform,
-            capabilities: ['shell', 'file', 'browser', 'clipboard']
-          }
-        })
+        body: JSON.stringify({ username: username, password: password, device: device })
       })
       .then(function(res) { return res.json(); })
       .then(function(data) {
         if (data.success) {
-          pairingResult = {
+          authResult = {
             deviceToken: data.deviceToken,
-            deviceId: data.deviceId,
-            deviceName: deviceName,
-            platform: platform,
-            pairedAt: new Date().toISOString()
+            deviceName: device.deviceName,
+            platform: device.platform,
+            username: username,
+            registeredAt: new Date().toISOString()
           };
-          // Show activation section, hide pairing form
-          document.getElementById('pairing-form').style.display = 'none';
-          var actSection = document.getElementById('activation-section');
-          actSection.classList.add('visible');
-          // Auto-trigger the activation download
-          downloadActivation();
+          showSuccess(device.deviceName, device.platform, data.isNewDevice !== false);
         } else {
-          status.className = 'pair-status error';
-          status.textContent = data.error || '연결에 실패했습니다. 코드를 확인해주세요.';
-          pairBtn.disabled = false;
+          status.className = 'status-msg error';
+          status.textContent = data.error || '\\ub85c\\uadf8\\uc778\\uc5d0 \\uc2e4\\ud328\\ud588\\uc2b5\\ub2c8\\ub2e4.';
+          btn.disabled = false;
         }
       })
-      .catch(function(err) {
-        status.className = 'pair-status error';
-        status.textContent = '서버에 연결할 수 없습니다. 잠시 후 다시 시도해주세요.';
-        pairBtn.disabled = false;
+      .catch(function() {
+        status.className = 'status-msg error';
+        status.textContent = '\\uc11c\\ubc84\\uc5d0 \\uc5f0\\uacb0\\ud560 \\uc218 \\uc5c6\\uc2b5\\ub2c8\\ub2e4. \\uc7a0\\uc2dc \\ud6c4 \\ub2e4\\uc2dc \\uc2dc\\ub3c4\\ud574\\uc8fc\\uc138\\uc694.';
+        btn.disabled = false;
       });
     }
 
+    function handleSignup() {
+      var username = document.getElementById('signup-username').value.trim();
+      var password = document.getElementById('signup-password').value;
+      var confirm = document.getElementById('signup-confirm').value;
+      var status = document.getElementById('signup-status');
+      var btn = document.getElementById('signup-btn');
+
+      if (!username || !password) {
+        status.className = 'status-msg error';
+        status.textContent = '\\uc544\\uc774\\ub514\\uc640 \\ube44\\ubc00\\ubc88\\ud638\\ub97c \\uc785\\ub825\\ud574\\uc8fc\\uc138\\uc694.';
+        return;
+      }
+      if (password !== confirm) {
+        status.className = 'status-msg error';
+        status.textContent = '\\ube44\\ubc00\\ubc88\\ud638\\uac00 \\uc77c\\uce58\\ud558\\uc9c0 \\uc54a\\uc2b5\\ub2c8\\ub2e4.';
+        return;
+      }
+
+      status.className = 'status-msg loading';
+      status.textContent = '\\ud68c\\uc6d0\\uac00\\uc785 \\uc911...';
+      btn.disabled = true;
+
+      var device = getDevicePayload('signup');
+
+      fetch('/api/relay/auth/signup', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username: username, password: password, device: device })
+      })
+      .then(function(res) { return res.json(); })
+      .then(function(data) {
+        if (data.success) {
+          authResult = {
+            deviceToken: data.deviceToken,
+            deviceName: device.deviceName,
+            platform: device.platform,
+            username: username,
+            registeredAt: new Date().toISOString()
+          };
+          showSuccess(device.deviceName, device.platform, true);
+        } else {
+          status.className = 'status-msg error';
+          status.textContent = data.error || '\\ud68c\\uc6d0\\uac00\\uc785\\uc5d0 \\uc2e4\\ud328\\ud588\\uc2b5\\ub2c8\\ub2e4.';
+          btn.disabled = false;
+        }
+      })
+      .catch(function() {
+        status.className = 'status-msg error';
+        status.textContent = '\\uc11c\\ubc84\\uc5d0 \\uc5f0\\uacb0\\ud560 \\uc218 \\uc5c6\\uc2b5\\ub2c8\\ub2e4. \\uc7a0\\uc2dc \\ud6c4 \\ub2e4\\uc2dc \\uc2dc\\ub3c4\\ud574\\uc8fc\\uc138\\uc694.';
+        btn.disabled = false;
+      });
+    }
+
+    // Enter key support
+    document.getElementById('login-password').addEventListener('keydown', function(e) {
+      if (e.key === 'Enter') handleLogin();
+    });
+    document.getElementById('signup-confirm').addEventListener('keydown', function(e) {
+      if (e.key === 'Enter') handleSignup();
+    });
+
     function downloadActivation() {
-      if (!pairingResult) return;
-      var config = JSON.stringify(pairingResult);
+      if (!authResult || !authResult.deviceToken) return;
+      var config = JSON.stringify(authResult);
       var filename, content, mimeType;
 
       if (isWindows) {
         filename = 'MoA-Activate.bat';
         mimeType = 'application/octet-stream';
-        // Escape % for batch (special in batch variable expansion)
         var batConfig = config.replace(/%/g, '%%');
         content = '@echo off\\r\\n'
           + 'chcp 65001 >nul 2>&1\\r\\n'
@@ -799,8 +795,8 @@ function generateWelcomePage(): string {
           + 'if not exist "%CONFIG_DIR%" mkdir "%CONFIG_DIR%"\\r\\n'
           + '(echo ' + batConfig + ')>"%CONFIG_DIR%\\\\device.json"\\r\\n'
           + 'echo.\\r\\n'
-          + 'echo   MoA 기기 연결이 완료되었습니다!\\r\\n'
-          + 'echo   이제 카카오톡 MoA 채널에서 명령을 보내보세요.\\r\\n'
+          + 'echo   MoA \\uae30\\uae30 \\uc5f0\\uacb0\\uc774 \\uc644\\ub8cc\\ub418\\uc5c8\\uc2b5\\ub2c8\\ub2e4!\\r\\n'
+          + 'echo   \\uc774\\uc81c \\uce74\\uce74\\uc624\\ud1a1 MoA \\ucc44\\ub110\\uc5d0\\uc11c \\uba85\\ub839\\uc744 \\ubcf4\\ub0b4\\ubcf4\\uc138\\uc694.\\r\\n'
           + 'echo.\\r\\n'
           + 'timeout /t 5 >nul\\r\\n';
       } else {
@@ -814,13 +810,12 @@ function generateWelcomePage(): string {
           + 'MOAEOF\\n'
           + 'chmod 600 "$CONFIG_DIR/device.json"\\n'
           + 'echo ""\\n'
-          + 'echo "  MoA 기기 연결이 완료되었습니다!"\\n'
-          + 'echo "  이제 카카오톡 MoA 채널에서 명령을 보내보세요."\\n'
+          + 'echo "  MoA \\uae30\\uae30 \\uc5f0\\uacb0\\uc774 \\uc644\\ub8cc\\ub418\\uc5c8\\uc2b5\\ub2c8\\ub2e4!"\\n'
+          + 'echo "  \\uc774\\uc81c \\uce74\\uce74\\uc624\\ud1a1 MoA \\ucc44\\ub110\\uc5d0\\uc11c \\uba85\\ub839\\uc744 \\ubcf4\\ub0b4\\ubcf4\\uc138\\uc694."\\n'
           + 'echo ""\\n'
           + 'sleep 3\\n';
       }
 
-      // Create and trigger download
       var blob = new Blob([content], { type: mimeType });
       var url = URL.createObjectURL(blob);
       var a = document.createElement('a');
@@ -832,7 +827,9 @@ function generateWelcomePage(): string {
       URL.revokeObjectURL(url);
 
       var actStatus = document.getElementById('activate-status');
-      actStatus.textContent = '다운로드된 ' + filename + ' 파일을 더블클릭하면 설정이 완료됩니다!';
+      if (actStatus) {
+        actStatus.textContent = '\\ub2e4\\uc6b4\\ub85c\\ub4dc\\ub41c ' + filename + ' \\ud30c\\uc77c\\uc744 \\ub354\\ube14\\ud074\\ub9ad\\ud558\\uba74 \\uc124\\uc815\\uc774 \\uc644\\ub8cc\\ub429\\ub2c8\\ub2e4!';
+      }
     }
   </script>
 </body>
