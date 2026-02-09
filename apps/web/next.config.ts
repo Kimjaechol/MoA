@@ -75,6 +75,10 @@ const nextConfig: NextConfig = {
       },
       // Channel settings page
       {
+        source: "/settings",
+        destination: `${RAILWAY_BACKEND}/settings`,
+      },
+      {
         source: "/settings/:path*",
         destination: `${RAILWAY_BACKEND}/settings/:path*`,
       },

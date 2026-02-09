@@ -50,6 +50,7 @@ import type { ResolvedKakaoAccount } from "./src/types.js";
 import type { MoAMessageHandler } from "./src/channels/types.js";
 import { resolveKakaoAccount, getDefaultKakaoConfig } from "./src/config.js";
 import { handleInstallRequest } from "./src/installer/index.js";
+import { handleSettingsRequest } from "./src/settings/index.js";
 import { handlePaymentRequest } from "./src/payment/index.js";
 import {
   sendWelcomeAfterPairing,
@@ -784,6 +785,22 @@ async function main() {
       logger: console,
       // Mount install page, relay API, payment routes, and channel webhooks
       requestInterceptor: (req, res) => {
+        // Enhanced health check with channel status (JSON)
+        const urlPath = req.url?.split("?")[0] ?? "";
+        if (urlPath === "/health" && req.method === "GET") {
+          const status = {
+            status: "ok",
+            kakao: hasKeys,
+            telegram: isTelegramConfigured(),
+            whatsapp: isWhatsAppConfigured(),
+            discord: isDiscordConfigured(),
+            skills: getLoadedSkills().length,
+            eligibleSkills: getLoadedSkills().filter((s) => s.eligible).length,
+          };
+          res.writeHead(200, { "Content-Type": "application/json" });
+          res.end(JSON.stringify(status));
+          return true;
+        }
         // Try install page first (/install, /welcome, etc.)
         if (handleInstallRequest(req, res)) {
           return true;
@@ -794,6 +811,10 @@ async function main() {
         }
         // WhatsApp webhook (/whatsapp/webhook)
         if (handleWhatsAppRequest(req, res, aiOnMessage, console)) {
+          return true;
+        }
+        // Settings page (/settings/*)
+        if (handleSettingsRequest(req, res)) {
           return true;
         }
         // Payment callbacks (/payment/*)
@@ -811,6 +832,7 @@ async function main() {
     console.log(`[MoA] Welcome page: ${localBase}/welcome`);
     console.log(`[MoA] Payment API: ${localBase}/payment/*`);
     console.log(`[MoA] Relay API: ${localBase}/api/relay/*`);
+    console.log(`[MoA] Settings page: ${localBase}/settings`);
     console.log(`[MoA] Health check: ${localBase}/health`);
 
     // Log WhatsApp webhook
