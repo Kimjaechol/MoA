@@ -38,6 +38,11 @@
  * - WHATSAPP_APP_SECRET — Meta App Secret for webhook signature verification (optional but recommended)
  * - LAWCALL_ENCRYPTION_KEY — Encryption key for relay commands
  * - RELAY_MAX_DEVICES — Max devices per user (default: 5)
+ *
+ * ### Owner Authentication (recommended for production)
+ * - MOA_OWNER_SECRET — Secret phrase for owner authentication (if set, enables owner-only mode)
+ * - MOA_OWNER_IDS — Pre-configured owner IDs (format: "kakao:id1,telegram:id2,discord:id3")
+ * - MOA_DATA_DIR — Data directory for persisting auth state (default: .moa-data)
  */
 
 // Immediate startup log — if you see this in Railway deploy logs,
@@ -79,6 +84,14 @@ import {
   formatSkillDetail,
   getUserFriendlyRecommendedSkills,
 } from "./src/skills/index.js";
+import {
+  authenticateUser,
+  isOwnerAuthEnabled,
+  getRequiredPermission,
+  getGuestDeniedResponse,
+  wrapUserMessageForLLM,
+  getSecuritySystemPrompt,
+} from "./src/auth/index.js";
 
 const PORT = parseInt(process.env.PORT ?? process.env.KAKAO_WEBHOOK_PORT ?? "8788", 10);
 const HOST = process.env.HOST ?? "0.0.0.0";
@@ -471,7 +484,8 @@ function isDeviceRegistration(text: string): boolean {
 // ============================================
 
 /**
- * AI message handler — handles greetings, install requests, and general AI chat
+ * AI message handler — handles greetings, install requests, and general AI chat.
+ * All messages pass through owner authentication gate first.
  */
 async function aiOnMessage(params: {
   userId: string;
@@ -489,6 +503,38 @@ async function aiOnMessage(params: {
   const utterance = params.text.trim();
   const channelId = params.channel?.channelId ?? "kakao";
   const maxLen = params.channel?.maxMessageLength ?? 950;
+
+  // ── Owner Authentication Gate ──────────────────────────────
+  const auth = authenticateUser(params.userId, channelId, utterance);
+
+  // Handle auth attempts (!인증 <secret>)
+  if (auth.isAuthAttempt) {
+    return {
+      text: auth.authMessage ?? "인증 처리 중 오류가 발생했습니다.",
+      quickReplies: auth.authSuccess ? ["기기 목록", "도움말"] : ["설치", "기능 소개"],
+    };
+  }
+
+  // If guest, check if this action requires owner permission
+  if (auth.role === "guest") {
+    const requiredAction = getRequiredPermission(utterance);
+    if (requiredAction) {
+      // Block owner-only action for guests
+      const denied = getGuestDeniedResponse(requiredAction);
+      return denied;
+    }
+    // Guest is allowed for greeting/install/feature/skill/general chat — continue below
+  }
+
+  // Handle owner deauth command
+  if (auth.role === "owner" && utterance.match(/^[!!/]인증해제$/)) {
+    const { revokeOwnerAuth } = await import("./src/auth/index.js");
+    revokeOwnerAuth(params.userId, channelId);
+    return {
+      text: "주인 인증이 해제되었습니다.\n다시 인증하려면 \"!인증 [비밀구문]\"을 입력하세요.",
+      quickReplies: ["도움말"],
+    };
+  }
 
   // 1) Greeting → Return welcome message with install button
   if (isGreeting(utterance)) {
@@ -636,14 +682,22 @@ MoA를 설치하면 이 모든 것이 가능합니다!
     };
   }
 
-  const systemPrompt = getMoASystemPrompt(channelId);
+  // Build injection-resistant system prompt and sanitized user message
+  const baseSystemPrompt = getMoASystemPrompt(channelId);
+  const securityAddition = getSecuritySystemPrompt(isOwnerAuthEnabled());
+  const systemPrompt = baseSystemPrompt + securityAddition;
+
+  const userName = params.channel?.userName ?? params.userId;
+  const userMessage = isOwnerAuthEnabled()
+    ? wrapUserMessageForLLM(params.text, auth.role, userName)
+    : params.text;
 
   try {
     let responseText: string;
 
     switch (llm.provider) {
       case "anthropic":
-        responseText = await callAnthropic(llm.apiKey, llm.model, systemPrompt, params.text);
+        responseText = await callAnthropic(llm.apiKey, llm.model, systemPrompt, userMessage);
         break;
       case "openai":
         responseText = await callOpenAICompatible(
@@ -651,11 +705,11 @@ MoA를 설치하면 이 모든 것이 가능합니다!
           llm.apiKey,
           llm.model,
           systemPrompt,
-          params.text,
+          userMessage,
         );
         break;
       case "google":
-        responseText = await callGemini(llm.apiKey, llm.model, systemPrompt, params.text);
+        responseText = await callGemini(llm.apiKey, llm.model, systemPrompt, userMessage);
         break;
       case "groq":
         responseText = await callOpenAICompatible(
@@ -663,7 +717,7 @@ MoA를 설치하면 이 모든 것이 가능합니다!
           llm.apiKey,
           llm.model,
           systemPrompt,
-          params.text,
+          userMessage,
         );
         break;
       default:
@@ -716,6 +770,15 @@ async function main() {
   } else {
     console.warn(
       "[MoA] WARNING: No LLM API key found. Set ANTHROPIC_API_KEY, OPENAI_API_KEY, GOOGLE_API_KEY, or GROQ_API_KEY",
+    );
+  }
+
+  // Check owner authentication
+  if (isOwnerAuthEnabled()) {
+    console.log("[MoA] Owner auth: ENABLED (MOA_OWNER_SECRET set — only authenticated owners can control devices)");
+  } else {
+    console.warn(
+      "[MoA] Owner auth: DISABLED (set MOA_OWNER_SECRET to restrict device control to owner only)",
     );
   }
 
@@ -794,6 +857,7 @@ async function main() {
             telegram: isTelegramConfigured(),
             whatsapp: isWhatsAppConfigured(),
             discord: isDiscordConfigured(),
+            ownerAuth: isOwnerAuthEnabled(),
             skills: getLoadedSkills().length,
             eligibleSkills: getLoadedSkills().filter((s) => s.eligible).length,
           };

@@ -306,6 +306,7 @@ function generateSettingsPage(): string {
       <button class="nav-tab active" onclick="showSection('channels', this)">채널</button>
       <button class="nav-tab" onclick="showSection('skills', this)">스킬</button>
       <button class="nav-tab" onclick="showSection('devices', this)">기기</button>
+      <button class="nav-tab" onclick="showSection('security', this)">보안</button>
       <button class="nav-tab" onclick="showSection('setup', this)">설정 가이드</button>
     </div>
 
@@ -453,6 +454,141 @@ function generateSettingsPage(): string {
             <h4>사용 시작</h4>
             <p>카카오톡/텔레그램/WhatsApp/Discord에서 "@기기명 명령"으로 원격 제어!</p>
           </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Security Section -->
+    <div id="section-security" class="section">
+      <div class="card">
+        <h3>주인 인증 (Owner Authentication)</h3>
+        <p style="font-size:13px;color:#666;margin-bottom:16px;">
+          MoA의 기기 제어, 파일 접근 등 민감한 기능은 인증된 주인만 사용할 수 있습니다.
+          제3자(그룹 채팅 참여자, 낯선 DM 발신자 등)의 악의적 명령을 차단합니다.
+        </p>
+        <div id="auth-status" style="padding:12px;border-radius:8px;margin-bottom:16px;background:#fff3e0;">
+          확인 중...
+        </div>
+        <div class="guide-step">
+          <div class="step-num">1</div>
+          <div class="step-content">
+            <h4>비밀구문 설정</h4>
+            <p>Railway 환경변수에 <code>MOA_OWNER_SECRET</code>을 추가하세요.<br/>
+            예: <code>MOA_OWNER_SECRET=나만아는비밀123</code></p>
+          </div>
+        </div>
+        <div class="guide-step">
+          <div class="step-num">2</div>
+          <div class="step-content">
+            <h4>채널에서 인증</h4>
+            <p>카카오톡/텔레그램/WhatsApp/Discord에서 다음을 입력:<br/>
+            <code>!인증 나만아는비밀123</code></p>
+          </div>
+        </div>
+        <div class="guide-step">
+          <div class="step-num">3</div>
+          <div class="step-content">
+            <h4>인증 완료</h4>
+            <p>인증 후 기기 제어, 파일 관리, 원격 명령 등 모든 기능을 사용할 수 있습니다.<br/>
+            인증 해제: <code>!인증해제</code></p>
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <h3>보안 기능</h3>
+        <div class="channel-item">
+          <div class="channel-icon" style="background:#e8f5e9;">
+            <span>&#x1F512;</span>
+          </div>
+          <div class="channel-info">
+            <div class="channel-name">주인 인증 시스템</div>
+            <div class="channel-desc">비밀구문으로 채널별 주인 인증, 브루트포스 방지 (5회 제한/15분 잠금)</div>
+          </div>
+        </div>
+        <div class="channel-item">
+          <div class="channel-icon" style="background:#e3f2fd;">
+            <span>&#x1F6E1;</span>
+          </div>
+          <div class="channel-info">
+            <div class="channel-name">프롬프트 인젝션 방어</div>
+            <div class="channel-desc">사용자 입력 격리, 시스템 지시 재정의 시도 차단</div>
+          </div>
+        </div>
+        <div class="channel-item">
+          <div class="channel-icon" style="background:#fce4ec;">
+            <span>&#x1F6AB;</span>
+          </div>
+          <div class="channel-info">
+            <div class="channel-name">게스트 권한 제한</div>
+            <div class="channel-desc">미인증 사용자는 인사/설치안내/일반대화만 가능, 기기 제어 완전 차단</div>
+          </div>
+        </div>
+        <div class="channel-item">
+          <div class="channel-icon" style="background:#fff3e0;">
+            <span>&#x1F50D;</span>
+          </div>
+          <div class="channel-info">
+            <div class="channel-name">WhatsApp 서명 검증</div>
+            <div class="channel-desc">X-Hub-Signature-256 으로 웹훅 요청 위조 방지 (WHATSAPP_APP_SECRET 설정 시)</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <h3>권한 수준 안내</h3>
+        <div style="overflow-x:auto;">
+          <table style="width:100%;font-size:13px;border-collapse:collapse;">
+            <thead>
+              <tr style="border-bottom:2px solid #e9ecef;">
+                <th style="text-align:left;padding:8px;">기능</th>
+                <th style="text-align:center;padding:8px;">주인</th>
+                <th style="text-align:center;padding:8px;">게스트</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr style="border-bottom:1px solid #f0f0f5;">
+                <td style="padding:8px;">인사/소개</td>
+                <td style="text-align:center;">&#x2705;</td>
+                <td style="text-align:center;">&#x2705;</td>
+              </tr>
+              <tr style="border-bottom:1px solid #f0f0f5;">
+                <td style="padding:8px;">설치 안내</td>
+                <td style="text-align:center;">&#x2705;</td>
+                <td style="text-align:center;">&#x2705;</td>
+              </tr>
+              <tr style="border-bottom:1px solid #f0f0f5;">
+                <td style="padding:8px;">AI 대화</td>
+                <td style="text-align:center;">&#x2705;</td>
+                <td style="text-align:center;">&#x2705;</td>
+              </tr>
+              <tr style="border-bottom:1px solid #f0f0f5;">
+                <td style="padding:8px;">스킬 검색</td>
+                <td style="text-align:center;">&#x2705;</td>
+                <td style="text-align:center;">&#x2705;</td>
+              </tr>
+              <tr style="border-bottom:1px solid #f0f0f5;">
+                <td style="padding:8px;">기기 등록/제어</td>
+                <td style="text-align:center;">&#x2705;</td>
+                <td style="text-align:center;">&#x274C;</td>
+              </tr>
+              <tr style="border-bottom:1px solid #f0f0f5;">
+                <td style="padding:8px;">파일 접근</td>
+                <td style="text-align:center;">&#x2705;</td>
+                <td style="text-align:center;">&#x274C;</td>
+              </tr>
+              <tr style="border-bottom:1px solid #f0f0f5;">
+                <td style="padding:8px;">원격 명령</td>
+                <td style="text-align:center;">&#x2705;</td>
+                <td style="text-align:center;">&#x274C;</td>
+              </tr>
+              <tr>
+                <td style="padding:8px;">설정 변경</td>
+                <td style="text-align:center;">&#x2705;</td>
+                <td style="text-align:center;">&#x274C;</td>
+              </tr>
+            </tbody>
+          </table>
         </div>
       </div>
     </div>
@@ -681,8 +817,30 @@ function generateSettingsPage(): string {
       }
     }
 
+    // Check auth status from health endpoint
+    async function checkAuthStatus() {
+      try {
+        const res = await fetch('/health');
+        if (res.ok) {
+          const data = await res.json().catch(() => null);
+          const el = document.getElementById('auth-status');
+          if (!el) return;
+          if (data && data.ownerAuth) {
+            el.style.background = '#e8f5e9';
+            el.innerHTML = '<strong style="color:#2e7d32;">&#x1F512; \uC8FC\uC778 \uC778\uC99D \uD65C\uC131\uD654\uB428</strong><br/><span style="font-size:12px;color:#666;">\uC778\uC99D\uB41C \uC8FC\uC778\uB9CC \uAE30\uAE30 \uC81C\uC5B4, \uD30C\uC77C \uC811\uADFC, \uC6D0\uACA9 \uBA85\uB839\uC744 \uC0AC\uC6A9\uD560 \uC218 \uC788\uC2B5\uB2C8\uB2E4.</span>';
+          } else {
+            el.style.background = '#fff3e0';
+            el.innerHTML = '<strong style="color:#ef6c00;">&#x26A0; \uC8FC\uC778 \uC778\uC99D \uBE44\uD65C\uC131\uD654</strong><br/><span style="font-size:12px;color:#666;">MOA_OWNER_SECRET \uD658\uACBD\uBCC0\uC218\uB97C \uC124\uC815\uD558\uBA74 \uC81C3\uC790\uC758 \uAE30\uAE30 \uC81C\uC5B4\uB97C \uCC28\uB2E8\uD560 \uC218 \uC788\uC2B5\uB2C8\uB2E4.</span>';
+          }
+        }
+      } catch {
+        // Silently fail
+      }
+    }
+
     // Init
     checkChannelStatus();
+    checkAuthStatus();
     renderSkills();
     loadDevices();
 
