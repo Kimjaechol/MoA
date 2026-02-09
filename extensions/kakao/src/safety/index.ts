@@ -1,5 +1,5 @@
 /**
- * Safety System — 작업 기록, 체크포인트, 되돌리기, 위험도 평가, 비상정지
+ * Safety System — 작업 기록, 체크포인트, 되돌리기, 위험도 평가, 비상정지, 암호화 백업
  */
 export {
   // Action Journal
@@ -59,3 +59,36 @@ export {
   type PendingCommand,
   type PanicResult,
 } from "./command-gravity.js";
+
+export {
+  // Vault Operations
+  initializeVault,
+  isVaultInitialized,
+  loadVaultMeta,
+  createEncryptedBackup,
+  restoreFromBackup,
+  restoreWithRecoveryKey,
+  // Recovery Key
+  generateRecoveryKey,
+  verifyRecoveryKey,
+  createRecoveryBackup,
+  // Retention Policy
+  enforceRetentionPolicy,
+  runScheduledBackup,
+  // Device Local Key
+  registerDeviceKey,
+  getDeviceKey,
+  storeDeviceEncryptedData,
+  // Backup Info
+  listBackups,
+  getBackupStats,
+  // Formatting
+  formatBackupList,
+  formatRecoveryKey,
+  // Types
+  type VaultMeta,
+  type RetentionPolicy,
+  type RecoveryKeyResult,
+  type DeviceKeyRegistration,
+  type BackupInfo,
+} from "./encrypted-vault.js";

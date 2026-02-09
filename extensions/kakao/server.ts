@@ -106,6 +106,17 @@ import {
   guardianAngelCheck,
   formatGravityAssessment,
   formatPendingCommands,
+  // Encrypted Vault
+  initializeVault,
+  createEncryptedBackup,
+  restoreFromBackup,
+  generateRecoveryKey,
+  verifyRecoveryKey,
+  listBackups,
+  getBackupStats,
+  runScheduledBackup,
+  formatBackupList,
+  formatRecoveryKey,
 } from "./src/safety/index.js";
 import {
   authenticateUser,
@@ -439,6 +450,11 @@ MoA는 카카오톡, 텔레그램, WhatsApp, Discord 등 여러 메신저에서 
 - !비상정지 : 모든 대기 명령 취소 + 기기 잠금
 - !취소 [ID] : 대기 중인 명령 취소
 - !대기목록 : 실행 대기 중인 명령 조회
+- !백업 : 수동 암호화 백업 생성
+- !백업 목록 : 저장된 백업 목록 조회
+- !백업 복원 [파일명] : 백업에서 복원
+- !복구키 : 12단어 복구 키 발급
+- !복구키 검증 [12단어] : 복구 키 검증
 ${skillsPrompt}
 ## 응답 규칙
 - 한국어로 친절하고 자연스럽게 대화합니다
@@ -712,6 +728,133 @@ async function aiOnMessage(params: {
       return {
         text: `v${version} 버전의 기억을 찾을 수 없습니다.\n"!기억내역"으로 사용 가능한 버전을 확인하세요.`,
         quickReplies: ["!기억내역"],
+      };
+    }
+
+    // ── Encrypted Vault Commands ──────────────────────────────
+
+    // !백업 — 수동 암호화 백업 생성
+    if (utterance.match(/^[!!/](?:백업|backup)$/i)) {
+      const secret = process.env.MOA_OWNER_SECRET;
+      if (!secret) {
+        return {
+          text: "MOA_OWNER_SECRET이 설정되지 않아 백업을 생성할 수 없습니다.\n환경변수를 설정해주세요.",
+          quickReplies: ["도움말"],
+        };
+      }
+      try {
+        const backupData = { timestamp: Date.now(), source: "manual", channelId };
+        const result = createEncryptedBackup(backupData, secret, "manual");
+        return {
+          text: `암호화 백업이 생성되었습니다!\n\n파일: ${result.filePath.split("/").pop()}\n크기: ${(result.size / 1024).toFixed(1)}KB\n암호화: AES-256-GCM\n\n복원: "!백업 복원 [파일명]"`,
+          quickReplies: ["!백업 목록", "!복구키", "!작업내역"],
+        };
+      } catch (err) {
+        return {
+          text: `백업 생성 중 오류가 발생했습니다.\n${err instanceof Error ? err.message : String(err)}`,
+          quickReplies: ["!작업내역"],
+        };
+      }
+    }
+
+    // !백업 목록 — 백업 목록 조회
+    if (utterance.match(/^[!!/](?:백업|backup)\s*(?:목록|list)$/i)) {
+      const backups = listBackups();
+      return {
+        text: formatBackupList(backups, maxLen),
+        quickReplies: ["!백업", "!복구키", "!작업내역"],
+      };
+    }
+
+    // !백업 통계 — 백업 용량/통계
+    if (utterance.match(/^[!!/](?:백업|backup)\s*(?:통계|stats|상태|status)$/i)) {
+      const stats = getBackupStats();
+      const lines = [
+        "암호화 백업 통계",
+        "",
+        `총 파일: ${stats.totalFiles}개`,
+        `총 크기: ${stats.totalSizeKB}KB`,
+      ];
+      for (const [type, info] of Object.entries(stats.byType)) {
+        lines.push(`  ${type}: ${info.count}개 (${(info.size / 1024).toFixed(1)}KB)`);
+      }
+      if (stats.newestBackup) {
+        lines.push(`\n최신: ${new Date(stats.newestBackup).toLocaleString("ko-KR")}`);
+      }
+      if (stats.oldestBackup) {
+        lines.push(`최초: ${new Date(stats.oldestBackup).toLocaleString("ko-KR")}`);
+      }
+      return {
+        text: lines.join("\n"),
+        quickReplies: ["!백업 목록", "!백업", "!작업내역"],
+      };
+    }
+
+    // !백업 복원 [파일명] — 암호화 백업 복원
+    const restoreBackupMatch = utterance.match(/^[!!/](?:백업|backup)\s*(?:복원|restore)\s+(.+)$/i);
+    if (restoreBackupMatch) {
+      const secret = process.env.MOA_OWNER_SECRET;
+      if (!secret) {
+        return {
+          text: "MOA_OWNER_SECRET이 설정되지 않아 복원할 수 없습니다.",
+          quickReplies: ["도움말"],
+        };
+      }
+      const fileName = restoreBackupMatch[1].trim();
+      // Find the backup file
+      const backups = listBackups();
+      const target = backups.find((b) => b.fileName === fileName || b.filePath.endsWith(fileName));
+      if (!target) {
+        return {
+          text: `"${fileName}" 백업 파일을 찾을 수 없습니다.\n\n"!백업 목록"으로 사용 가능한 백업을 확인하세요.`,
+          quickReplies: ["!백업 목록"],
+        };
+      }
+      const restored = restoreFromBackup(target.filePath, secret);
+      if (restored) {
+        return {
+          text: `백업이 복원되었습니다!\n\n파일: ${target.fileName}\n시각: ${new Date(restored.timestamp).toLocaleString("ko-KR")}\n무결성: ${restored.verified ? "검증 완료" : "검증 실패 (데이터 손상 가능)"}`,
+          quickReplies: ["!작업내역", "!백업 목록"],
+        };
+      }
+      return {
+        text: "백업 복원에 실패했습니다.\n비밀구문이 올바른지 확인하세요.",
+        quickReplies: ["!백업 목록", "!복구키"],
+      };
+    }
+
+    // !복구키 — 12단어 복구 키 발급
+    if (utterance.match(/^[!!/](?:복구키|복구 키|recovery\s*key)$/i)) {
+      try {
+        const result = generateRecoveryKey();
+        return {
+          text: formatRecoveryKey(result),
+          quickReplies: ["!백업 목록", "!작업내역"],
+        };
+      } catch (err) {
+        return {
+          text: `복구 키 발급 중 오류가 발생했습니다.\n${err instanceof Error ? err.message : String(err)}`,
+          quickReplies: ["!작업내역"],
+        };
+      }
+    }
+
+    // !복구키 검증 [12단어] — 복구 키 검증
+    const verifyMatch = utterance.match(/^[!!/](?:복구키|복구 키|recovery\s*key)\s*(?:검증|verify)\s+(.+)$/i);
+    if (verifyMatch) {
+      const words = verifyMatch[1].trim().split(/\s+/);
+      if (words.length !== 12) {
+        return {
+          text: `복구 키는 12단어입니다. ${words.length}단어가 입력되었습니다.\n\n사용법: !복구키 검증 단어1 단어2 ... 단어12`,
+          quickReplies: ["!복구키"],
+        };
+      }
+      const valid = verifyRecoveryKey(words);
+      return {
+        text: valid
+          ? "복구 키가 확인되었습니다! 이 키로 백업을 복원할 수 있습니다."
+          : "복구 키가 일치하지 않습니다.\n올바른 12단어를 입력했는지 확인하세요.",
+        quickReplies: ["!백업 목록", "!작업내역"],
       };
     }
   }
@@ -1070,6 +1213,31 @@ async function main() {
   const skills = getLoadedSkills();
   console.log(`[MoA] Skills: ${skills.length} loaded (${skills.filter((s) => s.eligible).length} eligible)`);
 
+  // Initialize encrypted vault and run scheduled backup
+  if (process.env.MOA_OWNER_SECRET) {
+    try {
+      initializeVault();
+      const backupResult = runScheduledBackup(
+        { timestamp: Date.now(), source: "auto", type: "server_start" },
+        process.env.MOA_OWNER_SECRET,
+      );
+      const created = [
+        backupResult.daily && "daily",
+        backupResult.weekly && "weekly",
+        backupResult.monthly && "monthly",
+      ].filter(Boolean);
+      if (created.length > 0) {
+        console.log(`[MoA] Vault: auto backup created (${created.join(", ")})`);
+      } else {
+        console.log("[MoA] Vault: initialized (backups up to date)");
+      }
+    } catch (err) {
+      console.warn("[MoA] Vault: initialization failed:", err instanceof Error ? err.message : err);
+    }
+  } else {
+    console.log("[MoA] Vault: disabled (set MOA_OWNER_SECRET to enable encrypted backups)");
+  }
+
   // Check Telegram
   if (isTelegramConfigured()) {
     const botInfo = await getTelegramBotInfo();
@@ -1126,6 +1294,7 @@ async function main() {
             whatsapp: isWhatsAppConfigured(),
             discord: isDiscordConfigured(),
             ownerAuth: isOwnerAuthEnabled(),
+            vault: !!process.env.MOA_OWNER_SECRET,
             skills: getLoadedSkills().length,
             eligibleSkills: getLoadedSkills().filter((s) => s.eligible).length,
           };
