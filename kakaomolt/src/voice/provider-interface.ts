@@ -234,7 +234,7 @@ export abstract class VoiceProvider extends EventEmitter {
    * Get session duration in milliseconds
    */
   getDuration(): number {
-    if (!this.session) return 0;
+    if (!this.session) { return 0; }
     return Date.now() - this.session.createdAt.getTime();
   }
 
@@ -243,7 +243,7 @@ export abstract class VoiceProvider extends EventEmitter {
    */
   getAverageLatency(): number {
     const latencies = this.session?.stats.latencyMs ?? [];
-    if (latencies.length === 0) return 0;
+    if (latencies.length === 0) { return 0; }
     return latencies.reduce((a, b) => a + b, 0) / latencies.length;
   }
 
@@ -337,7 +337,7 @@ export function getAudioConfig(provider: VoiceProviderType): { input: AudioConfi
     case "gemini":
       return GEMINI_AUDIO_CONFIG;
     default:
-      throw new Error(`Unknown provider: ${provider}`);
+      throw new Error(`Unknown provider: ${String(provider)}`);
   }
 }
 
@@ -360,8 +360,8 @@ export function isProviderAvailable(provider: VoiceProviderType): boolean {
  */
 export function getAvailableProviders(): VoiceProviderType[] {
   const providers: VoiceProviderType[] = [];
-  if (isProviderAvailable("openai")) providers.push("openai");
-  if (isProviderAvailable("gemini")) providers.push("gemini");
+  if (isProviderAvailable("openai")) { providers.push("openai"); }
+  if (isProviderAvailable("gemini")) { providers.push("gemini"); }
   return providers;
 }
 

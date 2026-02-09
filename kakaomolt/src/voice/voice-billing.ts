@@ -288,7 +288,7 @@ export function checkVoiceCredits(
  */
 export function formatInsufficientCreditsMessage(
   check: ReturnType<typeof checkVoiceCredits>,
-  provider: VoiceProviderType,
+  _provider: VoiceProviderType,
 ): string {
   return `⚠️ **크레딧 부족**
 

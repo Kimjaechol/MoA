@@ -31,7 +31,7 @@ export default function CommunityPage() {
       const res = await fetch(
         `/api/community?page=${page}&limit=${POSTS_PER_PAGE}`
       );
-      if (!res.ok) throw new Error("Failed to fetch posts");
+      if (!res.ok) { throw new Error("Failed to fetch posts"); }
       const data = await res.json();
       setPosts(data.posts ?? []);
       setTotal(data.total ?? 0);
@@ -56,7 +56,7 @@ export default function CommunityPage() {
   };
 
   const truncate = (text: string, max: number) => {
-    if (text.length <= max) return text;
+    if (text.length <= max) { return text; }
     return text.slice(0, max) + "...";
   };
 

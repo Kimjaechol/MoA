@@ -238,13 +238,14 @@ export interface Database {
   };
 }
 
+// eslint-disable-next-line typescript-eslint/no-redundant-type-constituents -- SupabaseClient resolves to error type when @supabase/supabase-js is not installed
 let supabaseClient: SupabaseClient<Database> | null = null;
 
 /**
  * Get Supabase client (singleton)
  */
 export function getSupabase(): SupabaseClient<Database> {
-  if (supabaseClient) return supabaseClient;
+  if (supabaseClient) { return supabaseClient; }
 
   const supabaseUrl = process.env.SUPABASE_URL;
   const supabaseKey = process.env.SUPABASE_SERVICE_KEY ?? process.env.SUPABASE_ANON_KEY;

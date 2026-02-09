@@ -141,7 +141,7 @@ export function createVoiceProvider(
     case "gemini":
       return createGeminiProvider(config);
     default:
-      throw new Error(`Unknown provider: ${provider}`);
+      throw new Error(`Unknown provider: ${String(provider)}`);
   }
 }
 

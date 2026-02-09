@@ -17,10 +17,6 @@ import {
   GeminiLiveProvider,
   createGeminiProvider,
 } from "./provider-gemini.js";
-import {
-  type VoiceProviderConfig,
-  type VoiceSession,
-} from "./provider-interface.js";
 
 // ============================================
 // Language Configuration
@@ -380,7 +376,7 @@ export class RealtimeInterpreter extends EventEmitter {
       this.emit("session.error", error, session);
     });
 
-    provider.on("session.closed", (reason: string) => {
+    provider.on("session.closed", (_reason: string) => {
       session.status = "closed";
       this.emit("session.ended", session);
     });
@@ -391,10 +387,10 @@ export class RealtimeInterpreter extends EventEmitter {
    */
   private detectLanguage(text: string, config: InterpreterConfig): LanguageCode {
     // Korean detection (Hangul)
-    if (/[\uAC00-\uD7AF\u1100-\u11FF]/.test(text)) return "ko";
+    if (/[\uAC00-\uD7AF\u1100-\u11FF]/.test(text)) { return "ko"; }
 
     // Japanese detection (Hiragana, Katakana, some Kanji patterns)
-    if (/[\u3040-\u309F\u30A0-\u30FF]/.test(text)) return "ja";
+    if (/[\u3040-\u309F\u30A0-\u30FF]/.test(text)) { return "ja"; }
 
     // Chinese detection (CJK without Japanese kana)
     if (/[\u4E00-\u9FFF]/.test(text) && !/[\u3040-\u309F\u30A0-\u30FF]/.test(text)) {
@@ -404,13 +400,13 @@ export class RealtimeInterpreter extends EventEmitter {
     }
 
     // Arabic
-    if (/[\u0600-\u06FF]/.test(text)) return "ar";
+    if (/[\u0600-\u06FF]/.test(text)) { return "ar"; }
 
     // Thai
-    if (/[\u0E00-\u0E7F]/.test(text)) return "th";
+    if (/[\u0E00-\u0E7F]/.test(text)) { return "th"; }
 
     // Russian/Cyrillic
-    if (/[\u0400-\u04FF]/.test(text)) return "ru";
+    if (/[\u0400-\u04FF]/.test(text)) { return "ru"; }
 
     // Default to source or English
     return config.sourceLanguage === "en" ? config.targetLanguage : config.sourceLanguage;
@@ -429,7 +425,7 @@ export class RealtimeInterpreter extends EventEmitter {
    */
   sendAudio(sessionId: string, chunk: Buffer): void {
     const session = this.sessions.get(sessionId);
-    if (!session?.provider) return;
+    if (!session?.provider) { return; }
 
     session.provider.sendAudio(chunk);
   }
@@ -439,7 +435,7 @@ export class RealtimeInterpreter extends EventEmitter {
    */
   sendText(sessionId: string, text: string): void {
     const session = this.sessions.get(sessionId);
-    if (!session?.provider) return;
+    if (!session?.provider) { return; }
 
     session.provider.sendText(text);
   }
@@ -449,7 +445,7 @@ export class RealtimeInterpreter extends EventEmitter {
    */
   async endSession(sessionId: string): Promise<InterpreterStats | null> {
     const session = this.sessions.get(sessionId);
-    if (!session) return null;
+    if (!session) { return null; }
 
     // Calculate final stats
     session.stats.totalDurationMs = Date.now() - session.createdAt.getTime();
@@ -578,7 +574,7 @@ ${request.text}`;
     );
 
     if (!response.ok) {
-      const error = await response.text();
+      const _error = await response.text();
       return {
         success: false,
         originalText: request.text,

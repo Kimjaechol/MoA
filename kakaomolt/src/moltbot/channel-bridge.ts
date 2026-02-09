@@ -388,14 +388,14 @@ Message: ${message.text}`;
    * Extract message ID from tool results
    */
   private extractMessageId(toolResults?: unknown[]): string | undefined {
-    if (!toolResults?.length) return undefined;
+    if (!toolResults?.length) { return undefined; }
 
     for (const result of toolResults) {
       if (typeof result === "object" && result !== null) {
         const r = result as Record<string, unknown>;
-        if (typeof r.messageId === "string") return r.messageId;
-        if (typeof r.message_id === "string") return r.message_id;
-        if (typeof r.id === "string") return r.id;
+        if (typeof r.messageId === "string") { return r.messageId; }
+        if (typeof r.message_id === "string") { return r.message_id; }
+        if (typeof r.id === "string") { return r.id; }
       }
     }
 
@@ -426,7 +426,7 @@ export function parseBridgeCommand(message: string): {
   const trimmed = message.trim();
 
   // Korean commands
-  const koreanMatch = trimmed.match(/^[/\/](전송|보내기|forward)\s+(\w+)\s+(@?\S+)\s+(.+)$/i);
+  const koreanMatch = trimmed.match(/^[//](전송|보내기|forward)\s+(\w+)\s+(@?\S+)\s+(.+)$/i);
   if (koreanMatch) {
     const channel = normalizeChannelName(koreanMatch[2]);
     if (!channel) {
@@ -445,7 +445,7 @@ export function parseBridgeCommand(message: string): {
   }
 
   // English commands
-  const englishMatch = trimmed.match(/^[/\/](send|forward|msg)\s+(\w+)\s+(@?\S+)\s+(.+)$/i);
+  const englishMatch = trimmed.match(/^[//](send|forward|msg)\s+(\w+)\s+(@?\S+)\s+(.+)$/i);
   if (englishMatch) {
     const channel = normalizeChannelName(englishMatch[2]);
     if (!channel) {
@@ -511,10 +511,10 @@ export function formatChannelList(): string {
 
   for (const channel of Object.values(CHANNELS)) {
     const features: string[] = [];
-    if (channel.supportsMedia) features.push("미디어");
-    if (channel.supportsReactions) features.push("반응");
-    if (channel.supportsThreads) features.push("스레드");
-    if (channel.supportsEdit) features.push("수정");
+    if (channel.supportsMedia) { features.push("미디어"); }
+    if (channel.supportsReactions) { features.push("반응"); }
+    if (channel.supportsThreads) { features.push("스레드"); }
+    if (channel.supportsEdit) { features.push("수정"); }
 
     output += `${channel.icon} **${channel.name}** (\`${channel.type}\`)\n`;
     output += `   ${channel.description}\n`;

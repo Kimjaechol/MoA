@@ -204,7 +204,7 @@ async function handlePair(
           deviceName: body.device.deviceName,
         })
         .catch?.((err: unknown) => {
-          logger.error(`[relay] onPairingComplete callback error: ${err}`);
+          logger.error(`[relay] onPairingComplete callback error: ${String(err)}`);
         });
     }
   } else {

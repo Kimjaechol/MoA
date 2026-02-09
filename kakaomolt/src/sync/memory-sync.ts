@@ -23,7 +23,6 @@ import {
   generateSalt,
   keyToRecoveryCode,
   type E2EEncryptedData,
-  type E2EEncryptionKey,
 } from "./encryption.js";
 import {
   exportMoltbotData,
@@ -289,7 +288,7 @@ export class MemorySyncManager {
 
       // Group chunks by version
       const latestVersion = data[0].version;
-      const chunks = data.filter((d) => d.version === latestVersion).sort((a, b) => a.chunk_index - b.chunk_index);
+      const chunks = data.filter((d) => d.version === latestVersion).toSorted((a, b) => a.chunk_index - b.chunk_index);
 
       // Reassemble ciphertext
       const ciphertext = chunks.map((c) => c.encrypted_data).join("");
@@ -402,7 +401,7 @@ export class MemorySyncManager {
           // Skip checksum verification for conversations
           const messages = decryptJSON<ConversationMessage[]>(
             { ...encrypted, checksum: encrypted.checksum || "skip" },
-            this.encryptionKey!,
+            this.encryptionKey,
           );
 
           conversations.push({
@@ -658,7 +657,7 @@ export class MemorySyncManager {
 
       // Group chunks by version
       const latestVersion = data[0].version;
-      const chunks = data.filter((d) => d.version === latestVersion).sort((a, b) => a.chunk_index - b.chunk_index);
+      const chunks = data.filter((d) => d.version === latestVersion).toSorted((a, b) => a.chunk_index - b.chunk_index);
 
       // Reassemble ciphertext
       const ciphertext = chunks.map((c) => c.encrypted_data).join("");

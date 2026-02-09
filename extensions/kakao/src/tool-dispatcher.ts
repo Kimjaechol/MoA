@@ -353,7 +353,7 @@ async function handleCreativeImage(
       const style =
         /귀여|cute/i.test(message) ? 'cute' : /우아|elegant/i.test(message) ? 'elegant' : 'romantic';
 
-      const creative = await generateHeartImage(style as 'cute' | 'romantic' | 'elegant');
+      const creative = await generateHeartImage(style);
 
       return {
         ...result,

@@ -7,13 +7,11 @@ import {
   getSystemPromptForIntent,
   getResponseTemplate,
   type ClassifiedIntent,
-  type IntentType,
 } from './intent-classifier.js';
 import { getWeather, formatWeatherMessage } from './tools/weather.js';
 import {
   getAllCalendarEvents,
   formatCalendarMessage,
-  getKakaoCalendarLinkMessage,
 } from './tools/calendar.js';
 import {
   getSportsSchedule,
@@ -40,7 +38,6 @@ import {
   generateMusic,
   generateQRCode,
   formatCreativeMessage,
-  detectCreativeRequest,
 } from './tools/creative.js';
 import { getConsultationButton, parseLawCallRoutes } from './lawcall-router.js';
 
@@ -356,7 +353,7 @@ async function handleCreativeImage(
       const style =
         /귀여|cute/i.test(message) ? 'cute' : /우아|elegant/i.test(message) ? 'elegant' : 'romantic';
 
-      const creative = await generateHeartImage(style as 'cute' | 'romantic' | 'elegant');
+      const creative = await generateHeartImage(style);
 
       return {
         ...result,
@@ -398,11 +395,17 @@ async function handleCreativeEmoticon(
   try {
     // 감정 추출
     let emotion = 'happy';
-    if (/슬프|울|sad/i.test(message)) emotion = 'sad';
-    else if (/화|angry/i.test(message)) emotion = 'angry';
-    else if (/사랑|love/i.test(message)) emotion = 'love';
-    else if (/놀|surprise/i.test(message)) emotion = 'surprised';
-    else if (/졸|sleepy/i.test(message)) emotion = 'sleepy';
+    if (/슬프|울|sad/i.test(message)) {
+      emotion = 'sad';
+    } else if (/화|angry/i.test(message)) {
+      emotion = 'angry';
+    } else if (/사랑|love/i.test(message)) {
+      emotion = 'love';
+    } else if (/놀|surprise/i.test(message)) {
+      emotion = 'surprised';
+    } else if (/졸|sleepy/i.test(message)) {
+      emotion = 'sleepy';
+    }
 
     const description = message.replace(/이모티콘|스티커|만들|생성|그려|줘/g, '').trim();
     const creative = await generateEmoticon(description || '귀여운 캐릭터', emotion);
@@ -434,13 +437,21 @@ async function handleCreativeMusic(
   try {
     // 장르 추출
     let genre: string | undefined;
-    if (/재즈|jazz/i.test(message)) genre = 'jazz';
-    else if (/클래식|classical/i.test(message)) genre = 'classical';
-    else if (/일렉|electronic/i.test(message)) genre = 'electronic';
-    else if (/로파이|lofi/i.test(message)) genre = 'lofi';
-    else if (/팝|pop/i.test(message)) genre = 'pop';
-    else if (/어쿠스틱|acoustic/i.test(message)) genre = 'acoustic';
-    else if (/잔잔|ambient/i.test(message)) genre = 'ambient';
+    if (/재즈|jazz/i.test(message)) {
+      genre = 'jazz';
+    } else if (/클래식|classical/i.test(message)) {
+      genre = 'classical';
+    } else if (/일렉|electronic/i.test(message)) {
+      genre = 'electronic';
+    } else if (/로파이|lofi/i.test(message)) {
+      genre = 'lofi';
+    } else if (/팝|pop/i.test(message)) {
+      genre = 'pop';
+    } else if (/어쿠스틱|acoustic/i.test(message)) {
+      genre = 'acoustic';
+    } else if (/잔잔|ambient/i.test(message)) {
+      genre = 'ambient';
+    }
 
     const creative = await generateMusic(message, { genre, instrumental: true });
 

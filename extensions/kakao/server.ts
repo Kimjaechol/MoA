@@ -53,7 +53,6 @@ console.log(
 
 import type { RelayCallbacks } from "./src/relay/index.js";
 import type { ResolvedKakaoAccount } from "./src/types.js";
-import type { MoAMessageHandler } from "./src/channels/types.js";
 import { resolveKakaoAccount, getDefaultKakaoConfig } from "./src/config.js";
 import { handleInstallRequest } from "./src/installer/index.js";
 import { handleSettingsRequest } from "./src/settings/index.js";
@@ -86,7 +85,6 @@ import {
 } from "./src/skills/index.js";
 import {
   logAction,
-  updateActionStatus,
   getRecentActions,
   getUndoableActions,
   createCheckpoint,
@@ -108,15 +106,11 @@ import {
   formatPendingCommands,
   // Encrypted Vault
   initializeVault,
-  createEncryptedBackup,
-  restoreFromBackup,
-  generateRecoveryKey,
   verifyRecoveryKey,
   listBackups,
   getBackupStats,
   runScheduledBackup,
   formatBackupList,
-  formatRecoveryKey,
 } from "./src/safety/index.js";
 import {
   authenticateUser,
@@ -132,7 +126,6 @@ import {
   changeUserSecret,
   getUserSecretCount,
   // User Accounts
-  findAccountByUsername,
   findAccountByChannel,
   verifyPassword,
   linkChannel,
@@ -699,7 +692,7 @@ async function aiOnMessage(params: {
     }
   }
   // Clean up expired pending
-  if (pending) pendingAuthUsers.delete(pendingKey);
+  if (pending) { pendingAuthUsers.delete(pendingKey); }
 
   // ── "사용자 인증" 버튼 처리 (로그인) ──────────
   if (/^(?:사용자\s*인증|인증하기|인증)$/i.test(utterance)) {
@@ -1388,9 +1381,9 @@ async function main() {
   const userSecretCount = getUserSecretCount();
   if (accountCount > 0 || userSecretCount > 0 || process.env.MOA_OWNER_SECRET) {
     const parts = [];
-    if (accountCount > 0) parts.push(`${accountCount} account(s)`);
-    if (userSecretCount > 0) parts.push(`${userSecretCount} user secret(s)`);
-    if (process.env.MOA_OWNER_SECRET) parts.push("admin master key set");
+    if (accountCount > 0) { parts.push(`${accountCount} account(s)`); }
+    if (userSecretCount > 0) { parts.push(`${userSecretCount} user secret(s)`); }
+    if (process.env.MOA_OWNER_SECRET) { parts.push("admin master key set"); }
     console.log(`[MoA] Owner auth: ENABLED (${parts.join(", ")})`);
   } else {
     console.log(
@@ -1585,4 +1578,4 @@ async function main() {
   }
 }
 
-main();
+void main();

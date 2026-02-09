@@ -32,12 +32,8 @@ import {
   type ThreatLevel,
 } from "./security-guard.js";
 import {
-  checkPermission,
   grantPermission,
-  createConfirmationRequest,
-  handleConfirmationResponse,
   isConfirmationResponse,
-  logAction,
   type SensitiveActionCategory,
 } from "./action-permissions.js";
 import { hashUserId } from "./user-settings.js";
@@ -122,7 +118,7 @@ export async function securityCheck(
     ipAddress?: string;
   },
 ): Promise<SecurityMiddlewareResult> {
-  const hashedId = hashUserId(kakaoUserId);
+  const _hashedId = hashUserId(kakaoUserId);
 
   // ============================================
   // 1. 이전 확인 응답 처리
@@ -646,7 +642,7 @@ export async function handleSecurityCommand(
 /**
  * 보안 상태 포맷팅
  */
-async function formatSecurityStatus(kakaoUserId: string): Promise<string> {
+async function formatSecurityStatus(_kakaoUserId: string): Promise<string> {
   const lines = [
     "🔐 **보안 상태**",
     "",
@@ -674,7 +670,7 @@ async function formatSecurityStatus(kakaoUserId: string): Promise<string> {
 /**
  * 동의 현황 포맷팅
  */
-async function formatConsentStatus(kakaoUserId: string): Promise<string> {
+async function formatConsentStatus(_kakaoUserId: string): Promise<string> {
   const lines = [
     "📋 **데이터 전송 동의 현황**",
     "",

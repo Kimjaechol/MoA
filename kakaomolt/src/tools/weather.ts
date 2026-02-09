@@ -198,7 +198,7 @@ function parseKMAResponse(items: Record<string, string>[], location: string): We
   }
 
   // 현재 시간에 가장 가까운 데이터 찾기
-  const timeKeys = Object.keys(dataByTime).sort();
+  const timeKeys = Object.keys(dataByTime).toSorted();
   const currentTimeKey =
     timeKeys.find((key) => key.split('_')[1] >= currentHour) || timeKeys[0];
   const currentData = dataByTime[currentTimeKey] || {};
@@ -282,7 +282,7 @@ function findCoordinates(location: string): { nx: number; ny: number } | null {
 /**
  * 날씨 조회 메인 함수
  */
-export async function getWeather(location: string, date?: string): Promise<WeatherResult> {
+export async function getWeather(location: string, _date?: string): Promise<WeatherResult> {
   const coords = findCoordinates(location);
 
   if (coords) {

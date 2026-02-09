@@ -577,7 +577,7 @@ export function handlePaymentRequest(
   };
 
   // 라우팅
-  (async () => {
+  void (async () => {
     try {
       const params = new URLSearchParams(url.search ?? "");
 

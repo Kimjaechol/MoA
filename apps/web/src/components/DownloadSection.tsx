@@ -221,7 +221,7 @@ export default function DownloadSection() {
                     fontSize: "0.75rem",
                   }}
                   onClick={() => {
-                    navigator.clipboard.writeText(info.installCmd!);
+                    void navigator.clipboard.writeText(info.installCmd);
                   }}
                 >
                   복사

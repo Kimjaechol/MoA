@@ -137,7 +137,7 @@ export class OpenAIRealtimeProvider extends VoiceProvider {
     } catch (err) {
       this.updateStatus("error");
       const error = err instanceof Error ? err : new Error(String(err));
-      this.emit("session.error", error, this.session!);
+      this.emit("session.error", error, this.session);
       throw err;
     }
   }
@@ -164,23 +164,23 @@ export class OpenAIRealtimeProvider extends VoiceProvider {
         this.ws = new WebSocket(url);
       }
 
-      this.ws.onopen = () => {
+      this.ws.addEventListener("open", () => {
         this.sendSessionUpdate();
         resolve();
-      };
+      });
 
-      this.ws.onerror = (event) => {
-        const error = new Error(`OpenAI WebSocket error: ${event}`);
+      this.ws.addEventListener("error", (event) => {
+        const error = new Error(`OpenAI WebSocket error: ${event.type}`);
         reject(error);
-      };
+      });
 
-      this.ws.onclose = (event) => {
+      this.ws.addEventListener("close", (event) => {
         this.handleClose(event.reason ?? "Connection closed");
-      };
+      });
 
-      this.ws.onmessage = (event) => {
+      this.ws.addEventListener("message", (event) => {
         this.handleMessage(event.data);
-      };
+      });
     });
   }
 
@@ -388,7 +388,7 @@ export class OpenAIRealtimeProvider extends VoiceProvider {
   }
 
   commitAudio(): void {
-    if (!this.ws || !this.isSessionReady) return;
+    if (!this.ws || !this.isSessionReady) { return; }
 
     const message: InputAudioBufferCommit = {
       type: "input_audio_buffer.commit",
@@ -405,7 +405,7 @@ export class OpenAIRealtimeProvider extends VoiceProvider {
   }
 
   sendText(text: string): void {
-    if (!this.ws || !this.isSessionReady) return;
+    if (!this.ws || !this.isSessionReady) { return; }
 
     // Add text message to conversation
     const itemMessage: ConversationItemCreate = {
@@ -433,7 +433,7 @@ export class OpenAIRealtimeProvider extends VoiceProvider {
   }
 
   interrupt(): void {
-    if (!this.ws || !this.isSessionReady) return;
+    if (!this.ws || !this.isSessionReady) { return; }
 
     // Cancel current response
     const message: ResponseCancel = {
@@ -463,7 +463,7 @@ export class OpenAIRealtimeProvider extends VoiceProvider {
   }
 
   sendToolResult(callId: string, result: unknown): void {
-    if (!this.ws || !this.isSessionReady) return;
+    if (!this.ws || !this.isSessionReady) { return; }
 
     const message: OpenAIMessage = {
       type: "conversation.item.create",

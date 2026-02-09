@@ -244,7 +244,7 @@ export class RealtimeVoiceClient extends EventEmitter {
       });
 
       this.ws.addEventListener("error", (event) => {
-        const error = new Error(`WebSocket error: ${event}`);
+        const error = new Error(`WebSocket error: ${event.type}`);
         this.emit("session.error", error);
         reject(error);
       });

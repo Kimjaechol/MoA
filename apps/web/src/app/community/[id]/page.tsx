@@ -22,7 +22,7 @@ interface Comment {
 }
 
 function getVisitorId(): string {
-  if (typeof window === "undefined") return "";
+  if (typeof window === "undefined") { return ""; }
   let id = localStorage.getItem("moa_visitor_id");
   if (!id) {
     id = crypto.randomUUID();
@@ -57,7 +57,7 @@ export default function PostDetailPage() {
     setError("");
     try {
       const res = await fetch(`/api/community?id=${postId}`);
-      if (!res.ok) throw new Error("Failed to fetch post");
+      if (!res.ok) { throw new Error("Failed to fetch post"); }
       const data = await res.json();
       setPost(data.post);
       setLikeCount(data.post?.likeCount ?? 0);
@@ -72,7 +72,7 @@ export default function PostDetailPage() {
   const fetchComments = useCallback(async () => {
     try {
       const res = await fetch(`/api/community/comments?postId=${postId}`);
-      if (!res.ok) return;
+      if (!res.ok) { return; }
       const data = await res.json();
       setComments(data.comments ?? []);
     } catch {
@@ -85,7 +85,7 @@ export default function PostDetailPage() {
   }, [fetchPost]);
 
   const handleLike = async () => {
-    if (liking) return;
+    if (liking) { return; }
     setLiking(true);
     try {
       const visitorId = getVisitorId();
@@ -94,7 +94,7 @@ export default function PostDetailPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ postId, visitorId }),
       });
-      if (!res.ok) throw new Error("Like failed");
+      if (!res.ok) { throw new Error("Like failed"); }
       const data = await res.json();
       setLiked(data.liked);
       setLikeCount(data.likeCount);
@@ -123,7 +123,7 @@ export default function PostDetailPage() {
           content: commentContent.trim(),
         }),
       });
-      if (!res.ok) throw new Error("Comment creation failed");
+      if (!res.ok) { throw new Error("Comment creation failed"); }
       setCommentContent("");
       await fetchComments();
     } catch {

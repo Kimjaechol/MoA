@@ -13,8 +13,6 @@ import {
   MoltbotGatewayClient,
   createGatewayClient,
   discoverLocalGateway,
-  type GatewayConfig,
-  type GatewayResponse,
 } from "./gateway-client.js";
 import { MoltbotToolBridge, createToolBridge, type ToolExecutionResult } from "./tool-bridge.js";
 import {
@@ -388,7 +386,7 @@ export class MoltbotAgentIntegration {
     const trimmed = message.trim();
 
     // Check for tool commands: /도구 <name> or /tool <name>
-    const match = trimmed.match(/^[/\/](도구|tool)\s+(\w+)(?:\s+(.+))?$/i);
+    const match = trimmed.match(/^[//](도구|tool)\s+(\w+)(?:\s+(.+))?$/i);
     if (!match) {
       return { isCommand: false };
     }
@@ -461,15 +459,15 @@ export class MoltbotAgentIntegration {
    * Extract tool names from tool results
    */
   private extractToolNames(toolResults?: unknown[]): string[] | undefined {
-    if (!toolResults?.length) return undefined;
+    if (!toolResults?.length) { return undefined; }
 
     const names: string[] = [];
     for (const result of toolResults) {
       if (typeof result === "object" && result !== null) {
         const r = result as Record<string, unknown>;
-        if (typeof r.toolName === "string") names.push(r.toolName);
-        if (typeof r.tool === "string") names.push(r.tool);
-        if (typeof r.name === "string") names.push(r.name);
+        if (typeof r.toolName === "string") { names.push(r.toolName); }
+        if (typeof r.tool === "string") { names.push(r.tool); }
+        if (typeof r.name === "string") { names.push(r.name); }
       }
     }
 

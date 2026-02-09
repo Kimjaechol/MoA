@@ -343,13 +343,13 @@ export async function getAllCalendarEvents(
   ]);
 
   // 시간순 정렬
-  const allEvents = [...googleEvents, ...kakaoEvents].sort((a, b) =>
+  const allEvents = [...googleEvents, ...kakaoEvents].toSorted((a, b) =>
     a.startTime.localeCompare(b.startTime),
   );
 
   const sources: ('google' | 'kakao')[] = [];
-  if (googleEvents.length > 0) sources.push('google');
-  if (kakaoEvents.length > 0) sources.push('kakao');
+  if (googleEvents.length > 0) { sources.push('google'); }
+  if (kakaoEvents.length > 0) { sources.push('kakao'); }
 
   return {
     events: allEvents,
@@ -410,7 +410,7 @@ export function formatCalendarMessage(result: CalendarResult): string {
  * 날짜 포맷팅 헬퍼
  */
 function formatDate(dateStr: string): string {
-  const [year, month, day] = dateStr.split('-');
+  const [_year, month, day] = dateStr.split('-');
   return `${parseInt(month)}월 ${parseInt(day)}일`;
 }
 

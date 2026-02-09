@@ -69,52 +69,52 @@ print_banner() {
     echo ""
 }
 
-print_step() { echo -e "\${GREEN}[\$1]\${NC} \$2"; }
-print_error() { echo -e "\${RED}[ERROR]\${NC} \$1"; }
-print_warning() { echo -e "\${YELLOW}[WARNING]\${NC} \$1"; }
-print_info() { echo -e "  \${BLUE}→\${NC} \$1"; }
+print_step() { echo -e "\${GREEN}[$1]\${NC} $2"; }
+print_error() { echo -e "\${RED}[ERROR]\${NC} $1"; }
+print_warning() { echo -e "\${YELLOW}[WARNING]\${NC} $1"; }
+print_info() { echo -e "  \${BLUE}→\${NC} $1"; }
 
-while [[ \$# -gt 0 ]]; do
-    case \$1 in
-        --dir|-d) INSTALL_DIR="\$2"; shift 2 ;;
+while [[ $# -gt 0 ]]; do
+    case $1 in
+        --dir|-d) INSTALL_DIR="$2"; shift 2 ;;
         --help|-h)
-            echo "Usage: \$0 [OPTIONS]"
+            echo "Usage: $0 [OPTIONS]"
             echo "  --dir, -d PATH     Installation directory (default: ~/.moa)"
             exit 0 ;;
-        *) print_error "Unknown option: \$1"; exit 1 ;;
+        *) print_error "Unknown option: $1"; exit 1 ;;
     esac
 done
 
 check_requirements() {
     print_step "1/3" "Checking system requirements..."
-    local os; os=\$(uname)
-    if [[ "\$os" != "Darwin" && "\$os" != "Linux" ]]; then
-        print_error "Unsupported OS: \$os"; exit 1
+    local os; os=$(uname)
+    if [[ "$os" != "Darwin" && "$os" != "Linux" ]]; then
+        print_error "Unsupported OS: $os"; exit 1
     fi
     if ! command -v curl &> /dev/null; then
         print_error "curl is required"; exit 1
     fi
-    local arch; arch=\$(uname -m)
-    print_info "OS: \$os, Arch: \$arch"
+    local arch; arch=$(uname -m)
+    print_info "OS: $os, Arch: $arch"
 }
 
 install_moa() {
     print_step "2/3" "Installing MoA..."
-    mkdir -p "\$INSTALL_DIR" "\$CONFIG_DIR"
+    mkdir -p "$INSTALL_DIR" "$CONFIG_DIR"
 
-    local arch; arch=\$(uname -m)
-    local os; os=\$(uname)
+    local arch; arch=$(uname -m)
+    local os; os=$(uname)
     local binary_name="moa-linux-x64"
-    if [[ "\$os" == "Darwin" ]]; then
+    if [[ "$os" == "Darwin" ]]; then
         binary_name="moa-macos-x64"
-        [[ "\$arch" == "arm64" ]] && binary_name="moa-macos-arm64"
+        [[ "$arch" == "arm64" ]] && binary_name="moa-macos-arm64"
     else
-        [[ "\$arch" == "aarch64" ]] && binary_name="moa-linux-arm64"
+        [[ "$arch" == "aarch64" ]] && binary_name="moa-linux-arm64"
     fi
 
     local binary_path="\${INSTALL_DIR}/moa"
-    if curl -fsSL "\${MOA_DOWNLOAD_URL}/\${binary_name}" -o "\$binary_path" 2>/dev/null; then
-        chmod +x "\$binary_path"
+    if curl -fsSL "\${MOA_DOWNLOAD_URL}/\${binary_name}" -o "$binary_path" 2>/dev/null; then
+        chmod +x "$binary_path"
         print_info "Downloaded MoA binary"
     else
         print_warning "Binary not available yet. Setting up Node.js mode..."
@@ -122,12 +122,12 @@ install_moa() {
             print_error "Node.js is required. Install from https://nodejs.org"
             exit 1
         fi
-        cat > "\$binary_path" << 'WRAPPER'
+        cat > "$binary_path" << 'WRAPPER'
 #!/bin/bash
-SCRIPT_DIR="\$(cd "\$(dirname "\${BASH_SOURCE[0]}")" && pwd)"
-node "\${SCRIPT_DIR}/moa.js" "\$@"
+SCRIPT_DIR="$(cd "$(dirname "\${BASH_SOURCE[0]}")" && pwd)"
+node "\${SCRIPT_DIR}/moa.js" "$@"
 WRAPPER
-        chmod +x "\$binary_path"
+        chmod +x "$binary_path"
         cat > "\${INSTALL_DIR}/moa.js" << JSEOF
 console.log('MoA development mode — binary releases coming soon');
 console.log('Visit: https://github.com/Kimjaechol/MoA/releases');
@@ -139,15 +139,15 @@ JSEOF
 setup_environment() {
     print_step "3/3" "Configuring environment..."
     local shell_rc="\${HOME}/.bashrc"
-    [[ "\$SHELL" == *"zsh"* ]] && shell_rc="\${HOME}/.zshrc"
-    if ! grep -q "/.moa" "\$shell_rc" 2>/dev/null; then
-        echo "" >> "\$shell_rc"
-        echo "# MoA - Master of AI" >> "\$shell_rc"
-        echo "export PATH=\\"\\\$PATH:\${INSTALL_DIR}\\"" >> "\$shell_rc"
-        print_info "Added to PATH in \$shell_rc"
+    [[ "$SHELL" == *"zsh"* ]] && shell_rc="\${HOME}/.zshrc"
+    if ! grep -q "/.moa" "$shell_rc" 2>/dev/null; then
+        echo "" >> "$shell_rc"
+        echo "# MoA - Master of AI" >> "$shell_rc"
+        echo "export PATH=\\"\\$PATH:\${INSTALL_DIR}\\"" >> "$shell_rc"
+        print_info "Added to PATH in $shell_rc"
     fi
     cat > "\${CONFIG_DIR}/config.json" << EOF
-{"version":"\${MOA_VERSION}","installPath":"\${INSTALL_DIR}","apiUrl":"\${MOA_API_URL}","installedAt":"\$(date -u +"%Y-%m-%dT%H:%M:%SZ")"}
+{"version":"\${MOA_VERSION}","installPath":"\${INSTALL_DIR}","apiUrl":"\${MOA_API_URL}","installedAt":"$(date -u +"%Y-%m-%dT%H:%M:%SZ")"}
 EOF
     print_info "Config saved"
 }
@@ -165,10 +165,10 @@ show_completion() {
 open_welcome() {
     local welcome_url="${vars.apiUrl.replace(/\/api\/relay\/?$/, "")}/welcome"
     # Try to open browser silently
-    if [[ "\$(uname)" == "Darwin" ]]; then
-        open "\$welcome_url" 2>/dev/null || true
+    if [[ "$(uname)" == "Darwin" ]]; then
+        open "$welcome_url" 2>/dev/null || true
     else
-        xdg-open "\$welcome_url" 2>/dev/null || sensible-browser "\$welcome_url" 2>/dev/null || true
+        xdg-open "$welcome_url" 2>/dev/null || sensible-browser "$welcome_url" 2>/dev/null || true
     fi
 }
 
@@ -181,7 +181,7 @@ main() {
     open_welcome
 }
 
-main "\$@"
+main "$@"
 `;
 }
 

@@ -421,7 +421,7 @@ export class MemorySyncManager {
           // Skip checksum verification for conversations
           const messages = decryptJSON<ConversationMessage[]>(
             { ...encrypted, checksum: encrypted.checksum || "skip" },
-            this.encryptionKey!,
+            this.encryptionKey,
           );
 
           conversations.push({

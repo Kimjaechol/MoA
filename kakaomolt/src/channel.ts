@@ -63,8 +63,8 @@ export const kakaoPlugin: ChannelPlugin<ResolvedKakaoAccount> = {
     getDmAllowlist: (account) => account.config.allowFrom ?? [],
     shouldAcceptDm: (account, senderId) => {
       const policy = account.config.dmPolicy ?? "open";
-      if (policy === "disabled") return { accept: false, reason: "DM disabled" };
-      if (policy === "open") return { accept: true };
+      if (policy === "disabled") { return { accept: false, reason: "DM disabled" }; }
+      if (policy === "open") { return { accept: true }; }
       const allowFrom = account.config.allowFrom ?? [];
       const allowed = allowFrom.includes(senderId);
       return allowed
@@ -109,7 +109,7 @@ export const kakaoPlugin: ChannelPlugin<ResolvedKakaoAccount> = {
         return client.chunkText(text, limit);
       }
       // Fallback chunking
-      if (text.length <= (limit ?? 1000)) return [text];
+      if (text.length <= (limit ?? 1000)) { return [text]; }
       const chunks: string[] = [];
       for (let i = 0; i < text.length; i += (limit ?? 1000)) {
         chunks.push(text.slice(i, i + (limit ?? 1000)));

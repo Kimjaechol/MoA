@@ -227,7 +227,7 @@ function buildFormData(obj: Record<string, unknown>, prefix = ""): string {
         }
       });
     } else {
-      parts.push(`${fullKey}=${encodeURIComponent(String(value))}`);
+      parts.push(`${fullKey}=${encodeURIComponent(String(value as string))}`);
     }
   }
 

@@ -73,7 +73,7 @@ function getWhatsAppConfig(): {
   const phoneNumberId = process.env.WHATSAPP_PHONE_NUMBER_ID;
   const verifyToken = process.env.WHATSAPP_VERIFY_TOKEN ?? "moa-whatsapp-verify";
 
-  if (!token || !phoneNumberId) return null;
+  if (!token || !phoneNumberId) { return null; }
   return { token, phoneNumberId, verifyToken };
 }
 
@@ -87,7 +87,7 @@ async function sendWhatsAppMessage(
   quickReplies?: string[],
 ): Promise<void> {
   const config = getWhatsAppConfig();
-  if (!config) return;
+  if (!config) { return; }
 
   // WhatsApp message limit is 4096 chars
   const truncated = text.length > 4000 ? text.slice(0, 3997) + "..." : text;
@@ -174,7 +174,7 @@ async function sendWhatsAppMessage(
  */
 async function markAsRead(messageId: string): Promise<void> {
   const config = getWhatsAppConfig();
-  if (!config) return;
+  if (!config) { return; }
 
   await fetch(`${WHATSAPP_API}/${config.phoneNumberId}/messages`, {
     method: "POST",
@@ -254,7 +254,7 @@ export function handleWhatsAppRequest(
       body += chunk.toString();
     });
     req.on("end", () => {
-      if (aborted) return;
+      if (aborted) { return; }
 
       // Verify webhook signature if WHATSAPP_APP_SECRET is configured
       const appSecret = process.env.WHATSAPP_APP_SECRET;
@@ -304,12 +304,12 @@ async function processWhatsAppWebhook(
     return;
   }
 
-  if (webhook.object !== "whatsapp_business_account") return;
+  if (webhook.object !== "whatsapp_business_account") { return; }
 
   for (const entry of webhook.entry ?? []) {
     for (const change of entry.changes) {
       const value = change.value;
-      if (!value.messages?.length) continue;
+      if (!value.messages?.length) { continue; }
 
       for (const message of value.messages) {
         await handleWhatsAppMessage(message, value.contacts, onMessage, logger);
@@ -338,7 +338,7 @@ async function handleWhatsAppMessage(
     text = message.button?.text;
   }
 
-  if (!text) return;
+  if (!text) { return; }
 
   // Find contact name
   const contact = contacts?.find((c) => c.wa_id === message.from);

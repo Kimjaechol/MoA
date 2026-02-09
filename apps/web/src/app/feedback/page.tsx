@@ -45,7 +45,7 @@ export default function FeedbackPage() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!content.trim()) return;
+    if (!content.trim()) { return; }
 
     setSubmitting(true);
     setSubmitResult(null);
@@ -82,7 +82,7 @@ export default function FeedbackPage() {
   };
 
   const handleLookup = async () => {
-    if (!lookupEmail.trim()) return;
+    if (!lookupEmail.trim()) { return; }
 
     setLookupLoading(true);
     setLookupError("");
@@ -92,7 +92,7 @@ export default function FeedbackPage() {
       const res = await fetch(
         `/api/feedback?email=${encodeURIComponent(lookupEmail.trim())}`
       );
-      if (!res.ok) throw new Error("조회에 실패했습니다.");
+      if (!res.ok) { throw new Error("조회에 실패했습니다."); }
       const data = await res.json();
       setEntries(data.entries ?? []);
     } catch {
@@ -112,7 +112,7 @@ export default function FeedbackPage() {
   };
 
   const truncate = (text: string, max: number) => {
-    if (text.length <= max) return text;
+    if (text.length <= max) { return text; }
     return text.slice(0, max) + "...";
   };
 
@@ -234,7 +234,7 @@ export default function FeedbackPage() {
             onKeyDown={(e) => {
               if (e.key === "Enter") {
                 e.preventDefault();
-                handleLookup();
+                void handleLookup();
               }
             }}
             style={{ flex: 1 }}

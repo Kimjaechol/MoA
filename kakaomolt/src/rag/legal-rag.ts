@@ -369,8 +369,8 @@ export async function legalRAG(query: string): Promise<LegalRAGResult> {
   for (const doc of documents) {
     let score = 0;
     for (const word of queryWords) {
-      if (doc.title.includes(word)) score += 2;
-      if (doc.content.includes(word)) score += 1;
+      if (doc.title.includes(word)) { score += 2; }
+      if (doc.content.includes(word)) { score += 1; }
     }
     doc.relevanceScore = score;
   }

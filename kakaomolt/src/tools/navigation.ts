@@ -457,7 +457,7 @@ export async function naverDirections(
   destination: Location,
   mode: TransportMode = "driving",
 ): Promise<RouteResult> {
-  const config = getConfig();
+  const _config = getConfig();
 
   // Geocode if coordinates not provided
   let originCoords = origin.coordinates;

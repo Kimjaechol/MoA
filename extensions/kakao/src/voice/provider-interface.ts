@@ -346,7 +346,7 @@ export function getAudioConfig(provider: VoiceProviderType): {
     case "gemini":
       return GEMINI_AUDIO_CONFIG;
     default:
-      throw new Error(`Unknown provider: ${provider}`);
+      throw new Error(`Unknown provider: ${String(provider)}`);
   }
 }
 

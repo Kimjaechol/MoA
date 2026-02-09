@@ -358,38 +358,38 @@ function formatActionDetails(
 
   switch (action) {
     case "send_email":
-      if (details.to) { lines.push(`• 받는 사람: ${details.to}`); }
-      if (details.subject) { lines.push(`• 제목: ${details.subject}`); }
+      if (details.to) { lines.push(`• 받는 사람: ${String(details.to as string)}`); }
+      if (details.subject) { lines.push(`• 제목: ${String(details.subject as string)}`); }
       break;
 
     case "send_sms":
     case "send_kakao":
     case "send_message":
-      if (details.to) { lines.push(`• 받는 사람: ${details.to}`); }
-      if (details.preview) { lines.push(`• 내용 미리보기: ${String(details.preview).slice(0, 50)}...`); }
+      if (details.to) { lines.push(`• 받는 사람: ${String(details.to as string)}`); }
+      if (details.preview) { lines.push(`• 내용 미리보기: ${String(details.preview as string).slice(0, 50)}...`); }
       break;
 
     case "make_payment":
-      if (details.amount) { lines.push(`• 금액: ${details.amount}원`); }
-      if (details.recipient) { lines.push(`• 받는 곳: ${details.recipient}`); }
-      if (details.description) { lines.push(`• 설명: ${details.description}`); }
+      if (details.amount) { lines.push(`• 금액: ${String(details.amount as string)}원`); }
+      if (details.recipient) { lines.push(`• 받는 곳: ${String(details.recipient as string)}`); }
+      if (details.description) { lines.push(`• 설명: ${String(details.description as string)}`); }
       break;
 
     case "book_reservation":
-      if (details.place) { lines.push(`• 장소: ${details.place}`); }
-      if (details.date) { lines.push(`• 날짜: ${details.date}`); }
-      if (details.time) { lines.push(`• 시간: ${details.time}`); }
+      if (details.place) { lines.push(`• 장소: ${String(details.place as string)}`); }
+      if (details.date) { lines.push(`• 날짜: ${String(details.date as string)}`); }
+      if (details.time) { lines.push(`• 시간: ${String(details.time as string)}`); }
       break;
 
     case "execute_code":
-      if (details.language) { lines.push(`• 언어: ${details.language}`); }
-      if (details.preview) { lines.push(`• 코드 미리보기:\n\`\`\`\n${String(details.preview).slice(0, 100)}...\n\`\`\``); }
+      if (details.language) { lines.push(`• 언어: ${String(details.language as string)}`); }
+      if (details.preview) { lines.push(`• 코드 미리보기:\n\`\`\`\n${String(details.preview as string).slice(0, 100)}...\n\`\`\``); }
       break;
 
     default:
       for (const [key, value] of Object.entries(details)) {
         if (value !== undefined && value !== null && key !== "message") {
-          lines.push(`• ${key}: ${String(value).slice(0, 100)}`);
+          lines.push(`• ${key}: ${String(value as string).slice(0, 100)}`);
         }
       }
   }

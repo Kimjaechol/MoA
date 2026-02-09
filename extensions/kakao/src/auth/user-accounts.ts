@@ -85,11 +85,11 @@ function getStorePath(): string {
 }
 
 function loadStore(): Map<string, UserAccount> {
-  if (accountStore) return accountStore;
+  if (accountStore) { return accountStore; }
 
   accountStore = new Map();
   const filePath = getStorePath();
-  if (!existsSync(filePath)) return accountStore;
+  if (!existsSync(filePath)) { return accountStore; }
 
   try {
     const data = JSON.parse(readFileSync(filePath, "utf-8")) as Record<string, UserAccount>;
@@ -143,7 +143,7 @@ function validateUsername(username: string): string | null {
   if (trimmed.length > MAX_USERNAME_LENGTH) {
     return `아이디는 최대 ${MAX_USERNAME_LENGTH}자까지 가능합니다.`;
   }
-  if (!/^[a-zA-Z0-9가-힣_.\-]+$/.test(trimmed)) {
+  if (!/^[a-zA-Z0-9가-힣_.-]+$/.test(trimmed)) {
     return "아이디는 영문, 숫자, 한글, _, ., -만 사용 가능합니다.";
   }
   return null;
@@ -171,10 +171,10 @@ export function signup(
   const trimmedUsername = username.trim().toLowerCase();
 
   const usernameError = validateUsername(trimmedUsername);
-  if (usernameError) return { success: false, error: usernameError };
+  if (usernameError) { return { success: false, error: usernameError }; }
 
   const passwordError = validatePassword(password);
-  if (passwordError) return { success: false, error: passwordError };
+  if (passwordError) { return { success: false, error: passwordError }; }
 
   const store = loadStore();
 
@@ -282,7 +282,7 @@ export function login(
 export function verifyPassword(username: string, password: string): boolean {
   const store = loadStore();
   const account = store.get(username.trim().toLowerCase());
-  if (!account) return false;
+  if (!account) { return false; }
   return hashPassword(password) === account.passwordHash;
 }
 
@@ -314,7 +314,7 @@ export function findAccountByChannel(channelId: string, userId: string): UserAcc
 export function linkChannel(username: string, channelId: string, userId: string): boolean {
   const store = loadStore();
   const account = store.get(username.trim().toLowerCase());
-  if (!account) return false;
+  if (!account) { return false; }
 
   account.linkedChannels[channelId] = userId;
   account.updatedAt = Date.now();
@@ -352,12 +352,12 @@ export function getAccountDevices(username: string): DeviceInfo[] {
 export function removeAccountDevice(username: string, deviceName: string): boolean {
   const store = loadStore();
   const account = store.get(username.trim().toLowerCase());
-  if (!account) return false;
+  if (!account) { return false; }
 
   const idx = account.devices.findIndex(
     (d) => d.deviceName.toLowerCase() === deviceName.toLowerCase(),
   );
-  if (idx === -1) return false;
+  if (idx === -1) { return false; }
 
   account.devices.splice(idx, 1);
   account.updatedAt = Date.now();

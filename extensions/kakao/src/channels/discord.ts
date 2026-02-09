@@ -62,7 +62,7 @@ const DISCORD_API = "https://discord.com/api/v10";
 
 function getDiscordConfig(): { token: string; applicationId?: string } | null {
   const token = process.env.DISCORD_BOT_TOKEN;
-  if (!token) return null;
+  if (!token) { return null; }
   return {
     token,
     applicationId: process.env.DISCORD_APPLICATION_ID,
@@ -79,7 +79,7 @@ async function sendDiscordMessage(
   quickReplies?: string[],
 ): Promise<void> {
   const config = getDiscordConfig();
-  if (!config) return;
+  if (!config) { return; }
 
   // Discord message limit is 2000 chars
   const truncated = text.length > 1950 ? text.slice(0, 1947) + "..." : text;
@@ -152,7 +152,7 @@ async function sendDiscordMessage(
  */
 async function sendTypingIndicator(channelId: string): Promise<void> {
   const config = getDiscordConfig();
-  if (!config) return;
+  if (!config) { return; }
 
   await fetch(`${DISCORD_API}/channels/${channelId}/typing`, {
     method: "POST",
@@ -205,7 +205,7 @@ export async function startDiscordGateway(
     connectGateway(gatewayUrl, config.token, onMessage, logger);
     return true;
   } catch (err) {
-    logger.error(`[Discord] Gateway connection error: ${err}`);
+    logger.error(`[Discord] Gateway connection error: ${String(err)}`);
     return false;
   }
 }
@@ -306,7 +306,7 @@ function connectGateway(
   });
 
   ws.addEventListener("error", (err) => {
-    logger.error(`[Discord] Gateway error: ${err}`);
+    logger.error(`[Discord] Gateway error: ${err.type}`);
   });
 }
 
@@ -415,10 +415,10 @@ async function handleDiscordMessage(
   logger: { info: (msg: string) => void; error: (msg: string) => void },
 ): Promise<void> {
   // Skip bot messages (including ourselves)
-  if (message.author.bot) return;
+  if (message.author.bot) { return; }
 
   // Skip empty or system messages
-  if (!message.content?.trim() || message.type !== 0) return;
+  if (!message.content?.trim() || message.type !== 0) { return; }
 
   let text = message.content.trim();
 
@@ -427,7 +427,7 @@ async function handleDiscordMessage(
     const isMentioned = message.mentions?.some((u) => u.id === botUser?.id);
     const hasPrefix = text.toLowerCase().startsWith("!moa");
 
-    if (!isMentioned && !hasPrefix) return;
+    if (!isMentioned && !hasPrefix) { return; }
 
     // Strip mention or prefix
     if (isMentioned && botUser) {
@@ -438,7 +438,7 @@ async function handleDiscordMessage(
     }
 
     // Default to greeting if empty after stripping
-    if (!text) text = "안녕";
+    if (!text) { text = "안녕"; }
   }
 
   const displayName = message.author.global_name ?? message.author.username;

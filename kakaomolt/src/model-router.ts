@@ -14,7 +14,6 @@ import {
   resolveModel,
   getUserSettings,
   PROVIDERS,
-  FREE_MODELS,
 } from "./user-settings.js";
 import { getCredits } from "./billing.js";
 
@@ -385,7 +384,7 @@ async function callProvider(
     case "openrouter":
       return callOpenRouter(resolved.apiKey, resolved.model, messages, maxTokens);
     default:
-      throw new Error(`Unsupported provider: ${resolved.provider}`);
+      throw new Error(`Unsupported provider: ${String(resolved.provider)}`);
   }
 }
 
@@ -471,7 +470,7 @@ async function tryFallbackProviders(
 
   for (const fallback of freeFallbacks) {
     const apiKey = settings.apiKeys[fallback.provider] ?? getPlatformKey(fallback.provider);
-    if (!apiKey) continue;
+    if (!apiKey) { continue; }
 
     try {
       const response = await callProvider(
@@ -599,7 +598,7 @@ export function formatResponseWithInfo(result: RouterResult): string {
  * Get warning message when credits are low
  */
 export function getLowCreditWarning(credits: number, hasApiKey: boolean): string | null {
-  if (hasApiKey) return null;
+  if (hasApiKey) { return null; }
 
   if (credits <= 0) {
     return `⚠️ 크레딧이 모두 소진되었습니다.

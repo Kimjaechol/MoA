@@ -19,7 +19,6 @@ import {
   VoiceProvider,
   type VoiceProviderConfig,
   type VoiceSession,
-  type VoiceTool,
   type VoiceProviderType,
   type AudioConfig,
   GEMINI_AUDIO_CONFIG,
@@ -164,7 +163,7 @@ export class GeminiLiveProvider extends VoiceProvider {
     } catch (err) {
       this.updateStatus("error");
       const error = err instanceof Error ? err : new Error(String(err));
-      this.emit("session.error", error, this.session!);
+      this.emit("session.error", error, this.session);
       throw err;
     }
   }
@@ -175,23 +174,23 @@ export class GeminiLiveProvider extends VoiceProvider {
     return new Promise((resolve, reject) => {
       this.ws = new WebSocket(url);
 
-      this.ws.onopen = () => {
+      this.ws.addEventListener("open", () => {
         this.sendSetup();
         resolve();
-      };
+      });
 
-      this.ws.onerror = (event) => {
-        const error = new Error(`Gemini WebSocket error: ${event}`);
+      this.ws.addEventListener("error", (event) => {
+        const error = new Error(`Gemini WebSocket error: ${event.type}`);
         reject(error);
-      };
+      });
 
-      this.ws.onclose = (event) => {
+      this.ws.addEventListener("close", (event) => {
         this.handleClose(event.reason ?? "Connection closed");
-      };
+      });
 
-      this.ws.onmessage = (event) => {
+      this.ws.addEventListener("message", (event) => {
         this.handleMessage(event.data);
-      };
+      });
     });
   }
 
@@ -395,7 +394,7 @@ export class GeminiLiveProvider extends VoiceProvider {
 
   commitAudio(): void {
     // Gemini uses VAD, so committing is done by sending end_of_turn
-    if (!this.ws || !this.isSetupComplete) return;
+    if (!this.ws || !this.isSetupComplete) { return; }
 
     const message: GeminiMessage = {
       clientContent: {
@@ -408,7 +407,7 @@ export class GeminiLiveProvider extends VoiceProvider {
   }
 
   sendText(text: string): void {
-    if (!this.ws || !this.isSetupComplete) return;
+    if (!this.ws || !this.isSetupComplete) { return; }
 
     const message: GeminiMessage = {
       clientContent: {
@@ -446,7 +445,7 @@ export class GeminiLiveProvider extends VoiceProvider {
   }
 
   sendToolResult(callId: string, result: unknown): void {
-    if (!this.ws || !this.isSetupComplete) return;
+    if (!this.ws || !this.isSetupComplete) { return; }
 
     const message: GeminiMessage = {
       toolResponse: {

@@ -52,11 +52,11 @@ function getStorePath(): string {
 }
 
 function loadStore(): Map<string, UserSecretEntry> {
-  if (secretStore) return secretStore;
+  if (secretStore) { return secretStore; }
 
   secretStore = new Map();
   const filePath = getStorePath();
-  if (!existsSync(filePath)) return secretStore;
+  if (!existsSync(filePath)) { return secretStore; }
 
   try {
     const data = JSON.parse(readFileSync(filePath, "utf-8")) as Record<string, UserSecretEntry>;
@@ -170,7 +170,7 @@ export function verifyUserSecret(
 ): boolean {
   const store = loadStore();
   const entry = store.get(makeUserKey(userId, channelId));
-  if (!entry) return false;
+  if (!entry) { return false; }
 
   const attemptHash = hashSecret(attempt.trim());
   return attemptHash === entry.hash;

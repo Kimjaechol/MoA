@@ -221,7 +221,7 @@ function getVaultMetaPath(): string {
  */
 export function loadVaultMeta(): VaultMeta | null {
   const path = getVaultMetaPath();
-  if (!existsSync(path)) return null;
+  if (!existsSync(path)) { return null; }
   try {
     return JSON.parse(readFileSync(path, "utf-8")) as VaultMeta;
   } catch {
@@ -235,7 +235,7 @@ export function loadVaultMeta(): VaultMeta | null {
  */
 export function initializeVault(retentionPolicy?: Partial<RetentionPolicy>): VaultMeta {
   const existing = loadVaultMeta();
-  if (existing) return existing;
+  if (existing) { return existing; }
 
   const meta: VaultMeta = {
     salt: randomBytes(32).toString("hex"),
@@ -465,7 +465,7 @@ export function generateRecoveryKey(): RecoveryKeyResult {
  */
 export function verifyRecoveryKey(words: string[]): boolean {
   const meta = loadVaultMeta();
-  if (!meta?.recoveryKeyHash) return false;
+  if (!meta?.recoveryKeyHash) { return false; }
 
   const hash = createHash("sha256").update(words.join(" ")).digest("hex");
   return hash === meta.recoveryKeyHash;
@@ -504,7 +504,7 @@ export function createRecoveryBackup(
  */
 export function enforceRetentionPolicy(): { deleted: string[]; kept: number } {
   const meta = loadVaultMeta();
-  if (!meta) return { deleted: [], kept: 0 };
+  if (!meta) { return { deleted: [], kept: 0 }; }
 
   const policy = meta.retentionPolicy;
   const now = Date.now();
@@ -534,7 +534,7 @@ export function enforceRetentionPolicy(): { deleted: string[]; kept: number } {
 }
 
 function cleanDirectory(dir: string, cutoffMs: number, deleted: string[]): number {
-  if (!existsSync(dir)) return 0;
+  if (!existsSync(dir)) { return 0; }
 
   const files = readdirSync(dir).filter((f) => f.endsWith(".vault"));
   let kept = 0;
@@ -636,7 +636,7 @@ export function registerDeviceKey(deviceId: string, publicKey: string): void {
  */
 export function getDeviceKey(deviceId: string): DeviceKeyRegistration | null {
   const filePath = join(getSubDir("device-keys"), `${deviceId}.json`);
-  if (!existsSync(filePath)) return null;
+  if (!existsSync(filePath)) { return null; }
   try {
     return JSON.parse(readFileSync(filePath, "utf-8")) as DeviceKeyRegistration;
   } catch {
@@ -680,7 +680,7 @@ export function listBackups(): BackupInfo[] {
 
   for (const type of ["daily", "weekly", "monthly", "manual"] as const) {
     const dir = getSubDir(type);
-    if (!existsSync(dir)) continue;
+    if (!existsSync(dir)) { continue; }
 
     const files = readdirSync(dir).filter((f) => f.endsWith(".vault"));
     for (const file of files) {
@@ -701,7 +701,7 @@ export function listBackups(): BackupInfo[] {
     }
   }
 
-  return backups.sort((a, b) => b.timestamp - a.timestamp);
+  return backups.toSorted((a, b) => b.timestamp - a.timestamp);
 }
 
 /**
@@ -721,7 +721,7 @@ export function getBackupStats(): {
 
   for (const b of backups) {
     totalSize += b.size;
-    if (!byType[b.type]) byType[b.type] = { count: 0, size: 0 };
+    if (!byType[b.type]) { byType[b.type] = { count: 0, size: 0 }; }
     byType[b.type].count++;
     byType[b.type].size += b.size;
   }

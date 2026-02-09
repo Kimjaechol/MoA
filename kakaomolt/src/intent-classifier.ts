@@ -221,7 +221,7 @@ const EXTERNAL_SERVICES: Record<string, { url: string; label: string }> = {
  * 메시지 의도 분류
  */
 export function classifyIntent(message: string): ClassifiedIntent {
-  const normalizedMessage = message.trim().toLowerCase();
+  const _normalizedMessage = message.trim().toLowerCase();
 
   // 패턴 매칭
   let bestMatch: ClassifiedIntent | null = null;

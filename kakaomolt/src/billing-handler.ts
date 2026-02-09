@@ -34,7 +34,6 @@ import {
   getApiKeyStatusMessage,
   setModelMode,
   PROVIDERS,
-  type LLMProvider,
 } from "./user-settings.js";
 import { routeChat, formatResponseWithInfo, getLowCreditWarning } from "./model-router.js";
 

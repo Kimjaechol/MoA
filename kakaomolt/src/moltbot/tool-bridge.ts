@@ -446,7 +446,7 @@ Please execute this tool and return the result.`;
    * Check if gateway is connected
    */
   async isGatewayConnected(): Promise<boolean> {
-    if (!this.gateway) return false;
+    if (!this.gateway) { return false; }
     const status = await this.gateway.checkStatus();
     return status.online;
   }
@@ -494,7 +494,7 @@ export function formatToolList(category?: ToolCategory): string {
 
   const grouped = tools.reduce(
     (acc, tool) => {
-      if (!acc[tool.category]) acc[tool.category] = [];
+      if (!acc[tool.category]) { acc[tool.category] = []; }
       acc[tool.category].push(tool);
       return acc;
     },

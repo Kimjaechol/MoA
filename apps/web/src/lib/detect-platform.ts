@@ -2,11 +2,11 @@ export type Platform = "windows" | "macos" | "linux" | "android" | "ios" | null;
 
 export function detectPlatform(ua: string): Platform {
   const lower = ua.toLowerCase();
-  if (lower.includes("iphone") || lower.includes("ipad")) return "ios";
-  if (lower.includes("android")) return "android";
-  if (lower.includes("win")) return "windows";
-  if (lower.includes("mac")) return "macos";
-  if (lower.includes("linux") && !lower.includes("android")) return "linux";
+  if (lower.includes("iphone") || lower.includes("ipad")) { return "ios"; }
+  if (lower.includes("android")) { return "android"; }
+  if (lower.includes("win")) { return "windows"; }
+  if (lower.includes("mac")) { return "macos"; }
+  if (lower.includes("linux") && !lower.includes("android")) { return "linux"; }
   return null;
 }
 

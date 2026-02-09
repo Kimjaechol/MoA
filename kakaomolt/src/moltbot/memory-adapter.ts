@@ -11,7 +11,7 @@
  */
 
 import { existsSync, readFileSync, readdirSync, statSync, writeFileSync, mkdirSync } from "node:fs";
-import { join, dirname } from "node:path";
+import { join } from "node:path";
 import { homedir } from "node:os";
 
 // OpenClaw paths
@@ -92,7 +92,7 @@ export function isOpenClawInstalled(): boolean {
  * List available agent IDs
  */
 export function listAgentIds(): string[] {
-  if (!existsSync(AGENTS_DIR)) return [];
+  if (!existsSync(AGENTS_DIR)) { return []; }
 
   try {
     return readdirSync(AGENTS_DIR, { withFileTypes: true })
@@ -246,7 +246,7 @@ export function readMoltbotSessions(agentId: string): MoltbotSession[] {
           // Session header
           if (record.type === "session") {
             sessionHeader = record;
-            if (record.id) sessionId = record.id;
+            if (record.id) { sessionId = record.id; }
             continue;
           }
 
@@ -560,7 +560,7 @@ export async function getMoltbotMemoryStats(agentId: string): Promise<{
       for (const file of files) {
         const content = readFileSync(join(sessionsDir, file), "utf-8");
         const messageCount = content.split("\n").filter((line) => {
-          if (!line.trim()) return false;
+          if (!line.trim()) { return false; }
           try {
             const record = JSON.parse(line);
             return record.type === "message";

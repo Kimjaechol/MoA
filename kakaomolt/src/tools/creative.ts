@@ -578,7 +578,7 @@ export function formatCreativeMessage(result: CreativeResult): string {
   if (result.type === 'music') {
     message += `🎧 **음악 듣기**: ${result.url}\n`;
     if (result.metadata?.duration) {
-      message += `⏱️ 재생시간: ${result.metadata.duration}초\n`;
+      message += `⏱️ 재생시간: ${Number(result.metadata.duration)}초\n`;
     }
   } else {
     // 이미지 URL (카카오톡에서는 이미지 카드로 표시)

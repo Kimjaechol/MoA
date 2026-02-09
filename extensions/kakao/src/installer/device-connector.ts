@@ -324,7 +324,7 @@ export class DeviceConnector {
     };
 
     // 즉시 1회 실행 후 주기적 실행
-    poll();
+    void poll();
     this.pollTimer = setInterval(poll, this.config.pollInterval);
   }
 
@@ -370,7 +370,7 @@ export class DeviceConnector {
       }
     };
 
-    sendHeartbeat();
+    void sendHeartbeat();
     this.heartbeatTimer = setInterval(sendHeartbeat, this.config.heartbeatInterval);
   }
 

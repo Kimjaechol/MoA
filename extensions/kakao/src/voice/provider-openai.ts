@@ -137,7 +137,7 @@ export class OpenAIRealtimeProvider extends VoiceProvider {
     } catch (err) {
       this.updateStatus("error");
       const error = err instanceof Error ? err : new Error(String(err));
-      this.emit("session.error", error, this.session!);
+      this.emit("session.error", error, this.session);
       throw err;
     }
   }
@@ -177,7 +177,7 @@ export class OpenAIRealtimeProvider extends VoiceProvider {
       });
 
       this.ws.addEventListener("error", (event) => {
-        const error = new Error(`OpenAI WebSocket error: ${event}`);
+        const error = new Error(`OpenAI WebSocket error: ${event.type}`);
         reject(error);
       });
 

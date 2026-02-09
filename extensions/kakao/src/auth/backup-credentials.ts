@@ -57,11 +57,11 @@ function getStorePath(): string {
 }
 
 function loadStore(): Map<string, BackupCredential> {
-  if (credentialStore) return credentialStore;
+  if (credentialStore) { return credentialStore; }
 
   credentialStore = new Map();
   const filePath = getStorePath();
-  if (!existsSync(filePath)) return credentialStore;
+  if (!existsSync(filePath)) { return credentialStore; }
 
   try {
     const data = JSON.parse(readFileSync(filePath, "utf-8")) as Record<string, BackupCredential>;
@@ -148,7 +148,7 @@ export function setBackupPassword(
 export function verifyBackupPassword(username: string, backupPassword: string): boolean {
   const store = loadStore();
   const cred = store.get(username.trim().toLowerCase());
-  if (!cred) return false;
+  if (!cred) { return false; }
   return hashBackupPassword(backupPassword) === cred.backupPasswordHash;
 }
 

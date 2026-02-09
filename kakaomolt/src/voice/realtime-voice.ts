@@ -225,28 +225,28 @@ export class RealtimeVoiceClient extends EventEmitter {
     }
 
     return new Promise((resolve, reject) => {
-      if (!this.ws) return reject(new Error("WebSocket not initialized"));
+      if (!this.ws) { return reject(new Error("WebSocket not initialized")); }
 
-      this.ws.onopen = () => {
+      this.ws.addEventListener("open", () => {
         this.session!.status = "connected";
         this.emit("session.connected", this.session);
         this.sendSessionConfig();
         resolve();
-      };
+      });
 
-      this.ws.onerror = (event) => {
-        const error = new Error(`WebSocket error: ${event}`);
+      this.ws.addEventListener("error", (event) => {
+        const error = new Error(`WebSocket error: ${event.type}`);
         this.emit("session.error", error);
         reject(error);
-      };
+      });
 
-      this.ws.onclose = (event) => {
+      this.ws.addEventListener("close", (event) => {
         this.handleClose(event.reason ?? "Connection closed");
-      };
+      });
 
-      this.ws.onmessage = (event) => {
+      this.ws.addEventListener("message", (event) => {
         this.handleMessage(event.data);
-      };
+      });
     });
   }
 
@@ -456,7 +456,7 @@ export class RealtimeVoiceClient extends EventEmitter {
    */
   getAverageLatency(): number {
     const latencies = this.session?.audioStats.latencyMs ?? [];
-    if (latencies.length === 0) return 0;
+    if (latencies.length === 0) { return 0; }
     return latencies.reduce((a, b) => a + b, 0) / latencies.length;
   }
 }

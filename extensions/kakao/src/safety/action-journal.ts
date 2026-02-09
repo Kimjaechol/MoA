@@ -205,7 +205,7 @@ export function updateActionStatus(
  */
 export function getRecentActions(limit: number = 20): ActionEntry[] {
   const filePath = join(getJournalDir(), "actions.jsonl");
-  if (!existsSync(filePath)) return [];
+  if (!existsSync(filePath)) { return []; }
 
   const lines = readFileSync(filePath, "utf-8").trim().split("\n").filter(Boolean);
   const actions = new Map<string, ActionEntry>();
@@ -230,7 +230,7 @@ export function getRecentActions(limit: number = 20): ActionEntry[] {
   }
 
   return Array.from(actions.values())
-    .sort((a, b) => b.createdAt - a.createdAt)
+    .toSorted((a, b) => b.createdAt - a.createdAt)
     .slice(0, limit);
 }
 
@@ -261,7 +261,7 @@ export function getUndoableActions(limit: number = 10): ActionEntry[] {
 
 function loadCheckpoints(): Checkpoint[] {
   const filePath = join(getJournalDir(), "checkpoints.json");
-  if (!existsSync(filePath)) return [];
+  if (!existsSync(filePath)) { return []; }
   try {
     return JSON.parse(readFileSync(filePath, "utf-8")) as Checkpoint[];
   } catch {
@@ -325,7 +325,7 @@ export function createCheckpoint(params: {
  */
 export function getCheckpoints(limit: number = 20): Checkpoint[] {
   return loadCheckpoints()
-    .sort((a, b) => b.createdAt - a.createdAt)
+    .toSorted((a, b) => b.createdAt - a.createdAt)
     .slice(0, limit);
 }
 
@@ -345,10 +345,10 @@ export function getCheckpointById(checkpointId: string): Checkpoint | null {
  */
 export function getCurrentMemoryVersion(): number {
   const dir = getMemoryVersionDir();
-  if (!existsSync(dir)) return 0;
+  if (!existsSync(dir)) { return 0; }
 
   const files = readdirSync(dir).filter((f) => f.startsWith("v") && f.endsWith(".json"));
-  if (files.length === 0) return 0;
+  if (files.length === 0) { return 0; }
 
   const versions = files.map((f) => parseInt(f.slice(1, -5), 10)).filter((n) => !isNaN(n));
   return Math.max(0, ...versions);
@@ -385,7 +385,7 @@ export function saveMemoryVersion(params: {
  */
 export function getMemoryVersion(version: number): MemorySnapshot | null {
   const filePath = join(getMemoryVersionDir(), `v${String(version).padStart(3, "0")}.json`);
-  if (!existsSync(filePath)) return null;
+  if (!existsSync(filePath)) { return null; }
   try {
     return JSON.parse(readFileSync(filePath, "utf-8")) as MemorySnapshot;
   } catch {
@@ -398,12 +398,12 @@ export function getMemoryVersion(version: number): MemorySnapshot | null {
  */
 export function getMemoryHistory(limit: number = 10): MemorySnapshot[] {
   const dir = getMemoryVersionDir();
-  if (!existsSync(dir)) return [];
+  if (!existsSync(dir)) { return []; }
 
   const files = readdirSync(dir)
     .filter((f) => f.startsWith("v") && f.endsWith(".json"))
-    .sort()
-    .reverse()
+    .toSorted()
+    .toReversed()
     .slice(0, limit);
 
   const snapshots: MemorySnapshot[] = [];
@@ -423,7 +423,7 @@ export function getMemoryHistory(limit: number = 10): MemorySnapshot[] {
  */
 export function restoreMemoryToVersion(version: number): MemorySnapshot | null {
   const target = getMemoryVersion(version);
-  if (!target) return null;
+  if (!target) { return null; }
 
   // Save current as a new version marked as "rollback"
   const current = getMemoryVersion(getCurrentMemoryVersion());

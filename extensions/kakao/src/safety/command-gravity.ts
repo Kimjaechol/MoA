@@ -39,9 +39,7 @@
 
 import {
   logAction,
-  updateActionStatus,
   createCheckpoint,
-  type ActionEntry,
 } from "./action-journal.js";
 
 // ============================================
@@ -338,10 +336,10 @@ export function assessCommandGravity(command: string): GravityAssessment {
 }
 
 function getGravityLevel(score: number): GravityLevel {
-  if (score <= 1) return "feather";
-  if (score <= 3) return "light";
-  if (score <= 6) return "medium";
-  if (score <= 8) return "heavy";
+  if (score <= 1) { return "feather"; }
+  if (score <= 3) { return "light"; }
+  if (score <= 6) { return "medium"; }
+  if (score <= 8) { return "heavy"; }
   return "critical";
 }
 
@@ -371,7 +369,7 @@ function getRequiredAction(level: GravityLevel): GravityAssessment["action"] {
 }
 
 function getWarningMessage(level: GravityLevel, risks: string[], score: number): string | undefined {
-  if (level === "feather" || level === "light") return undefined;
+  if (level === "feather" || level === "light") { return undefined; }
 
   const riskList = risks.slice(0, 3).join(", ");
 
@@ -388,8 +386,8 @@ function getWarningMessage(level: GravityLevel, risks: string[], score: number):
 }
 
 function getDelaySeconds(score: number): number | undefined {
-  if (score <= 6) return undefined;
-  if (score <= 8) return 30; // 30초 대기
+  if (score <= 6) { return undefined; }
+  if (score <= 8) { return 30; } // 30초 대기
   return 180; // 3분 대기 (치명적)
 }
 
@@ -453,7 +451,7 @@ export function queueCommand(params: {
  */
 export function cancelPendingCommand(commandId: string): boolean {
   const pending = pendingCommands.get(commandId);
-  if (!pending || pending.cancelled) return false;
+  if (!pending || pending.cancelled) { return false; }
 
   pending.cancelled = true;
   pendingCommands.delete(commandId);
@@ -474,7 +472,7 @@ export function cancelPendingCommand(commandId: string): boolean {
 export function cancelAllPending(): number {
   let count = 0;
   for (const [id] of pendingCommands) {
-    if (cancelPendingCommand(id)) count++;
+    if (cancelPendingCommand(id)) { count++; }
   }
   return count;
 }

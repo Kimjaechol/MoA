@@ -145,7 +145,7 @@ export function createVoiceProvider(
     case "gemini":
       return createGeminiProvider(config);
     default:
-      throw new Error(`Unknown provider: ${provider}`);
+      throw new Error(`Unknown provider: ${String(provider)}`);
   }
 }
 
@@ -155,8 +155,8 @@ export function createVoiceProvider(
  */
 export function getBestAvailableProvider(): VoiceProviderType | null {
   // Prefer Gemini (cheaper)
-  if (isProviderAvailable("gemini")) return "gemini";
-  if (isProviderAvailable("openai")) return "openai";
+  if (isProviderAvailable("gemini")) { return "gemini"; }
+  if (isProviderAvailable("openai")) { return "openai"; }
   return null;
 }
 

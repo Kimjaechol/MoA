@@ -13,7 +13,6 @@ import { getSportsSchedule, type SportsResult } from './sports.js';
 import {
   getPublicHolidays,
   getAirQuality,
-  getCovidStats,
   type PublicDataResult,
 } from './public-data.js';
 import {

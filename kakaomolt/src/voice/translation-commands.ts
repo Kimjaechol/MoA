@@ -14,8 +14,6 @@ import {
   formatPopularPairs,
   SUPPORTED_LANGUAGES,
   type LanguageCode,
-  type TranslationResult,
-  type InterpreterConfig,
 } from "./realtime-interpreter.js";
 
 // ============================================
@@ -80,10 +78,9 @@ const LANGUAGE_PAIR_SHORTCUTS: Record<string, [LanguageCode, LanguageCode]> = {
  */
 export function isTranslationCommand(message: string): boolean {
   const trimmed = message.trim();
-  const lower = trimmed.toLowerCase();
 
   // Slash commands
-  if (/^[/\/](번역|translate|통역|interpret|언어|languages?)/i.test(trimmed)) {
+  if (/^[/](번역|translate|통역|interpret|언어|languages?)/i.test(trimmed)) {
     return true;
   }
 
@@ -103,7 +100,7 @@ export function isTranslationCommand(message: string): boolean {
   ];
 
   for (const pattern of translationVerbs) {
-    if (pattern.test(trimmed)) return true;
+    if (pattern.test(trimmed)) { return true; }
   }
 
   // Interpretation verb patterns
@@ -120,12 +117,12 @@ export function isTranslationCommand(message: string): boolean {
   ];
 
   for (const pattern of interpretVerbs) {
-    if (pattern.test(trimmed)) return true;
+    if (pattern.test(trimmed)) { return true; }
   }
 
   // Language pair shortcuts (한영, 영한, etc.)
   for (const shortcut of Object.keys(LANGUAGE_PAIR_SHORTCUTS)) {
-    if (trimmed.includes(shortcut)) return true;
+    if (trimmed.includes(shortcut)) { return true; }
   }
 
   // Language list patterns
@@ -135,11 +132,11 @@ export function isTranslationCommand(message: string): boolean {
   ];
 
   for (const pattern of langListPatterns) {
-    if (pattern.test(trimmed)) return true;
+    if (pattern.test(trimmed)) { return true; }
   }
 
   // 영작, 일작, etc. (writing in language)
-  if (/^(영|일|중|불|독|서)작/.test(trimmed)) return true;
+  if (/^(영|일|중|불|독|서)작/.test(trimmed)) { return true; }
 
   return false;
 }
@@ -149,13 +146,12 @@ export function isTranslationCommand(message: string): boolean {
  */
 export function parseTranslationCommand(message: string): TranslationCommand {
   const trimmed = message.trim();
-  const lower = trimmed.toLowerCase();
 
   // ============================================
   // Help Commands
   // ============================================
   const helpPatterns = [
-    /^[/\/]?(번역|통역)\s*(도움말|도움|헬프|help|사용법|사용\s*방법|어떻게)/i,
+    /^[/]?(번역|통역)\s*(도움말|도움|헬프|help|사용법|사용\s*방법|어떻게)/i,
     /^(번역|통역)\s*(어떻게|뭐야|뭐지|뭔가요)/i,
   ];
   for (const pattern of helpPatterns) {
@@ -168,7 +164,7 @@ export function parseTranslationCommand(message: string): TranslationCommand {
   // Language List Commands
   // ============================================
   const langListPatterns = [
-    /^[/\/]?(언어|languages?|언어\s*목록|지원\s*언어|언어\s*리스트)$/i,
+    /^[/]?(언어|languages?|언어\s*목록|지원\s*언어|언어\s*리스트)$/i,
     /^(어떤|무슨|사용\s*가능한)\s*언어/i,
     /^언어\s*(종류|목록|리스트)/i,
     /^지원.*언어.*뭐/i,
@@ -183,8 +179,8 @@ export function parseTranslationCommand(message: string): TranslationCommand {
   // Stop Interpretation Commands
   // ============================================
   const stopPatterns = [
-    /^[/\/]?(통역\s*(종료|끝|중지|멈춰|스탑|stop|그만|해제|끄기))/i,
-    /^[/\/]?(통역\s*(꺼|꺼줘|꺼주세요))/i,
+    /^[/]?(통역\s*(종료|끝|중지|멈춰|스탑|stop|그만|해제|끄기))/i,
+    /^[/]?(통역\s*(꺼|꺼줘|꺼주세요))/i,
     /^(통역\s*(그만|멈춰|중단))/i,
     /^(interpret\s*stop|stop\s*interpret)/i,
   ];
@@ -200,7 +196,7 @@ export function parseTranslationCommand(message: string): TranslationCommand {
   // "한영 통역", "영한통역 시작", "한일 통역해줘" etc.
   for (const [shortcut, [src, tgt]] of Object.entries(LANGUAGE_PAIR_SHORTCUTS)) {
     const pairInterpretPatterns = [
-      new RegExp(`^[/\\/]?${shortcut}\\s*(통역|interpret)`, "i"),
+      new RegExp(`^[/]?${shortcut}\\s*(통역|interpret)`, "i"),
       new RegExp(`^${shortcut}\\s*통역\\s*(해|해줘|해주세요|시작|켜)?`, "i"),
     ];
     for (const pattern of pairInterpretPatterns) {
@@ -222,7 +218,7 @@ export function parseTranslationCommand(message: string): TranslationCommand {
 
   // /통역 한국어 영어 or /통역 ko en [양방향]
   const interpretWithLangsMatch = trimmed.match(
-    /^[/\/]?(통역|interpret|실시간\s*통역|동시\s*통역|라이브\s*통역)\s+(\S+)\s+(\S+)(?:\s+(양방향|bidirectional|bi|쌍방향))?$/i,
+    /^[/]?(통역|interpret|실시간\s*통역|동시\s*통역|라이브\s*통역)\s+(\S+)\s+(\S+)(?:\s+(양방향|bidirectional|bi|쌍방향))?$/i,
   );
   if (interpretWithLangsMatch) {
     const srcLang = parseLanguageCode(interpretWithLangsMatch[2]);
@@ -240,7 +236,7 @@ export function parseTranslationCommand(message: string): TranslationCommand {
 
   // Various interpretation start patterns (default to Korean ↔ English)
   const simpleInterpretPatterns = [
-    /^[/\/]?(통역|interpret)$/i,
+    /^[/]?(통역|interpret)$/i,
     /^(통역\s*(해|해줘|해주세요|해줄래|시작|켜|켜줘|켜주세요))$/i,
     /^(통역\s*좀\s*(해|해줘|해주세요))$/i,
     /^(통역\s*부탁\s*(해|해요|드려요|합니다)?)$/i,
@@ -287,7 +283,7 @@ export function parseTranslationCommand(message: string): TranslationCommand {
 
   // /번역 영어 [text] or /번역 ko->en [text]
   const translateWithLangMatch = trimmed.match(
-    /^[/\/]?(번역|translate)\s+(?:(\S+)\s*(?:->|→|에서|to|부터)\s*)?(\S+)\s+(.+)$/i,
+    /^[/]?(번역|translate)\s+(?:(\S+)\s*(?:->|→|에서|to|부터)\s*)?(\S+)\s+(.+)$/i,
   );
   if (translateWithLangMatch) {
     const srcInput = translateWithLangMatch[2];
@@ -327,7 +323,7 @@ export function parseTranslationCommand(message: string): TranslationCommand {
   }
 
   // Simple /번역 [text] (auto-detect)
-  const simpleTranslateMatch = trimmed.match(/^[/\/]?(번역|translate)\s+(.+)$/i);
+  const simpleTranslateMatch = trimmed.match(/^[/]?(번역|translate)\s+(.+)$/i);
   if (simpleTranslateMatch) {
     const text = simpleTranslateMatch[2];
     const hasKorean = /[\uAC00-\uD7AF]/.test(text);
@@ -617,7 +613,7 @@ ${modeText}
 /**
  * Handle stop interpretation
  */
-function handleStopInterpretation(userId: string): TranslationCommandResult {
+function handleStopInterpretation(_userId: string): TranslationCommandResult {
   // Note: Actual session termination would be done by the voice handler
   return {
     success: true,

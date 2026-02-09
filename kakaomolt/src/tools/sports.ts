@@ -252,8 +252,8 @@ async function fetchFromESPN(
 
         return {
           id: event.id,
-          sport: endpoint!.sport,
-          league: league || endpoint!.league.toUpperCase(),
+          sport: endpoint.sport,
+          league: league || endpoint.league.toUpperCase(),
           homeTeam: homeTeam?.team.displayName || '',
           awayTeam: awayTeam?.team.displayName || '',
           startTime: event.date,

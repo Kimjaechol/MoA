@@ -453,7 +453,7 @@ export async function setAutoFallback(
  */
 export function isValidKeyFormat(provider: LLMProvider, apiKey: string): boolean {
   const providerInfo = PROVIDERS[provider];
-  if (!providerInfo) return false;
+  if (!providerInfo) { return false; }
 
   // Special case for Together AI (hex string)
   if (provider === "together") {
@@ -467,12 +467,12 @@ export function isValidKeyFormat(provider: LLMProvider, apiKey: string): boolean
  * Detect provider from API key
  */
 export function detectProviderFromKey(apiKey: string): LLMProvider | null {
-  if (apiKey.startsWith("sk-ant-")) return "anthropic";
-  if (apiKey.startsWith("AIza")) return "google";
-  if (apiKey.startsWith("gsk_")) return "groq";
-  if (apiKey.startsWith("sk-or-")) return "openrouter";
-  if (/^[a-f0-9]{64}$/i.test(apiKey)) return "together";
-  if (apiKey.startsWith("sk-")) return "openai";
+  if (apiKey.startsWith("sk-ant-")) { return "anthropic"; }
+  if (apiKey.startsWith("AIza")) { return "google"; }
+  if (apiKey.startsWith("gsk_")) { return "groq"; }
+  if (apiKey.startsWith("sk-or-")) { return "openrouter"; }
+  if (/^[a-f0-9]{64}$/i.test(apiKey)) { return "together"; }
+  if (apiKey.startsWith("sk-")) { return "openai"; }
   return null;
 }
 
@@ -558,7 +558,7 @@ export async function validateApiKey(
       default:
         return { valid: false, error: "지원하지 않는 프로바이더입니다." };
     }
-  } catch (err) {
+  } catch {
     return { valid: false, error: "API 키 검증 중 오류가 발생했습니다." };
   }
 }

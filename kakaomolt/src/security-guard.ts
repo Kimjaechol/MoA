@@ -593,7 +593,7 @@ export function recordFailedAttempt(kakaoUserId: string, deviceId?: string): voi
     // 5회 실패 시 세션 잠금
     if (session.failedAttempts >= 5) {
       session.isLocked = true;
-      logSecurityEvent(kakaoUserId, "session_locked", {
+      void logSecurityEvent(kakaoUserId, "session_locked", {
         reason: "Too many failed attempts",
         attempts: session.failedAttempts,
       });
@@ -645,7 +645,7 @@ export function checkRateLimit(
   const resetIn = windowMs - (now.getTime() - entry.windowStart.getTime());
 
   if (entry.count > limit) {
-    logSecurityEvent(kakaoUserId, "rate_limit_exceeded", {
+    void logSecurityEvent(kakaoUserId, "rate_limit_exceeded", {
       count: entry.count,
       limit,
     });

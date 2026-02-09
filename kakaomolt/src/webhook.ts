@@ -427,29 +427,29 @@ function parseMoltbotCommand(message: string): MoltbotCommand {
   }
 
   // Tool list command: /도구, /도구목록, /tools
-  if (/^[/\/](도구|도구목록|tools?)(\s|$)/i.test(trimmed)) {
+  if (/^[//](도구|도구목록|tools?)(\s|$)/i.test(trimmed)) {
     const args = trimmed.split(/\s+/).slice(1);
     return { isCommand: true, type: "tools", args };
   }
 
   // Channel list command: /채널, /채널목록, /channels
-  if (/^[/\/](채널|채널목록|channels?)(\s|$)/i.test(trimmed)) {
+  if (/^[//](채널|채널목록|channels?)(\s|$)/i.test(trimmed)) {
     return { isCommand: true, type: "channels" };
   }
 
   // Status command: /상태, /status
-  if (/^[/\/](상태|status)$/i.test(trimmed)) {
+  if (/^[//](상태|status)$/i.test(trimmed)) {
     return { isCommand: true, type: "status" };
   }
 
   // Memory search command: /기억, /memory
-  if (/^[/\/](기억|memory)\s+(.+)$/i.test(trimmed)) {
-    const match = trimmed.match(/^[/\/](기억|memory)\s+(.+)$/i);
+  if (/^[//](기억|memory)\s+(.+)$/i.test(trimmed)) {
+    const match = trimmed.match(/^[//](기억|memory)\s+(.+)$/i);
     return { isCommand: true, type: "memory", args: match ? [match[2]] : [] };
   }
 
   // Help command: /도움말, /help
-  if (/^[/\/](도움말|help)$/i.test(trimmed)) {
+  if (/^[//](도움말|help)$/i.test(trimmed)) {
     return { isCommand: true, type: "help" };
   }
 

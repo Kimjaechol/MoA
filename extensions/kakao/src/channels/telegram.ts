@@ -77,7 +77,7 @@ async function telegramApiCall(
   body: Record<string, unknown>,
 ): Promise<{ ok: boolean; result?: unknown; description?: string }> {
   const token = getBotToken();
-  if (!token) throw new Error("TELEGRAM_BOT_TOKEN not set");
+  if (!token) { throw new Error("TELEGRAM_BOT_TOKEN not set"); }
 
   const response = await fetch(`${TELEGRAM_API}/bot${token}/${method}`, {
     method: "POST",
@@ -149,8 +149,8 @@ async function sendTypingAction(chatId: number): Promise<void> {
  */
 function buildInlineKeyboard(
   buttons?: Array<{ label: string; url: string }>,
-): unknown | undefined {
-  if (!buttons?.length) return undefined;
+): unknown {
+  if (!buttons?.length) { return undefined; }
 
   return {
     inline_keyboard: buttons.map((btn) => [
@@ -164,8 +164,8 @@ function buildInlineKeyboard(
  */
 function buildReplyKeyboard(
   quickReplies?: string[],
-): unknown | undefined {
-  if (!quickReplies?.length) return undefined;
+): unknown {
+  if (!quickReplies?.length) { return undefined; }
 
   // Arrange in rows of 2-3 buttons
   const rows: Array<Array<{ text: string }>> = [];
@@ -221,7 +221,7 @@ export async function registerTelegramWebhook(webhookUrl: string): Promise<boole
  */
 export async function getTelegramBotInfo(): Promise<{ username: string; name: string } | null> {
   const token = getBotToken();
-  if (!token) return null;
+  if (!token) { return null; }
 
   try {
     const result = await telegramApiCall("getMe", {});
@@ -281,7 +281,7 @@ export function handleTelegramRequest(
 
     // Process message asynchronously
     processTelegramUpdate(body, onMessage, logger).catch((err) => {
-      logger.error(`[Telegram] Update processing error: ${err}`);
+      logger.error(`[Telegram] Update processing error: ${String(err)}`);
     });
   });
 
@@ -412,7 +412,7 @@ async function handleTextMessage(
       replyMarkup: inlineKb ?? replyKb,
     });
   } catch (err) {
-    logger.error(`[Telegram] Message handling error: ${err}`);
+    logger.error(`[Telegram] Message handling error: ${String(err)}`);
     await sendMessage(chatId, "죄송합니다, 메시지 처리 중 오류가 발생했습니다. 잠시 후 다시 시도해주세요.");
   }
 }
