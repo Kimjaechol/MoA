@@ -163,8 +163,7 @@ show_completion() {
 }
 
 open_welcome() {
-    local welcome_url="${vars.apiUrl%/api/relay}"
-    welcome_url="\${welcome_url%/}/welcome"
+    local welcome_url="${vars.apiUrl.replace(/\/api\/relay\/?$/, "")}/welcome"
     # Try to open browser silently
     if [[ "\$(uname)" == "Darwin" ]]; then
         open "\$welcome_url" 2>/dev/null || true
