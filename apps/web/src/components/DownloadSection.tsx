@@ -21,11 +21,11 @@ const PLATFORM_ORDER: Exclude<Platform, null>[] = [
 
 const POST_DOWNLOAD_MSG: Record<string, string> = {
   windows:
-    "다운로드된 MoA-Install.bat 파일을 더블클릭하면 자동으로 설치됩니다.",
+    "다운로드된 MoA-Install.bat 파일을 더블클릭하세요. 설치 완료 후 자동으로 열리는 페이지에서 기기를 등록할 수 있습니다.",
   macos:
-    "다운로드된 MoA-Install.command 파일을 더블클릭하면 자동으로 설치됩니다.",
+    "다운로드된 MoA-Install.command 파일을 더블클릭하세요. 설치 완료 후 자동으로 열리는 페이지에서 기기를 등록할 수 있습니다.",
   linux:
-    "다운로드된 install.sh 파일을 터미널에서 bash install.sh 로 실행하세요.",
+    "다운로드된 install.sh 파일을 터미널에서 bash install.sh 로 실행하세요. 설치 완료 후 자동으로 열리는 페이지에서 기기를 등록할 수 있습니다.",
 };
 
 export default function DownloadSection() {

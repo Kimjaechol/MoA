@@ -48,10 +48,39 @@ const nextConfig: NextConfig = {
         source: "/kakao/webhook",
         destination: `${RAILWAY_BACKEND}/kakao/webhook`,
       },
+      // Telegram webhook proxy
+      {
+        source: "/telegram/webhook",
+        destination: `${RAILWAY_BACKEND}/telegram/webhook`,
+      },
+      // WhatsApp webhook proxy
+      {
+        source: "/whatsapp/webhook",
+        destination: `${RAILWAY_BACKEND}/whatsapp/webhook`,
+      },
+      // Discord webhook proxy
+      {
+        source: "/discord/webhook",
+        destination: `${RAILWAY_BACKEND}/discord/webhook`,
+      },
       // Health check proxy
       {
         source: "/health",
         destination: `${RAILWAY_BACKEND}/health`,
+      },
+      // Post-install welcome/guide page
+      {
+        source: "/welcome",
+        destination: `${RAILWAY_BACKEND}/welcome`,
+      },
+      // Channel settings page
+      {
+        source: "/settings",
+        destination: `${RAILWAY_BACKEND}/settings`,
+      },
+      {
+        source: "/settings/:path*",
+        destination: `${RAILWAY_BACKEND}/settings/:path*`,
       },
     ];
   },

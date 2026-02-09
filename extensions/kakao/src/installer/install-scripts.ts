@@ -44,7 +44,6 @@ function generateUnixScript(vars: ScriptVars): string {
   return `#!/bin/bash
 # MoA (Master of AI) Installer for macOS/Linux
 # Usage: curl -fsSL <server>/install.sh | bash
-# With pairing code: curl -fsSL <server>/install.sh | bash -s -- --code ABC123
 
 set -e
 
@@ -53,7 +52,6 @@ MOA_DOWNLOAD_URL="${vars.downloadUrl}"
 MOA_API_URL="${vars.apiUrl}"
 INSTALL_DIR="\${HOME}/.moa"
 CONFIG_DIR="\${HOME}/.config/moa"
-PAIRING_CODE=""
 
 RED='\\033[0;31m'; GREEN='\\033[0;32m'; YELLOW='\\033[0;33m'
 BLUE='\\033[0;34m'; CYAN='\\033[0;36m'; NC='\\033[0m'
@@ -78,11 +76,9 @@ print_info() { echo -e "  \${BLUE}→\${NC} \$1"; }
 
 while [[ \$# -gt 0 ]]; do
     case \$1 in
-        --code|-c) PAIRING_CODE="\$2"; shift 2 ;;
         --dir|-d) INSTALL_DIR="\$2"; shift 2 ;;
         --help|-h)
             echo "Usage: \$0 [OPTIONS]"
-            echo "  --code, -c CODE    Pairing code from KakaoTalk"
             echo "  --dir, -d PATH     Installation directory (default: ~/.moa)"
             exit 0 ;;
         *) print_error "Unknown option: \$1"; exit 1 ;;
@@ -90,7 +86,7 @@ while [[ \$# -gt 0 ]]; do
 done
 
 check_requirements() {
-    print_step "1/5" "Checking system requirements..."
+    print_step "1/3" "Checking system requirements..."
     local os; os=\$(uname)
     if [[ "\$os" != "Darwin" && "\$os" != "Linux" ]]; then
         print_error "Unsupported OS: \$os"; exit 1
@@ -103,7 +99,7 @@ check_requirements() {
 }
 
 install_moa() {
-    print_step "2/5" "Installing MoA..."
+    print_step "2/3" "Installing MoA..."
     mkdir -p "\$INSTALL_DIR" "\$CONFIG_DIR"
 
     local arch; arch=\$(uname -m)
@@ -141,7 +137,7 @@ JSEOF
 }
 
 setup_environment() {
-    print_step "3/5" "Configuring environment..."
+    print_step "3/3" "Configuring environment..."
     local shell_rc="\${HOME}/.bashrc"
     [[ "\$SHELL" == *"zsh"* ]] && shell_rc="\${HOME}/.zshrc"
     if ! grep -q "/.moa" "\$shell_rc" 2>/dev/null; then
@@ -156,42 +152,25 @@ EOF
     print_info "Config saved"
 }
 
-register_device() {
-    print_step "4/5" "Registering device..."
-    if [[ -z "\$PAIRING_CODE" ]]; then
-        echo -n "Enter pairing code (from KakaoTalk, or Enter to skip): "
-        read -r PAIRING_CODE
-    fi
-    [[ -z "\$PAIRING_CODE" ]] && { print_warning "Skipping registration"; return; }
-
-    local device_name; device_name=\$(hostname)
-    local response
-    response=\$(curl -s -X POST "\${MOA_API_URL}/pair" \\
-        -H "Content-Type: application/json" \\
-        -d "{\\"pairingCode\\":\\"\${PAIRING_CODE}\\",\\"deviceName\\":\\"\${device_name}\\",\\"deviceType\\":\\"desktop\\",\\"platform\\":\\"\$(uname | tr '[:upper:]' '[:lower:]')\\",\\"capabilities\\":[\\"shell\\",\\"file\\",\\"process\\"]}" 2>/dev/null)
-
-    if echo "\$response" | grep -q '"success":true'; then
-        echo "\$response" > "\${CONFIG_DIR}/device-token.json"
-        print_info "Device registered: \${device_name}"
-    else
-        print_warning "Server unavailable. Device will register on first run."
-    fi
+show_completion() {
+    echo ""
+    echo -e "\${GREEN}============================================\${NC}"
+    echo -e "\${GREEN}  MoA 설치가 완료되었습니다!\${NC}"
+    echo -e "\${GREEN}============================================\${NC}"
+    echo ""
+    echo -e "  다음 단계가 브라우저에서 열립니다..."
+    echo ""
 }
 
-show_completion() {
-    print_step "5/5" "Done!"
-    echo ""
-    echo -e "\${GREEN}============================================\${NC}"
-    echo -e "\${GREEN} MoA Installation Complete!\${NC}"
-    echo -e "\${GREEN}============================================\${NC}"
-    echo ""
-    echo "Installed to: \${INSTALL_DIR}"
-    echo ""
-    echo -e "\${YELLOW}Next steps:\${NC}"
-    echo "  1. Restart terminal or run: source ~/.zshrc"
-    echo "  2. Open KakaoTalk and send: /연결상태"
-    echo "  3. Try: @\$(hostname) ls"
-    echo ""
+open_welcome() {
+    local welcome_url="${vars.apiUrl%/api/relay}"
+    welcome_url="\${welcome_url%/}/welcome"
+    # Try to open browser silently
+    if [[ "\$(uname)" == "Darwin" ]]; then
+        open "\$welcome_url" 2>/dev/null || true
+    else
+        xdg-open "\$welcome_url" 2>/dev/null || sensible-browser "\$welcome_url" 2>/dev/null || true
+    fi
 }
 
 main() {
@@ -199,8 +178,8 @@ main() {
     check_requirements
     install_moa
     setup_environment
-    register_device
     show_completion
+    open_welcome
 }
 
 main "\$@"
@@ -216,11 +195,8 @@ main "\$@"
 export function getOneClickInstaller(
   platform: "windows" | "macos" | "linux",
   host?: string,
-  pairingCode?: string,
 ): string {
   const baseUrl = resolveBaseUrl(host);
-  const codeSuffix = pairingCode ? ` -s -- --code ${pairingCode}` : "";
-  const codeParam = pairingCode ? ` -PairingCode "${pairingCode}"` : "";
 
   if (platform === "windows") {
     return `@echo off
@@ -232,7 +208,7 @@ echo   =============================================
 echo.
 echo   Installing MoA... Please wait.
 echo.
-powershell -ExecutionPolicy Bypass -Command "& { $ProgressPreference='SilentlyContinue'; irm '${baseUrl}/install.ps1' | iex }${codeParam}"
+powershell -ExecutionPolicy Bypass -Command "& { $ProgressPreference='SilentlyContinue'; irm '${baseUrl}/install.ps1' | iex }"
 echo.
 echo   Press any key to close...
 pause >nul
@@ -253,7 +229,7 @@ echo ""
 echo "  Installing MoA... Please wait."
 echo ""
 
-curl -fsSL "${baseUrl}/install.sh" | bash${codeSuffix}
+curl -fsSL "${baseUrl}/install.sh" | bash
 
 echo ""
 echo "  Installation complete!"
@@ -272,7 +248,6 @@ function generateWindowsScript(vars: ScriptVars): string {
 # Usage: irm <server>/install.ps1 | iex
 
 param(
-    [string]$PairingCode = "",
     [string]$InstallPath = "$env:LOCALAPPDATA\\MoA",
     [switch]$Silent = $false
 )
@@ -300,7 +275,7 @@ function Write-Banner {
 function Write-Step { param([string]$Step, [string]$Description); Write-ColorText "[$Step] $Description" "Green" }
 
 function Test-Requirements {
-    Write-Step "1/5" "Checking system requirements..."
+    Write-Step "1/3" "Checking system requirements..."
     $os = Get-CimInstance Win32_OperatingSystem
     $version = [version]$os.Version
     if ($version.Major -lt 10) { Write-ColorText "[ERROR] Windows 10+ required." "Red"; exit 1 }
@@ -308,7 +283,7 @@ function Test-Requirements {
 }
 
 function Install-MoA {
-    Write-Step "2/5" "Installing MoA..."
+    Write-Step "2/3" "Installing MoA..."
     if (-not (Test-Path $InstallPath)) { New-Item -ItemType Directory -Path $InstallPath -Force | Out-Null }
     $exePath = Join-Path $InstallPath "moa.exe"
     try {
@@ -324,7 +299,7 @@ function Install-MoA {
 }
 
 function Set-Environment {
-    Write-Step "3/5" "Configuring environment..."
+    Write-Step "3/3" "Configuring environment..."
     $userPath = [Environment]::GetEnvironmentVariable("PATH", "User")
     if ($userPath -notlike "*$InstallPath*") {
         [Environment]::SetEnvironmentVariable("PATH", "$userPath;$InstallPath", "User")
@@ -334,36 +309,18 @@ function Set-Environment {
     @{version=$MOA_VERSION; installPath=$InstallPath; apiUrl=$MOA_API_URL; installedAt=(Get-Date).ToString("o")} | ConvertTo-Json | Set-Content -Path (Join-Path $configDir "config.json")
 }
 
-function Register-Device {
-    param([string]$Code)
-    Write-Step "4/5" "Registering device..."
-    if ([string]::IsNullOrEmpty($Code) -and -not $Silent) { $Code = Read-Host "Enter pairing code (from KakaoTalk)" }
-    if ([string]::IsNullOrEmpty($Code)) { Write-ColorText "  Skipping registration" "Yellow"; return }
-    $body = @{pairingCode=$Code; deviceName=$env:COMPUTERNAME; deviceType="desktop"; platform="windows"; capabilities=@("shell","file","process")} | ConvertTo-Json
-    try {
-        $response = Invoke-RestMethod -Uri "$MOA_API_URL/pair" -Method POST -Body $body -ContentType "application/json"
-        if ($response.success) {
-            $configDir = Join-Path $env:APPDATA "MoA"
-            @{deviceId=$response.deviceId; deviceToken=$response.deviceToken} | ConvertTo-Json | Set-Content -Path (Join-Path $configDir "device-token.json")
-            Write-ColorText "  Device registered: $env:COMPUTERNAME" "Green"
-        }
-    } catch { Write-ColorText "  Server unavailable. Device will register on first run." "Yellow" }
+function Show-Completion {
+    Write-ColorText ""
+    Write-ColorText "============================================" "Green"
+    Write-ColorText "  MoA 설치가 완료되었습니다!" "Green"
+    Write-ColorText "============================================" "Green"
+    Write-ColorText ""
+    Write-ColorText "  다음 단계가 브라우저에서 열립니다..." "Cyan"
+    Write-ColorText ""
 }
 
-function Show-Completion {
-    Write-Step "5/5" "Done!"
-    Write-ColorText ""
-    Write-ColorText "============================================" "Green"
-    Write-ColorText " MoA Installation Complete!" "Green"
-    Write-ColorText "============================================" "Green"
-    Write-ColorText ""
-    Write-ColorText "Installed to: $InstallPath"
-    Write-ColorText ""
-    Write-ColorText "Next steps:" "Yellow"
-    Write-ColorText "  1. Open a new terminal"
-    Write-ColorText "  2. Open KakaoTalk and send: /연결상태"
-    Write-ColorText "  3. Try: @$env:COMPUTERNAME dir"
-    Write-ColorText ""
+function Open-Welcome {
+    Start-Process "https://moa.lawith.kr/welcome"
 }
 
 function Main {
@@ -371,8 +328,8 @@ function Main {
     Test-Requirements
     Install-MoA
     Set-Environment
-    Register-Device -Code $PairingCode
     Show-Completion
+    Open-Welcome
 }
 
 Main

@@ -35,8 +35,14 @@
  * - KAKAO_WEBHOOK_PATH — Webhook path (default: /kakao/webhook)
  * - MOA_INSTALL_URL — Override install page URL
  * - RAILWAY_PUBLIC_DOMAIN — Auto-set by Railway for public URL
+ * - WHATSAPP_APP_SECRET — Meta App Secret for webhook signature verification (optional but recommended)
  * - LAWCALL_ENCRYPTION_KEY — Encryption key for relay commands
  * - RELAY_MAX_DEVICES — Max devices per user (default: 5)
+ *
+ * ### Owner Authentication (recommended for production)
+ * - MOA_OWNER_SECRET — Secret phrase for owner authentication (if set, enables owner-only mode)
+ * - MOA_OWNER_IDS — Pre-configured owner IDs (format: "kakao:id1,telegram:id2,discord:id3")
+ * - MOA_DATA_DIR — Data directory for persisting auth state (default: .moa-data)
  */
 
 // Immediate startup log — if you see this in Railway deploy logs,
@@ -47,16 +53,79 @@ console.log(
 
 import type { RelayCallbacks } from "./src/relay/index.js";
 import type { ResolvedKakaoAccount } from "./src/types.js";
+import type { MoAMessageHandler } from "./src/channels/types.js";
 import { resolveKakaoAccount, getDefaultKakaoConfig } from "./src/config.js";
 import { handleInstallRequest } from "./src/installer/index.js";
+import { handleSettingsRequest } from "./src/settings/index.js";
 import { handlePaymentRequest } from "./src/payment/index.js";
 import {
   sendWelcomeAfterPairing,
   isProactiveMessagingConfigured,
 } from "./src/proactive-messaging.js";
-import { handleRelayRequest } from "./src/relay/index.js";
+import { generatePairingCode, handleRelayRequest } from "./src/relay/index.js";
 import { isSupabaseConfigured } from "./src/supabase.js";
 import { startKakaoWebhook } from "./src/webhook.js";
+import {
+  handleTelegramRequest,
+  registerTelegramWebhook,
+  getTelegramBotInfo,
+  isTelegramConfigured,
+  handleWhatsAppRequest,
+  isWhatsAppConfigured,
+  startDiscordGateway,
+  stopDiscordGateway,
+  isDiscordConfigured,
+} from "./src/channels/index.js";
+import {
+  getLoadedSkills,
+  getSkillsSystemPrompt,
+  searchSkills,
+  formatSkillCatalog,
+  formatSkillDetail,
+  getUserFriendlyRecommendedSkills,
+} from "./src/skills/index.js";
+import {
+  logAction,
+  updateActionStatus,
+  getRecentActions,
+  getUndoableActions,
+  createCheckpoint,
+  getCheckpoints,
+  getMemoryHistory,
+  undoAction,
+  rollbackToCheckpoint,
+  formatActionHistory,
+  formatCheckpointList,
+  formatMemoryHistory,
+  assessCommandGravity,
+  executePanic,
+  isPanicLocked,
+  releasePanicLock,
+  cancelPendingCommand,
+  getPendingCommands,
+  guardianAngelCheck,
+  formatGravityAssessment,
+  formatPendingCommands,
+  // Encrypted Vault
+  initializeVault,
+  createEncryptedBackup,
+  restoreFromBackup,
+  generateRecoveryKey,
+  verifyRecoveryKey,
+  listBackups,
+  getBackupStats,
+  runScheduledBackup,
+  formatBackupList,
+  formatRecoveryKey,
+} from "./src/safety/index.js";
+import {
+  authenticateUser,
+  isOwnerAuthEnabled,
+  getRequiredPermission,
+  getGuestDeniedResponse,
+  wrapUserMessageForLLM,
+  getSecuritySystemPrompt,
+} from "./src/auth/index.js";
 
 const PORT = parseInt(process.env.PORT ?? process.env.KAKAO_WEBHOOK_PORT ?? "8788", 10);
 const HOST = process.env.HOST ?? "0.0.0.0";
@@ -111,14 +180,14 @@ MoA는 노트북, 태블릿, 데스크탑 등 여러 기기에 설치되어 동�
 
 const MOA_INSTALL_GUIDE = `MoA 설치는 아주 간단합니다!
 
-[1단계] 아래 링크를 클릭하세요
-설치 페이지에서 사용하시는 기기(Windows/Mac/Linux)를 선택하면 자동으로 설치가 시작됩니다.
+[1단계] 아래 "MoA 설치하기" 버튼을 클릭하세요.
+사용하시는 기기(Windows/Mac/Linux)에 맞는 설치 파일이 다운로드됩니다. 다운로드된 파일을 더블클릭하면 자동으로 설치됩니다.
 
-[2단계] 설치 완료 후 카카오톡으로 돌아와서 "기기등록" 이라고 입력하세요.
-페어링 코드가 발급됩니다.
+[2단계] 설치 완료 후 자동으로 열리는 페이지에서 "이 기기등록" 버튼을 클릭하세요.
+6자리 페어링 코드가 발급됩니다.
 
-[3단계] 설치된 MoA에 페어링 코드를 입력하면 끝!
-이제 카카오톡에서 바로 기기를 제어할 수 있습니다.
+[3단계] 같은 페이지에서 받은 6자리 코드를 입력하면 끝!
+터미널이나 명령어 입력은 필요없습니다.
 
 추가 기기도 같은 방법으로 등록하면 모든 기기가 하나의 AI로 연결됩니다!`;
 
@@ -335,12 +404,26 @@ async function callGemini(
 // MoA System Prompt
 // ============================================
 
-function getMoASystemPrompt(): string {
+function getMoASystemPrompt(channelId?: string): string {
+  const channelName = channelId === "telegram" ? "텔레그램"
+    : channelId === "whatsapp" ? "WhatsApp"
+    : channelId === "discord" ? "Discord"
+    : "카카오톡";
+
+  const maxLen = channelId === "kakao" || !channelId ? 800 : 2000;
+
+  // Build skills section dynamically
+  const skillsPrompt = getSkillsSystemPrompt();
+
   return `당신은 MoA(Master of AI) 어시스턴트입니다.
 
 ## MoA란?
 MoA는 사용자의 여러 기기(노트북, 태블릿, 데스크탑 등)에 설치되어 동일한 기억을 공유하는 AI 에이전트입니다.
-카카오톡에서 명령을 보내면 연결된 기기에서 원격으로 실행할 수 있습니다.
+${channelName}에서 명령을 보내면 연결된 기기에서 원격으로 실행할 수 있습니다.
+
+## 지원 채널
+MoA는 카카오톡, 텔레그램, WhatsApp, Discord 등 여러 메신저에서 동일하게 사용할 수 있습니다.
+한 채널에서 등록한 기기는 다른 채널에서도 그대로 사용 가능합니다.
 
 ## 당신의 최우선 목표
 사용자가 MoA 에이전트를 기기에 설치하도록 안내하고 유도하는 것이 가장 중요합니다.
@@ -348,8 +431,8 @@ MoA는 사용자의 여러 기기(노트북, 태블릿, 데스크탑 등)에 설
 
 ## MoA의 핵심 기능
 - 쌍둥이 AI: 모든 기기가 같은 기억을 공유하는 AI
-- 원격 제어: 카카오톡에서 "@기기명 명령"으로 기기에 원격 명령
-- AI 대화: 카카오톡에서 언제든 AI와 대화
+- 원격 제어: ${channelName}에서 "@기기명 명령"으로 기기에 원격 명령
+- AI 대화: ${channelName}에서 언제든 AI와 대화
 - 파일 관리: 외출 중에도 집/회사 컴퓨터 파일 확인
 - 코드 실행: 원격으로 코드 작성 및 실행
 
@@ -359,22 +442,37 @@ MoA는 사용자의 여러 기기(노트북, 태블릿, 데스크탑 등)에 설
 - /기기 : 연결된 기기 목록
 - @기기명 명령 : 특정 기기에 원격 명령 (예: @노트북 ls ~/Desktop)
 - /도움말 : 전체 명령어 보기
-
+- !작업내역 : 최근 작업 기록 조회
+- !체크포인트 [이름] : 현재 시점 저장 (되돌리기 가능)
+- !되돌리기 [ID] : 특정 작업 되돌리기
+- !복원 [체크포인트ID] : 체크포인트 시점으로 전체 복원
+- !기억내역 : 장기 기억 버전 히스토리
+- !비상정지 : 모든 대기 명령 취소 + 기기 잠금
+- !취소 [ID] : 대기 중인 명령 취소
+- !대기목록 : 실행 대기 중인 명령 조회
+- !백업 : 수동 암호화 백업 생성
+- !백업 목록 : 저장된 백업 목록 조회
+- !백업 복원 [파일명] : 백업에서 복원
+- !복구키 : 12단어 복구 키 발급
+- !복구키 검증 [12단어] : 복구 키 검증
+${skillsPrompt}
 ## 응답 규칙
 - 한국어로 친절하고 자연스럽게 대화합니다
-- 최대 800자 이내로 답변하세요 (카카오톡 특성상 짧은 답변 선호)
+- 최대 ${maxLen}자 이내로 답변하세요
 - 사용자가 MoA와 관련 없는 질문을 해도 친절히 답변하되, 자연스럽게 MoA 기능을 연결하세요
   예) "일정 관리 도와줘" → 답변 후 "MoA를 설치하면 컴퓨터에서 일정 파일을 직접 관리할 수도 있어요!"
 - MoA가 아직 설치되지 않은 사용자에게는 대화 마무리에 설치를 부드럽게 권유하세요
 - 확실하지 않은 정보는 그렇다고 솔직히 말씀하세요
+- 스킬 관련 질문이 오면 해당 스킬의 기능을 안내하고, MoA를 설치하면 기기에서 직접 사용할 수 있다고 안내하세요
 
 ## 설치 안내 시
 사용자가 설치에 관심을 보이면: "설치"라고 입력해주세요! 간편 설치 안내를 바로 보내드립니다.
+설치 후 https://moa.lawith.kr/welcome 페이지에서 기기 등록(페어링)을 할 수 있습니다.
 
 ## 사용 사례 (사용자에게 설명할 때 활용)
 - "회사에서 퇴근 후 집 컴퓨터에 있는 파일 확인"
 - "@노트북 git pull && npm run build"
-- "카카오톡으로 서버 상태 확인"
+- "${channelName}으로 서버 상태 확인"
 - "여러 기기에서 이어서 작업"`;
 }
 
@@ -416,10 +514,16 @@ function isInstallRequest(text: string): boolean {
     "어떻게 써",
     "사용법",
     "가입",
-    "등록",
   ];
   const normalized = text.toLowerCase().trim();
   return installKeywords.some((k) => normalized.includes(k));
+}
+
+/** Check if user wants to register a device (pairing) */
+function isDeviceRegistration(text: string): boolean {
+  const keywords = ["기기등록", "기기 등록", "이 기기등록", "디바이스 등록", "페어링"];
+  const normalized = text.toLowerCase().trim();
+  return keywords.some((k) => normalized.includes(k));
 }
 
 // ============================================
@@ -427,7 +531,8 @@ function isInstallRequest(text: string): boolean {
 // ============================================
 
 /**
- * AI message handler — handles greetings, install requests, and general AI chat
+ * AI message handler — handles greetings, install requests, and general AI chat.
+ * All messages pass through owner authentication gate first.
  */
 async function aiOnMessage(params: {
   userId: string;
@@ -436,32 +541,463 @@ async function aiOnMessage(params: {
   botId: string;
   blockId: string;
   timestamp: number;
+  channel?: import("./src/channels/types.js").ChannelContext;
 }): Promise<{
   text: string;
   quickReplies?: string[];
   buttons?: Array<{ label: string; url: string }>;
 }> {
   const utterance = params.text.trim();
+  const channelId = params.channel?.channelId ?? "kakao";
+  const maxLen = params.channel?.maxMessageLength ?? 950;
+
+  // ── Owner Authentication Gate ──────────────────────────────
+  const auth = authenticateUser(params.userId, channelId, utterance);
+
+  // Handle auth attempts (!인증 <secret>)
+  if (auth.isAuthAttempt) {
+    // Release panic lock on successful re-auth
+    if (auth.authSuccess && isPanicLocked()) {
+      releasePanicLock();
+    }
+    return {
+      text: auth.authMessage ?? "인증 처리 중 오류가 발생했습니다.",
+      quickReplies: auth.authSuccess ? ["기기 목록", "도움말"] : ["설치", "기능 소개"],
+    };
+  }
+
+  // ── Panic Button (누구나, 언제든) ─────────────────────────
+  if (utterance.match(/^[!!/](?:비상정지|비상 정지|panic|stop|긴급|emergency)$/i)) {
+    if (auth.role !== "owner") {
+      return { text: "비상정지는 인증된 주인만 사용할 수 있습니다.", quickReplies: ["설치"] };
+    }
+    const result = executePanic(params.userId, channelId);
+    return { text: result.message, quickReplies: ["!작업내역"] };
+  }
+
+  // ── Cancel pending command ─────────────────────────────────
+  const cancelMatch = utterance.match(/^[!!/](?:취소|cancel)\s*(\S+)?$/i);
+  if (cancelMatch && auth.role === "owner") {
+    const commandId = cancelMatch[1];
+    if (commandId) {
+      const cancelled = cancelPendingCommand(commandId);
+      return {
+        text: cancelled ? `명령 ${commandId}가 취소되었습니다.` : `대기 중인 명령 ${commandId}를 찾을 수 없습니다.`,
+        quickReplies: ["!대기목록", "!작업내역"],
+      };
+    }
+    // No ID — show pending list
+    const pending = getPendingCommands();
+    return {
+      text: formatPendingCommands(pending),
+      quickReplies: ["!비상정지", "!작업내역"],
+    };
+  }
+
+  // ── Show pending commands ──────────────────────────────────
+  if (utterance.match(/^[!!/](?:대기목록|대기 목록|pending)$/i) && auth.role === "owner") {
+    const pending = getPendingCommands();
+    return {
+      text: formatPendingCommands(pending),
+      quickReplies: ["!비상정지", "!작업내역"],
+    };
+  }
+
+  // ── Panic lock check (block device commands during lockdown) ─
+  if (isPanicLocked() && auth.role === "owner" && utterance.startsWith("@")) {
+    return {
+      text: "🚨 비상정지 상태입니다. 기기 제어가 잠겨 있습니다.\n\n재개하려면 \"!인증 [비밀구문]\"으로 다시 인증하세요.",
+      quickReplies: ["!작업내역", "!체크포인트 목록"],
+    };
+  }
+
+  // If guest, check if this action requires owner permission
+  if (auth.role === "guest") {
+    const requiredAction = getRequiredPermission(utterance);
+    if (requiredAction) {
+      // Block owner-only action for guests
+      const denied = getGuestDeniedResponse(requiredAction);
+      return denied;
+    }
+    // Guest is allowed for greeting/install/feature/skill/general chat — continue below
+  }
+
+  // Handle owner deauth command
+  if (auth.role === "owner" && utterance.match(/^[!!/]인증해제$/)) {
+    const { revokeOwnerAuth } = await import("./src/auth/index.js");
+    revokeOwnerAuth(params.userId, channelId);
+    return {
+      text: "주인 인증이 해제되었습니다.\n다시 인증하려면 \"!인증 [비밀구문]\"을 입력하세요.",
+      quickReplies: ["도움말"],
+    };
+  }
+
+  // ── Safety Commands (owner only) ──────────────────────────
+  if (auth.role === "owner") {
+    // !작업내역 — 최근 작업 기록 조회
+    if (utterance.match(/^[!!/](?:작업내역|작업 내역|작업기록|history)$/i)) {
+      const actions = getRecentActions(15);
+      return {
+        text: formatActionHistory(actions, maxLen),
+        quickReplies: ["!체크포인트 목록", "!되돌리기 목록", "도움말"],
+      };
+    }
+
+    // !되돌리기 [ID] — 특정 작업 되돌리기
+    const undoMatch = utterance.match(/^[!!/](?:되돌리기|되돌려|undo)\s+(\S+)$/i);
+    if (undoMatch) {
+      const result = undoAction(undoMatch[1]);
+      return {
+        text: result.message,
+        quickReplies: ["!작업내역", "!체크포인트 목록"],
+      };
+    }
+
+    // !되돌리기 목록 — 되돌릴 수 있는 작업 목록
+    if (utterance.match(/^[!!/](?:되돌리기|undo)\s*(?:목록|list)?$/i)) {
+      const undoable = getUndoableActions(10);
+      if (undoable.length === 0) {
+        return {
+          text: "되돌릴 수 있는 작업이 없습니다.",
+          quickReplies: ["!작업내역", "!체크포인트 목록"],
+        };
+      }
+      return {
+        text: formatActionHistory(undoable, maxLen),
+        quickReplies: ["!작업내역", "!체크포인트 목록"],
+      };
+    }
+
+    // !체크포인트 [이름] — 체크포인트 생성
+    const cpCreateMatch = utterance.match(/^[!!/](?:체크포인트|checkpoint|저장)\s+(.+)$/i);
+    if (cpCreateMatch && !cpCreateMatch[1].match(/^(?:목록|list)$/i)) {
+      const cpName = cpCreateMatch[1].trim();
+      const cp = createCheckpoint({
+        name: cpName,
+        description: `수동 체크포인트: ${cpName}`,
+        auto: false,
+        userId: params.userId,
+        channelId,
+      });
+      return {
+        text: `체크포인트가 생성되었습니다!\n\n📌 ${cp.name}\nID: ${cp.id}\n시각: ${new Date(cp.createdAt).toLocaleString("ko-KR")}\n\n이 시점으로 언제든 되돌릴 수 있습니다.\n"!복원 ${cp.id}"`,
+        quickReplies: ["!체크포인트 목록", "!작업내역"],
+      };
+    }
+
+    // !체크포인트 목록 — 체크포인트 목록 조회
+    if (utterance.match(/^[!!/](?:체크포인트|checkpoint)\s*(?:목록|list)?$/i)) {
+      const checkpointList = getCheckpoints(15);
+      return {
+        text: formatCheckpointList(checkpointList, maxLen),
+        quickReplies: ["!작업내역", "도움말"],
+      };
+    }
+
+    // !복원 [체크포인트 ID] — 체크포인트로 되돌리기
+    const restoreMatch = utterance.match(/^[!!/](?:복원|restore|롤백|rollback)\s+(\S+)$/i);
+    if (restoreMatch) {
+      const result = rollbackToCheckpoint(restoreMatch[1]);
+      return {
+        text: result.message,
+        quickReplies: ["!작업내역", "!체크포인트 목록"],
+      };
+    }
+
+    // !기억내역 — 장기 기억 버전 히스토리
+    if (utterance.match(/^[!!/](?:기억내역|기억 내역|기억히스토리|memory\s*history)$/i)) {
+      const history = getMemoryHistory(10);
+      return {
+        text: formatMemoryHistory(history, maxLen),
+        quickReplies: ["!체크포인트 목록", "!작업내역"],
+      };
+    }
+
+    // !기억복원 [버전] — 장기 기억 특정 버전으로 되돌리기
+    const memRestoreMatch = utterance.match(/^[!!/](?:기억복원|memory\s*restore)\s+v?(\d+)$/i);
+    if (memRestoreMatch) {
+      const { restoreMemoryToVersion } = await import("./src/safety/index.js");
+      const version = parseInt(memRestoreMatch[1], 10);
+      const restored = restoreMemoryToVersion(version);
+      if (restored) {
+        return {
+          text: `장기 기억이 v${version}으로 복원되었습니다.\n\n사유: ${restored.reason}\n시각: ${new Date(restored.createdAt).toLocaleString("ko-KR")}`,
+          quickReplies: ["!기억내역", "!작업내역"],
+        };
+      }
+      return {
+        text: `v${version} 버전의 기억을 찾을 수 없습니다.\n"!기억내역"으로 사용 가능한 버전을 확인하세요.`,
+        quickReplies: ["!기억내역"],
+      };
+    }
+
+    // ── Encrypted Vault Commands ──────────────────────────────
+
+    // !백업 — 수동 암호화 백업 생성
+    if (utterance.match(/^[!!/](?:백업|backup)$/i)) {
+      const secret = process.env.MOA_OWNER_SECRET;
+      if (!secret) {
+        return {
+          text: "MOA_OWNER_SECRET이 설정되지 않아 백업을 생성할 수 없습니다.\n환경변수를 설정해주세요.",
+          quickReplies: ["도움말"],
+        };
+      }
+      try {
+        const backupData = { timestamp: Date.now(), source: "manual", channelId };
+        const result = createEncryptedBackup(backupData, secret, "manual");
+        return {
+          text: `암호화 백업이 생성되었습니다!\n\n파일: ${result.filePath.split("/").pop()}\n크기: ${(result.size / 1024).toFixed(1)}KB\n암호화: AES-256-GCM\n\n복원: "!백업 복원 [파일명]"`,
+          quickReplies: ["!백업 목록", "!복구키", "!작업내역"],
+        };
+      } catch (err) {
+        return {
+          text: `백업 생성 중 오류가 발생했습니다.\n${err instanceof Error ? err.message : String(err)}`,
+          quickReplies: ["!작업내역"],
+        };
+      }
+    }
+
+    // !백업 목록 — 백업 목록 조회
+    if (utterance.match(/^[!!/](?:백업|backup)\s*(?:목록|list)$/i)) {
+      const backups = listBackups();
+      return {
+        text: formatBackupList(backups, maxLen),
+        quickReplies: ["!백업", "!복구키", "!작업내역"],
+      };
+    }
+
+    // !백업 통계 — 백업 용량/통계
+    if (utterance.match(/^[!!/](?:백업|backup)\s*(?:통계|stats|상태|status)$/i)) {
+      const stats = getBackupStats();
+      const lines = [
+        "암호화 백업 통계",
+        "",
+        `총 파일: ${stats.totalFiles}개`,
+        `총 크기: ${stats.totalSizeKB}KB`,
+      ];
+      for (const [type, info] of Object.entries(stats.byType)) {
+        lines.push(`  ${type}: ${info.count}개 (${(info.size / 1024).toFixed(1)}KB)`);
+      }
+      if (stats.newestBackup) {
+        lines.push(`\n최신: ${new Date(stats.newestBackup).toLocaleString("ko-KR")}`);
+      }
+      if (stats.oldestBackup) {
+        lines.push(`최초: ${new Date(stats.oldestBackup).toLocaleString("ko-KR")}`);
+      }
+      return {
+        text: lines.join("\n"),
+        quickReplies: ["!백업 목록", "!백업", "!작업내역"],
+      };
+    }
+
+    // !백업 복원 [파일명] — 암호화 백업 복원
+    const restoreBackupMatch = utterance.match(/^[!!/](?:백업|backup)\s*(?:복원|restore)\s+(.+)$/i);
+    if (restoreBackupMatch) {
+      const secret = process.env.MOA_OWNER_SECRET;
+      if (!secret) {
+        return {
+          text: "MOA_OWNER_SECRET이 설정되지 않아 복원할 수 없습니다.",
+          quickReplies: ["도움말"],
+        };
+      }
+      const fileName = restoreBackupMatch[1].trim();
+      // Find the backup file
+      const backups = listBackups();
+      const target = backups.find((b) => b.fileName === fileName || b.filePath.endsWith(fileName));
+      if (!target) {
+        return {
+          text: `"${fileName}" 백업 파일을 찾을 수 없습니다.\n\n"!백업 목록"으로 사용 가능한 백업을 확인하세요.`,
+          quickReplies: ["!백업 목록"],
+        };
+      }
+      const restored = restoreFromBackup(target.filePath, secret);
+      if (restored) {
+        return {
+          text: `백업이 복원되었습니다!\n\n파일: ${target.fileName}\n시각: ${new Date(restored.timestamp).toLocaleString("ko-KR")}\n무결성: ${restored.verified ? "검증 완료" : "검증 실패 (데이터 손상 가능)"}`,
+          quickReplies: ["!작업내역", "!백업 목록"],
+        };
+      }
+      return {
+        text: "백업 복원에 실패했습니다.\n비밀구문이 올바른지 확인하세요.",
+        quickReplies: ["!백업 목록", "!복구키"],
+      };
+    }
+
+    // !복구키 — 12단어 복구 키 발급
+    if (utterance.match(/^[!!/](?:복구키|복구 키|recovery\s*key)$/i)) {
+      try {
+        const result = generateRecoveryKey();
+        return {
+          text: formatRecoveryKey(result),
+          quickReplies: ["!백업 목록", "!작업내역"],
+        };
+      } catch (err) {
+        return {
+          text: `복구 키 발급 중 오류가 발생했습니다.\n${err instanceof Error ? err.message : String(err)}`,
+          quickReplies: ["!작업내역"],
+        };
+      }
+    }
+
+    // !복구키 검증 [12단어] — 복구 키 검증
+    const verifyMatch = utterance.match(/^[!!/](?:복구키|복구 키|recovery\s*key)\s*(?:검증|verify)\s+(.+)$/i);
+    if (verifyMatch) {
+      const words = verifyMatch[1].trim().split(/\s+/);
+      if (words.length !== 12) {
+        return {
+          text: `복구 키는 12단어입니다. ${words.length}단어가 입력되었습니다.\n\n사용법: !복구키 검증 단어1 단어2 ... 단어12`,
+          quickReplies: ["!복구키"],
+        };
+      }
+      const valid = verifyRecoveryKey(words);
+      return {
+        text: valid
+          ? "복구 키가 확인되었습니다! 이 키로 백업을 복원할 수 있습니다."
+          : "복구 키가 일치하지 않습니다.\n올바른 12단어를 입력했는지 확인하세요.",
+        quickReplies: ["!백업 목록", "!작업내역"],
+      };
+    }
+  }
+
+  // ── Device command: Gravity + Guardian Angel + Logging ─────
+  if (auth.role === "owner" && utterance.startsWith("@")) {
+    const deviceMatch = utterance.match(/^@(\S+)\s+(.+)$/);
+    if (deviceMatch) {
+      const commandText = deviceMatch[2];
+      const deviceName = deviceMatch[1];
+
+      // 1. Gravity assessment
+      const gravity = assessCommandGravity(commandText);
+
+      // 2. Guardian Angel check (for medium+ gravity)
+      if (gravity.score >= 5) {
+        const guardian = guardianAngelCheck(commandText, gravity);
+        if (guardian.shouldBlock) {
+          logAction({
+            type: "device_command",
+            summary: `@${deviceName} 명령 보류 (Guardian Angel)`,
+            detail: utterance,
+            reversibility: "reversible",
+            userId: params.userId,
+            channelId,
+            deviceName,
+          });
+          return {
+            text: guardian.additionalWarning ?? "이 명령의 실행이 보류되었습니다.",
+            quickReplies: ["!취소", "!작업내역"],
+          };
+        }
+        // Non-blocking warning
+        if (guardian.additionalWarning && gravity.action === "confirm_required") {
+          logAction({
+            type: "device_command",
+            summary: `@${deviceName} — 확인 대기 (위험도 ${gravity.score}/10)`,
+            detail: utterance,
+            reversibility: "partially_reversible",
+            userId: params.userId,
+            channelId,
+            deviceName,
+          });
+          return {
+            text: `${formatGravityAssessment(gravity)}\n${gravity.warning ?? ""}\n\n${guardian.additionalWarning}`,
+            quickReplies: ["!확인", "!취소"],
+          };
+        }
+      }
+
+      // 3. Heavy commands → require confirmation
+      if (gravity.action === "confirm_required" || gravity.action === "delayed_execution") {
+        logAction({
+          type: "device_command",
+          summary: `@${deviceName} — 확인 대기 (위험도 ${gravity.score}/10)`,
+          detail: utterance,
+          reversibility: "partially_reversible",
+          userId: params.userId,
+          channelId,
+          deviceName,
+        });
+        return {
+          text: `${formatGravityAssessment(gravity)}\n${gravity.warning ?? ""}`,
+          quickReplies: ["!확인", "!취소", "!작업내역"],
+        };
+      }
+
+      // 4. Medium commands → auto checkpoint before execution
+      if (gravity.action === "checkpoint_and_execute") {
+        createCheckpoint({
+          name: `pre-${deviceName}-${new Date().toISOString().slice(11, 19)}`,
+          description: `@${deviceName} 명령 실행 전 자동 체크포인트`,
+          auto: true,
+          userId: params.userId,
+          channelId,
+        });
+      }
+
+      // 5. Log the action
+      const action = logAction({
+        type: "device_command",
+        summary: `@${deviceName}에 명령 전송`,
+        detail: utterance,
+        reversibility: gravity.score >= 7 ? "partially_reversible" : "reversible",
+        userId: params.userId,
+        channelId,
+        deviceName,
+      });
+      console.log(`[Safety] Device command ${action.id}: gravity=${gravity.score} — ${commandText.slice(0, 60)}`);
+    }
+  }
 
   // 1) Greeting → Return welcome message with install button
   if (isGreeting(utterance)) {
     return {
       text: MOA_WELCOME_MESSAGE,
       buttons: [{ label: "MoA 설치하기", url: getInstallUrl() }],
-      quickReplies: ["기능 소개", "사용 사례", "도움말"],
+      quickReplies: ["설치", "이 기기등록", "기능 소개"],
     };
   }
 
-  // 2) Install request → Return install guide with install button
+  // 2) Install request → Return install guide with install + register buttons
   if (isInstallRequest(utterance)) {
     return {
       text: MOA_INSTALL_GUIDE,
       buttons: [{ label: "MoA 설치하기", url: getInstallUrl() }],
-      quickReplies: ["기기등록", "기능 소개", "도움말"],
+      quickReplies: ["이 기기등록", "기능 소개", "도움말"],
     };
   }
 
-  // 3) Feature inquiry
+  // 3) Device registration → Generate pairing code
+  if (isDeviceRegistration(utterance)) {
+    if (!isSupabaseConfigured()) {
+      return {
+        text: `기기 등록 기능이 현재 준비 중입니다.\n\nMoA가 설치되어 있지 않다면, 먼저 설치를 진행해주세요!`,
+        buttons: [{ label: "MoA 설치하기", url: getInstallUrl() }],
+        quickReplies: ["설치", "도움말"],
+      };
+    }
+
+    try {
+      const result = await generatePairingCode(params.userId);
+      if (result.success && result.code) {
+        return {
+          text: `기기 등록을 위한 페어링 코드가 발급되었습니다!\n\n🔑 페어링 코드: ${result.code}\n⏰ 유효시간: 10분\n\n[사용 방법]\nMoA가 설치된 PC의 브라우저에서 아래 페이지를 열고 코드를 입력하세요:\nhttps://moa.lawith.kr/welcome\n\n(설치 직후라면 이미 열려 있습니다!)\n\n연결이 완료되면 카카오톡에서 바로 PC를 제어할 수 있습니다!`,
+          quickReplies: ["기능 소개", "사용 사례", "도움말"],
+        };
+      }
+      return {
+        text: `페어링 코드 발급 중 문제가 발생했습니다.\n${result.error ?? "잠시 후 다시 시도해주세요."}\n\nMoA가 아직 설치되어 있지 않다면, 먼저 설치를 진행해주세요!`,
+        buttons: [{ label: "MoA 설치하기", url: getInstallUrl() }],
+        quickReplies: ["이 기기등록", "설치", "도움말"],
+      };
+    } catch (err) {
+      console.error("[MoA] Pairing code generation error:", err);
+      return {
+        text: `페어링 코드 발급 중 오류가 발생했습니다.\n잠시 후 다시 시도해주세요.`,
+        quickReplies: ["이 기기등록", "설치", "도움말"],
+      };
+    }
+  }
+
+  // 4) Feature inquiry
   const featureKeywords = ["기능", "뭘 할 수", "뭘 해", "할 수 있"];
   if (featureKeywords.some((k) => utterance.includes(k))) {
     return {
@@ -484,11 +1020,11 @@ async function aiOnMessage(params: {
 
 아래 버튼을 눌러 지금 바로 시작하세요!`,
       buttons: [{ label: "MoA 설치하기", url: getInstallUrl() }],
-      quickReplies: ["사용 사례", "도움말"],
+      quickReplies: ["설치", "이 기기등록", "사용 사례"],
     };
   }
 
-  // 4) Usage examples inquiry
+  // 5) Usage examples inquiry
   const usageKeywords = ["사용 사례", "사례", "예시", "활용", "어떻게 활용"];
   if (usageKeywords.some((k) => utterance.includes(k))) {
     return {
@@ -513,11 +1049,41 @@ async function aiOnMessage(params: {
 MoA를 설치하면 이 모든 것이 가능합니다!
 아래 버튼을 눌러 바로 시작하세요!`,
       buttons: [{ label: "MoA 설치하기", url: getInstallUrl() }],
-      quickReplies: ["기능 소개", "도움말"],
+      quickReplies: ["설치", "이 기기등록", "기능 소개"],
     };
   }
 
-  // 5) General AI chat — use LLM with MoA-optimized system prompt
+  // 6) Skill marketplace queries
+  const skillKeywords = ["스킬", "skill", "마켓", "market", "스킬 목록", "스킬 검색"];
+  const isSkillQuery = skillKeywords.some((k) => utterance.toLowerCase().includes(k));
+  if (isSkillQuery) {
+    // Check for search: "스킬 검색 날씨" or "스킬 음악"
+    const searchMatch = utterance.match(/스킬\s*(?:검색|찾기|search)?\s+(.+)/i);
+    if (searchMatch) {
+      const query = searchMatch[1].trim();
+      const results = searchSkills(query);
+      if (results.length > 0) {
+        const detail = results.length === 1 ? formatSkillDetail(results[0]) : formatSkillCatalog(results, maxLen);
+        return {
+          text: detail,
+          quickReplies: ["스킬 목록", "설치", "도움말"],
+        };
+      }
+      return {
+        text: `"${query}"에 대한 스킬을 찾지 못했습니다.\n\n"스킬 목록"을 입력하면 사용 가능한 전체 스킬을 볼 수 있습니다.`,
+        quickReplies: ["스킬 목록", "설치", "도움말"],
+      };
+    }
+
+    // Show catalog
+    const skills = getUserFriendlyRecommendedSkills();
+    return {
+      text: formatSkillCatalog(skills, maxLen),
+      quickReplies: ["설치", "기능 소개", "도움말"],
+    };
+  }
+
+  // 7) General AI chat — use LLM with MoA-optimized system prompt
   const llm = detectLlmProvider();
 
   if (!llm) {
@@ -527,14 +1093,22 @@ MoA를 설치하면 이 모든 것이 가능합니다!
     };
   }
 
-  const systemPrompt = getMoASystemPrompt();
+  // Build injection-resistant system prompt and sanitized user message
+  const baseSystemPrompt = getMoASystemPrompt(channelId);
+  const securityAddition = getSecuritySystemPrompt(isOwnerAuthEnabled());
+  const systemPrompt = baseSystemPrompt + securityAddition;
+
+  const userName = params.channel?.userName ?? params.userId;
+  const userMessage = isOwnerAuthEnabled()
+    ? wrapUserMessageForLLM(params.text, auth.role, userName)
+    : params.text;
 
   try {
     let responseText: string;
 
     switch (llm.provider) {
       case "anthropic":
-        responseText = await callAnthropic(llm.apiKey, llm.model, systemPrompt, params.text);
+        responseText = await callAnthropic(llm.apiKey, llm.model, systemPrompt, userMessage);
         break;
       case "openai":
         responseText = await callOpenAICompatible(
@@ -542,11 +1116,11 @@ MoA를 설치하면 이 모든 것이 가능합니다!
           llm.apiKey,
           llm.model,
           systemPrompt,
-          params.text,
+          userMessage,
         );
         break;
       case "google":
-        responseText = await callGemini(llm.apiKey, llm.model, systemPrompt, params.text);
+        responseText = await callGemini(llm.apiKey, llm.model, systemPrompt, userMessage);
         break;
       case "groq":
         responseText = await callOpenAICompatible(
@@ -554,21 +1128,22 @@ MoA를 설치하면 이 모든 것이 가능합니다!
           llm.apiKey,
           llm.model,
           systemPrompt,
-          params.text,
+          userMessage,
         );
         break;
       default:
         responseText = "지원되지 않는 AI 제공자입니다.";
     }
 
-    // Truncate to Kakao's limit
-    if (responseText.length > 950) {
-      responseText = responseText.slice(0, 947) + "...";
+    // Truncate to channel's limit
+    const truncateAt = maxLen - 3;
+    if (responseText.length > maxLen) {
+      responseText = responseText.slice(0, truncateAt) + "...";
     }
 
     return {
       text: responseText,
-      quickReplies: ["설치", "도움말"],
+      quickReplies: channelId === "kakao" ? ["설치", "도움말"] : undefined,
     };
   } catch (err) {
     console.error(`[MoA] LLM API error (${llm.provider}/${llm.model}):`, err);
@@ -609,6 +1184,15 @@ async function main() {
     );
   }
 
+  // Check owner authentication
+  if (isOwnerAuthEnabled()) {
+    console.log("[MoA] Owner auth: ENABLED (MOA_OWNER_SECRET set — only authenticated owners can control devices)");
+  } else {
+    console.warn(
+      "[MoA] Owner auth: DISABLED (set MOA_OWNER_SECRET to restrict device control to owner only)",
+    );
+  }
+
   // Check Supabase
   if (isSupabaseConfigured()) {
     console.log("[MoA] Supabase: configured (billing & sync enabled)");
@@ -623,6 +1207,61 @@ async function main() {
     console.log(
       "[MoA] Proactive messaging: not configured (set TOAST_APP_KEY, TOAST_SECRET_KEY, KAKAO_SENDER_KEY)",
     );
+  }
+
+  // Load skills
+  const skills = getLoadedSkills();
+  console.log(`[MoA] Skills: ${skills.length} loaded (${skills.filter((s) => s.eligible).length} eligible)`);
+
+  // Initialize encrypted vault and run scheduled backup
+  if (process.env.MOA_OWNER_SECRET) {
+    try {
+      initializeVault();
+      const backupResult = runScheduledBackup(
+        { timestamp: Date.now(), source: "auto", type: "server_start" },
+        process.env.MOA_OWNER_SECRET,
+      );
+      const created = [
+        backupResult.daily && "daily",
+        backupResult.weekly && "weekly",
+        backupResult.monthly && "monthly",
+      ].filter(Boolean);
+      if (created.length > 0) {
+        console.log(`[MoA] Vault: auto backup created (${created.join(", ")})`);
+      } else {
+        console.log("[MoA] Vault: initialized (backups up to date)");
+      }
+    } catch (err) {
+      console.warn("[MoA] Vault: initialization failed:", err instanceof Error ? err.message : err);
+    }
+  } else {
+    console.log("[MoA] Vault: disabled (set MOA_OWNER_SECRET to enable encrypted backups)");
+  }
+
+  // Check Telegram
+  if (isTelegramConfigured()) {
+    const botInfo = await getTelegramBotInfo();
+    if (botInfo) {
+      console.log(`[MoA] Telegram: configured (bot: @${botInfo.username})`);
+    } else {
+      console.log("[MoA] Telegram: token set but bot info unavailable");
+    }
+  } else {
+    console.log("[MoA] Telegram: not configured (set TELEGRAM_BOT_TOKEN)");
+  }
+
+  // Check WhatsApp
+  if (isWhatsAppConfigured()) {
+    console.log("[MoA] WhatsApp: configured (Cloud API)");
+  } else {
+    console.log("[MoA] WhatsApp: not configured (set WHATSAPP_TOKEN, WHATSAPP_PHONE_NUMBER_ID)");
+  }
+
+  // Check Discord
+  if (isDiscordConfigured()) {
+    console.log("[MoA] Discord: configured (Gateway bot)");
+  } else {
+    console.log("[MoA] Discord: not configured (set DISCORD_BOT_TOKEN)");
   }
 
   // Build relay callbacks for proactive messaging
@@ -643,38 +1282,89 @@ async function main() {
       path: WEBHOOK_PATH,
       onMessage: aiOnMessage,
       logger: console,
-      // Mount install page, relay API, and payment routes on the same server
+      // Mount install page, relay API, payment routes, and channel webhooks
       requestInterceptor: (req, res) => {
-        // Try install page first (/install)
+        // Enhanced health check with channel status (JSON)
+        const urlPath = req.url?.split("?")[0] ?? "";
+        if (urlPath === "/health" && req.method === "GET") {
+          const status = {
+            status: "ok",
+            kakao: hasKeys,
+            telegram: isTelegramConfigured(),
+            whatsapp: isWhatsAppConfigured(),
+            discord: isDiscordConfigured(),
+            ownerAuth: isOwnerAuthEnabled(),
+            vault: !!process.env.MOA_OWNER_SECRET,
+            skills: getLoadedSkills().length,
+            eligibleSkills: getLoadedSkills().filter((s) => s.eligible).length,
+          };
+          res.writeHead(200, { "Content-Type": "application/json" });
+          res.end(JSON.stringify(status));
+          return true;
+        }
+        // Try install page first (/install, /welcome, etc.)
         if (handleInstallRequest(req, res)) {
           return true;
         }
-        // Then try payment callbacks (/payment/*)
+        // Telegram webhook (/telegram/webhook)
+        if (handleTelegramRequest(req, res, aiOnMessage, console)) {
+          return true;
+        }
+        // WhatsApp webhook (/whatsapp/webhook)
+        if (handleWhatsAppRequest(req, res, aiOnMessage, console)) {
+          return true;
+        }
+        // Settings page (/settings/*)
+        if (handleSettingsRequest(req, res)) {
+          return true;
+        }
+        // Payment callbacks (/payment/*)
         if (handlePaymentRequest(req, res, console)) {
           return true;
         }
-        // Then try relay API (/api/relay/*) — with pairing callbacks
+        // Relay API (/api/relay/*) — with pairing callbacks
         return handleRelayRequest(req, res, console, relayCallbacks);
       },
     });
 
+    const localBase = `http://${HOST === "0.0.0.0" ? "localhost" : HOST}:${PORT}`;
     console.log(`[MoA] Webhook server started at ${webhook.url}`);
-    console.log(
-      `[MoA] Install page: http://${HOST === "0.0.0.0" ? "localhost" : HOST}:${PORT}/install`,
-    );
-    console.log(
-      `[MoA] Payment API: http://${HOST === "0.0.0.0" ? "localhost" : HOST}:${PORT}/payment/*`,
-    );
-    console.log(
-      `[MoA] Relay API: http://${HOST === "0.0.0.0" ? "localhost" : HOST}:${PORT}/api/relay/*`,
-    );
-    console.log(
-      `[MoA] Health check: http://${HOST === "0.0.0.0" ? "localhost" : HOST}:${PORT}/health`,
-    );
+    console.log(`[MoA] Install page: ${localBase}/install`);
+    console.log(`[MoA] Welcome page: ${localBase}/welcome`);
+    console.log(`[MoA] Payment API: ${localBase}/payment/*`);
+    console.log(`[MoA] Relay API: ${localBase}/api/relay/*`);
+    console.log(`[MoA] Settings page: ${localBase}/settings`);
+    console.log(`[MoA] Health check: ${localBase}/health`);
+
+    // Log WhatsApp webhook
+    if (isWhatsAppConfigured()) {
+      console.log(`[MoA] WhatsApp webhook: ${localBase}/whatsapp/webhook`);
+    }
+
+    // Register Telegram webhook if configured
+    if (isTelegramConfigured()) {
+      const publicDomain = process.env.RAILWAY_PUBLIC_DOMAIN;
+      const publicUrl = publicDomain
+        ? `https://${publicDomain}/telegram/webhook`
+        : "https://moa.lawith.kr/telegram/webhook";
+      console.log(`[MoA] Telegram webhook: ${localBase}/telegram/webhook`);
+      await registerTelegramWebhook(publicUrl);
+    }
+
+    // Start Discord Gateway if configured
+    if (isDiscordConfigured()) {
+      const discordStarted = await startDiscordGateway(aiOnMessage, console);
+      if (discordStarted) {
+        console.log("[MoA] Discord Gateway: connecting... (bot will appear online shortly)");
+      } else {
+        console.log("[MoA] Discord Gateway: failed to start");
+      }
+    }
 
     // Graceful shutdown
     const shutdown = async (signal: string) => {
       console.log(`[MoA] Received ${signal}, shutting down...`);
+      stopDiscordGateway();
       await webhook.stop();
       process.exit(0);
     };
