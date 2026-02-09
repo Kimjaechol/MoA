@@ -128,6 +128,7 @@ import {
   getSecuritySystemPrompt,
   hasUserSecret,
   setUserSecret,
+  verifyUserSecret,
   changeUserSecret,
   getUserSecretCount,
   // User Accounts
@@ -201,15 +202,30 @@ const MOA_INSTALL_GUIDE = `MoA 설치는 아주 간단합니다!
 [3단계] 이미 회원가입을 하셨다면 로그인만 하면 됩니다!
 새 기기에서 로그인하면 자동으로 새 기기가 등록됩니다.
 
-[4단계] 카카오톡에서 "사용자 인증" 버튼을 눌러 아이디와 비밀번호로 인증하세요.
-인증 후 카카오톡에서 기기를 제어할 수 있습니다!`;
+[4단계] 카카오톡에서 "사용자 인증" 버튼을 눌러 인증하세요.
+1차: 아이디+비밀번호 → 2차: 구문번호 설정
+이후 재인증 시에는 구문번호만 입력하면 됩니다!`;
 
 // ============================================
 // Pending Auth State (카카오톡 GUI 인증)
 // ============================================
 
-/** Track users who clicked "사용자 인증" and are expected to type credentials */
-const pendingAuthUsers = new Map<string, { expiresAt: number }>();
+/**
+ * 2단계 인증 상태 추적
+ *
+ * Step 1 (credentials): 아이디 + 비밀번호 → 채널 연동
+ * Step 2a (passphrase_setup): 구문번호 신규 설정 → setUserSecret()
+ * Step 2b (passphrase_verify): 구문번호 확인 → verifyUserSecret()
+ *
+ * 재방문 사용자(구문번호 설정 완료): "사용자 인증" → 구문번호만 입력 → 즉시 인증
+ */
+interface PendingAuth {
+  expiresAt: number;
+  step: "credentials" | "passphrase_setup" | "passphrase_verify";
+  /** 1차 인증 완료 후 저장된 사용자명 */
+  username?: string;
+}
+const pendingAuthUsers = new Map<string, PendingAuth>();
 const AUTH_PENDING_TTL_MS = 5 * 60 * 1000; // 5분
 
 // ============================================
@@ -459,7 +475,7 @@ MoA는 카카오톡, 텔레그램, WhatsApp, Discord 등 여러 메신저에서 
 
 ## 주요 명령어
 - 설치 : MoA 간편 설치 안내
-- 사용자 인증 : 가입한 아이디/비밀번호로 인증 (버튼 클릭)
+- 사용자 인증 : 2단계 인증 (1차: 아이디+비밀번호, 2차: 구문번호)
 - /기기 : 연결된 기기 목록
 - @기기명 명령 : 특정 기기에 원격 명령 (예: @노트북 ls ~/Desktop)
 - /도움말 : 전체 명령어 보기
@@ -489,7 +505,9 @@ ${skillsPrompt}
 ## 설치 안내 시
 사용자가 설치에 관심을 보이면: "설치"라고 입력해주세요! 간편 설치 안내를 바로 보내드립니다.
 설치 후 https://moa.lawith.kr/welcome 페이지에서 회원가입/로그인으로 기기를 등록할 수 있습니다.
-카카오톡에서는 "사용자 인증" 버튼을 눌러 가입시 설정한 아이디와 비밀번호로 인증합니다.
+카카오톡에서 "사용자 인증" 버튼을 누르면 2단계 인증이 진행됩니다:
+- 1차 인증: 아이디 + 비밀번호 (처음 1회, 채널 연동)
+- 2차 인증: 구문번호 설정/입력 (이후 구문번호만으로 빠르게 재인증)
 
 ## 사용 사례 (사용자에게 설명할 때 활용)
 - "회사에서 퇴근 후 집 컴퓨터에 있는 파일 확인"
@@ -573,46 +591,99 @@ async function aiOnMessage(params: {
   const channelId = params.channel?.channelId ?? "kakao";
   const maxLen = params.channel?.maxMessageLength ?? 950;
 
-  // ── Pending Auth Check (GUI 인증 — "사용자 인증" 버튼 클릭 후 자격증명 입력) ──
+  // ── 2단계 인증 처리 (Pending Auth — "사용자 인증" 버튼 클릭 후 입력 처리) ──
   const pendingKey = `${channelId}:${params.userId}`;
   const pending = pendingAuthUsers.get(pendingKey);
   if (pending && Date.now() < pending.expiresAt) {
-    // User is in auth mode — treat this message as credentials
-    const linkedAccount = findAccountByChannel(channelId, params.userId);
 
-    if (linkedAccount) {
-      // Already linked — just need password
-      if (verifyPassword(linkedAccount.username, utterance)) {
+    // ── Step 2: 구문번호 설정 (1차 인증 후 자동 요청) ──
+    if (pending.step === "passphrase_setup" && pending.username) {
+      const secret = utterance.trim();
+      const error = setUserSecret(params.userId, channelId, secret);
+      if (error) {
+        return {
+          text: `구문번호 설정 실패: ${error}\n\n다시 입력해주세요. (4자 이상)`,
+        };
+      }
+      grantOwnerAuth(params.userId, channelId);
+      pendingAuthUsers.delete(pendingKey);
+      return {
+        text: `2차 인증 완료! 구문번호가 설정되었습니다.\n\n${pending.username}님, 이제 모든 MoA 기능을 사용할 수 있습니다.\n\n다음부터는 "사용자 인증" 버튼을 누르고 구문번호만 입력하면 빠르게 인증됩니다.`,
+        quickReplies: ["기기 목록", "도움말"],
+      };
+    }
+
+    // ── Step 2: 구문번호 확인 (재방문 사용자) ──
+    if (pending.step === "passphrase_verify") {
+      if (verifyUserSecret(params.userId, channelId, utterance)) {
         grantOwnerAuth(params.userId, channelId);
         pendingAuthUsers.delete(pendingKey);
+        const linkedAccount = findAccountByChannel(channelId, params.userId);
+        const name = linkedAccount?.username ?? "";
         return {
-          text: `인증 성공! ${linkedAccount.username}님, 환영합니다.\n\n이제 모든 MoA 기능을 사용할 수 있습니다.`,
+          text: `인증 성공! ${name}님, 환영합니다.\n\n이제 모든 MoA 기능을 사용할 수 있습니다.`,
           quickReplies: ["기기 목록", "도움말"],
         };
       }
+      return {
+        text: "구문번호가 일치하지 않습니다.\n다시 입력해주세요.",
+        quickReplies: ["사용자 인증", "도움말"],
+      };
     }
 
-    // Not linked or password-only failed — try "username password" format
-    const parts = utterance.split(/\s+/);
-    if (parts.length >= 2) {
-      const tryUsername = parts[0];
-      const tryPassword = parts.slice(1).join(" ");
-      if (verifyPassword(tryUsername, tryPassword)) {
-        linkChannel(tryUsername, channelId, params.userId);
-        grantOwnerAuth(params.userId, channelId);
-        pendingAuthUsers.delete(pendingKey);
+    // ── Step 1: 아이디 + 비밀번호 (1차 인증) ──
+    if (pending.step === "credentials") {
+      const linkedAccount = findAccountByChannel(channelId, params.userId);
+      let authUsername: string | null = null;
+
+      // Case A: already linked → password only
+      if (linkedAccount && verifyPassword(linkedAccount.username, utterance)) {
+        authUsername = linkedAccount.username;
+      }
+
+      // Case B: not linked → "아이디 비밀번호" format
+      if (!authUsername) {
+        const parts = utterance.split(/\s+/);
+        if (parts.length >= 2) {
+          const tryUsername = parts[0];
+          const tryPassword = parts.slice(1).join(" ");
+          if (verifyPassword(tryUsername, tryPassword)) {
+            linkChannel(tryUsername, channelId, params.userId);
+            authUsername = tryUsername;
+          }
+        }
+      }
+
+      if (authUsername) {
+        // 1차 인증 성공 → 2차 인증 (구문번호) 단계로 진행
+        if (hasUserSecret(params.userId, channelId)) {
+          // 구문번호가 이미 설정됨 → 확인 요청
+          pendingAuthUsers.set(pendingKey, {
+            expiresAt: Date.now() + AUTH_PENDING_TTL_MS,
+            step: "passphrase_verify",
+            username: authUsername,
+          });
+          return {
+            text: `1차 인증 성공! ${authUsername}님\n\n2차 인증을 위해 설정하신 구문번호를 입력해주세요.`,
+          };
+        }
+        // 구문번호 미설정 → 설정 요청
+        pendingAuthUsers.set(pendingKey, {
+          expiresAt: Date.now() + AUTH_PENDING_TTL_MS,
+          step: "passphrase_setup",
+          username: authUsername,
+        });
         return {
-          text: `인증 성공! ${tryUsername}님, 환영합니다.\n\n카카오톡 계정이 연동되었습니다.\n이제 모든 MoA 기능을 사용할 수 있습니다.`,
-          quickReplies: ["기기 목록", "도움말"],
+          text: `1차 인증 성공! ${authUsername}님\n\n보안을 위해 구문번호를 설정해주세요.\n빠른 재인증에 사용할 구문번호를 입력하세요. (4자 이상)\n\n예: 나의비밀문장`,
         };
       }
-    }
 
-    // Failed
-    return {
-      text: "인증에 실패했습니다.\n\n아이디와 비밀번호를 정확히 입력해주세요.\n형식: 아이디 비밀번호\n\n예: myid mypassword",
-      quickReplies: ["사용자 인증", "설치", "도움말"],
-    };
+      // 1차 인증 실패
+      return {
+        text: "인증에 실패했습니다.\n\n아이디와 비밀번호를 정확히 입력해주세요.\n형식: 아이디 비밀번호\n\n예: myid mypassword",
+        quickReplies: ["사용자 인증", "설치", "도움말"],
+      };
+    }
   }
   // Clean up expired pending
   if (pending) pendingAuthUsers.delete(pendingKey);
@@ -621,18 +692,35 @@ async function aiOnMessage(params: {
   if (/^(?:사용자\s*인증|인증하기|인증)$/i.test(utterance)) {
     const linkedAccount = findAccountByChannel(channelId, params.userId);
 
-    pendingAuthUsers.set(pendingKey, {
-      expiresAt: Date.now() + AUTH_PENDING_TTL_MS,
-    });
-
-    if (linkedAccount) {
+    // Case 1: 재방문 사용자 (계정 연동 + 구문번호 설정 완료) → 구문번호만 요청
+    if (linkedAccount && hasUserSecret(params.userId, channelId)) {
+      pendingAuthUsers.set(pendingKey, {
+        expiresAt: Date.now() + AUTH_PENDING_TTL_MS,
+        step: "passphrase_verify",
+      });
       return {
-        text: `MoA에 접속하기 위하여 가입시 설정하신 비밀번호를 입력해주세요.\n\n(${linkedAccount.username} 계정)`,
+        text: `${linkedAccount.username}님, 구문번호를 입력해주세요.`,
       };
     }
 
+    // Case 2: 계정 연동됨, 구문번호 미설정 → 비밀번호 요청 후 구문번호 설정
+    if (linkedAccount) {
+      pendingAuthUsers.set(pendingKey, {
+        expiresAt: Date.now() + AUTH_PENDING_TTL_MS,
+        step: "credentials",
+      });
+      return {
+        text: `${linkedAccount.username}님, 비밀번호를 입력해주세요.\n\n(1차 인증 후 구문번호를 설정합니다)`,
+      };
+    }
+
+    // Case 3: 계정 미연동 → 아이디 + 비밀번호 요청
+    pendingAuthUsers.set(pendingKey, {
+      expiresAt: Date.now() + AUTH_PENDING_TTL_MS,
+      step: "credentials",
+    });
     return {
-      text: `MoA에 접속하기 위하여 가입시 설정하신 아이디와 비밀번호를 입력해주세요.\n\n형식: 아이디 비밀번호\n예: myid mypassword\n\n아직 MoA 계정이 없으시다면 "설치"를 입력하여 MoA를 설치하고 회원가입해주세요!`,
+      text: `MoA에 접속하기 위하여 아이디와 비밀번호를 입력해주세요.\n\n형식: 아이디 비밀번호\n예: myid mypassword\n\n(1차 인증 후 빠른 재인증을 위한 구문번호를 설정합니다)\n\n아직 MoA 계정이 없으시다면 "설치"를 입력하여 회원가입해주세요!`,
       quickReplies: ["설치", "도움말"],
     };
   }

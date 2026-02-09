@@ -339,8 +339,13 @@ export function generateInstallPage(userAgent: string, pairingCode?: string): st
 
 /**
  * 설치 완료 후 로그인/회원가입 페이지
- * 설치 스크립트가 완료되면 브라우저에서 이 페이지를 자동으로 엽니다.
- * 로그인 폼(기본) + 회원가입 폼(전환) → 기기 자동 등록
+ *
+ * 3단계 흐름:
+ * 1. 로그인/회원가입 (아이디 + 비밀번호)
+ * 2. 기기 등록 (기기 이름 확인 — 로그인 시만, 중복 자동 방지)
+ * 3. 완료 (설정 파일 다운로드)
+ *
+ * 회원가입은 첫 기기이므로 1→3 바로 진행 (기기 이름 폼에 포함)
  */
 function generateWelcomePage(): string {
   return `<!DOCTYPE html>
@@ -348,7 +353,7 @@ function generateWelcomePage(): string {
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>MoA - 로그인</title>
+  <title>MoA - \uB85C\uADF8\uC778</title>
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
     body {
@@ -368,154 +373,82 @@ function generateWelcomePage(): string {
       width: 100%;
       box-shadow: 0 20px 60px rgba(0,0,0,0.3);
     }
-    .header {
-      text-align: center;
-      margin-bottom: 32px;
-    }
+    .header { text-align: center; margin-bottom: 32px; }
     .header .logo { font-size: 48px; }
     .header h1 { font-size: 24px; color: #1a1a2e; margin: 8px 0 4px; }
     .header .subtitle { color: #666; font-size: 14px; }
-    .form-group {
-      margin-bottom: 16px;
-    }
+    .step-view { display: none; }
+    .step-view.active { display: block; }
+    .form-group { margin-bottom: 16px; }
     .form-group label {
-      display: block;
-      font-size: 13px;
-      font-weight: 600;
-      color: #555;
-      margin-bottom: 6px;
+      display: block; font-size: 13px; font-weight: 600; color: #555; margin-bottom: 6px;
     }
     .form-group input {
-      width: 100%;
-      padding: 12px 16px;
-      border: 2px solid #e5e7eb;
-      border-radius: 10px;
-      font-size: 15px;
-      outline: none;
-      transition: border-color 0.2s;
+      width: 100%; padding: 12px 16px; border: 2px solid #e5e7eb;
+      border-radius: 10px; font-size: 15px; outline: none; transition: border-color 0.2s;
     }
     .form-group input:focus {
-      border-color: #667eea;
-      box-shadow: 0 0 0 3px rgba(102,126,234,0.15);
+      border-color: #667eea; box-shadow: 0 0 0 3px rgba(102,126,234,0.15);
     }
     .form-group input::placeholder { color: #aaa; }
     .submit-btn {
       background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-      color: white;
-      border: none;
-      padding: 14px;
-      border-radius: 12px;
-      font-size: 16px;
-      font-weight: 700;
-      cursor: pointer;
-      width: 100%;
-      margin-top: 8px;
+      color: white; border: none; padding: 14px; border-radius: 12px;
+      font-size: 16px; font-weight: 700; cursor: pointer; width: 100%; margin-top: 8px;
       transition: transform 0.2s, box-shadow 0.2s, opacity 0.2s;
     }
     .submit-btn:hover:not(:disabled) {
-      transform: translateY(-2px);
-      box-shadow: 0 8px 24px rgba(102,126,234,0.4);
+      transform: translateY(-2px); box-shadow: 0 8px 24px rgba(102,126,234,0.4);
     }
-    .submit-btn:disabled {
-      opacity: 0.5;
-      cursor: not-allowed;
-    }
-    .status-msg {
-      margin-top: 12px;
-      font-size: 14px;
-      text-align: center;
-      min-height: 20px;
-    }
+    .submit-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+    .status-msg { margin-top: 12px; font-size: 14px; text-align: center; min-height: 20px; }
     .status-msg.error { color: #dc2626; }
     .status-msg.loading { color: #667eea; }
     .status-msg.success { color: #16a34a; font-weight: 600; }
-    .toggle-link {
-      text-align: center;
-      margin-top: 20px;
-      font-size: 14px;
-      color: #666;
-    }
-    .toggle-link a {
-      color: #667eea;
-      text-decoration: none;
-      font-weight: 600;
-      cursor: pointer;
-    }
+    .toggle-link { text-align: center; margin-top: 20px; font-size: 14px; color: #666; }
+    .toggle-link a { color: #667eea; text-decoration: none; font-weight: 600; cursor: pointer; }
     .toggle-link a:hover { text-decoration: underline; }
-    .divider {
-      display: flex;
-      align-items: center;
-      margin: 24px 0;
-      color: #ccc;
-      font-size: 13px;
+    .existing-devices {
+      background: #f8f9fa; border-radius: 10px; padding: 12px 16px;
+      margin-bottom: 16px; font-size: 13px; color: #555;
     }
-    .divider::before, .divider::after {
-      content: '';
-      flex: 1;
-      border-bottom: 1px solid #e5e7eb;
+    .existing-devices b { color: #333; }
+    .existing-devices .dev-list { margin-top: 6px; }
+    .existing-devices .dev-item {
+      display: inline-block; background: #e5e7eb; border-radius: 6px;
+      padding: 3px 10px; margin: 3px 4px 3px 0; font-size: 12px; color: #333;
     }
-    .divider span { padding: 0 12px; }
-
     /* Success section */
-    .success-section {
-      text-align: center;
-      display: none;
-    }
-    .success-section.visible { display: block; }
+    .success-section { text-align: center; }
     .success-section .icon { font-size: 56px; margin-bottom: 16px; }
     .success-section h2 { font-size: 20px; color: #16a34a; margin-bottom: 8px; }
-    .success-section .detail { font-size: 14px; color: #555; margin-bottom: 20px; line-height: 1.7; }
+    .success-section .detail {
+      font-size: 14px; color: #555; margin-bottom: 20px; line-height: 1.7;
+    }
     .success-section .device-info {
-      background: #f0fdf4;
-      border: 1px solid #bbf7d0;
-      border-radius: 12px;
-      padding: 16px;
-      margin-bottom: 20px;
-      text-align: left;
-      font-size: 14px;
-      color: #333;
+      background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 12px;
+      padding: 16px; margin-bottom: 20px; text-align: left; font-size: 14px; color: #333;
     }
     .success-section .device-info .row {
-      display: flex;
-      justify-content: space-between;
-      padding: 4px 0;
+      display: flex; justify-content: space-between; padding: 4px 0;
     }
     .success-section .device-info .row .label { color: #666; }
     .success-section .device-info .row .value { font-weight: 600; }
     .activate-btn {
-      background: #22c55e;
-      color: white;
-      border: none;
-      padding: 14px 32px;
-      border-radius: 12px;
-      font-size: 16px;
-      font-weight: 700;
-      cursor: pointer;
-      width: 100%;
-      transition: transform 0.2s;
+      background: #22c55e; color: white; border: none; padding: 14px 32px;
+      border-radius: 12px; font-size: 16px; font-weight: 700; cursor: pointer;
+      width: 100%; transition: transform 0.2s;
     }
     .activate-btn:hover {
-      transform: translateY(-2px);
-      box-shadow: 0 8px 24px rgba(34,197,94,0.3);
+      transform: translateY(-2px); box-shadow: 0 8px 24px rgba(34,197,94,0.3);
     }
     .success-section .next-steps {
-      background: #fffbeb;
-      border: 1px solid #fde68a;
-      border-radius: 12px;
-      padding: 16px;
-      margin-top: 20px;
-      text-align: left;
-      font-size: 13px;
-      color: #78350f;
-      line-height: 1.7;
+      background: #fffbeb; border: 1px solid #fde68a; border-radius: 12px;
+      padding: 16px; margin-top: 20px; text-align: left; font-size: 13px;
+      color: #78350f; line-height: 1.7;
     }
     .success-section .next-steps b { color: #92400e; }
-    .footer {
-      text-align: center;
-      margin-top: 24px;
-      color: #999;
-      font-size: 12px;
-    }
+    .footer { text-align: center; margin-top: 24px; color: #999; font-size: 12px; }
     .footer a { color: #667eea; text-decoration: none; }
     @media (max-width: 480px) {
       .container { padding: 28px 20px; }
@@ -529,72 +462,87 @@ function generateWelcomePage(): string {
     <div class="header">
       <div class="logo">&#x1F916;</div>
       <h1>MoA</h1>
-      <p class="subtitle">Master of AI - AI 어시스턴트</p>
+      <p class="subtitle">Master of AI - AI \uC5B4\uC2DC\uC2A4\uD134\uD2B8</p>
     </div>
 
-    <!-- Login Form (default) -->
-    <div id="login-form">
+    <!-- Step 1a: Login Form (default) -->
+    <div id="step-login" class="step-view active">
       <div class="form-group">
-        <label for="login-username">아이디</label>
-        <input type="text" id="login-username" placeholder="아이디를 입력하세요" autocomplete="username">
+        <label for="login-username">\uC544\uC774\uB514</label>
+        <input type="text" id="login-username" placeholder="\uC544\uC774\uB514\uB97C \uC785\uB825\uD558\uC138\uC694" autocomplete="username">
       </div>
       <div class="form-group">
-        <label for="login-password">비밀번호</label>
-        <input type="password" id="login-password" placeholder="비밀번호를 입력하세요" autocomplete="current-password">
+        <label for="login-password">\uBE44\uBC00\uBC88\uD638</label>
+        <input type="password" id="login-password" placeholder="\uBE44\uBC00\uBC88\uD638\uB97C \uC785\uB825\uD558\uC138\uC694" autocomplete="current-password">
       </div>
-      <div class="form-group">
-        <label for="login-device">기기 이름</label>
-        <input type="text" id="login-device" placeholder="이 기기의 이름 (예: 내 노트북)">
-      </div>
-      <button class="submit-btn" id="login-btn" onclick="handleLogin()">로그인</button>
+      <button class="submit-btn" id="login-btn" onclick="handleLogin()">\uB85C\uADF8\uC778</button>
       <div class="status-msg" id="login-status"></div>
       <div class="toggle-link">
-        계정이 없으신가요? <a onclick="showSignup()">회원가입</a>
+        \uACC4\uC815\uC774 \uC5C6\uC73C\uC2E0\uAC00\uC694? <a onclick="showStep('step-signup')">\uD68C\uC6D0\uAC00\uC785</a>
       </div>
     </div>
 
-    <!-- Signup Form (hidden) -->
-    <div id="signup-form" style="display:none;">
+    <!-- Step 1b: Signup Form -->
+    <div id="step-signup" class="step-view">
       <div class="form-group">
-        <label for="signup-username">아이디</label>
-        <input type="text" id="signup-username" placeholder="사용할 아이디 (2자 이상)" autocomplete="username">
+        <label for="signup-username">\uC544\uC774\uB514</label>
+        <input type="text" id="signup-username" placeholder="\uC0AC\uC6A9\uD560 \uC544\uC774\uB514 (2\uC790 \uC774\uC0C1)" autocomplete="username">
       </div>
       <div class="form-group">
-        <label for="signup-password">비밀번호</label>
-        <input type="password" id="signup-password" placeholder="비밀번호 (4자 이상)" autocomplete="new-password">
+        <label for="signup-password">\uBE44\uBC00\uBC88\uD638</label>
+        <input type="password" id="signup-password" placeholder="\uBE44\uBC00\uBC88\uD638 (4\uC790 \uC774\uC0C1)" autocomplete="new-password">
       </div>
       <div class="form-group">
-        <label for="signup-confirm">비밀번호 확인</label>
-        <input type="password" id="signup-confirm" placeholder="비밀번호를 다시 입력하세요" autocomplete="new-password">
+        <label for="signup-confirm">\uBE44\uBC00\uBC88\uD638 \uD655\uC778</label>
+        <input type="password" id="signup-confirm" placeholder="\uBE44\uBC00\uBC88\uD638\uB97C \uB2E4\uC2DC \uC785\uB825\uD558\uC138\uC694" autocomplete="new-password">
       </div>
       <div class="form-group">
-        <label for="signup-device">기기 이름</label>
-        <input type="text" id="signup-device" placeholder="이 기기의 이름 (예: 내 노트북)">
+        <label for="signup-device">\uAE30\uAE30 \uC774\uB984</label>
+        <input type="text" id="signup-device" placeholder="\uC774 \uAE30\uAE30\uC758 \uC774\uB984 (\uC608: \uB0B4 \uB178\uD2B8\uBD81)">
       </div>
-      <button class="submit-btn" id="signup-btn" onclick="handleSignup()">회원가입</button>
+      <button class="submit-btn" id="signup-btn" onclick="handleSignup()">\uD68C\uC6D0\uAC00\uC785</button>
       <div class="status-msg" id="signup-status"></div>
       <div class="toggle-link">
-        이미 계정이 있으신가요? <a onclick="showLogin()">로그인</a>
+        \uC774\uBBF8 \uACC4\uC815\uC774 \uC788\uC73C\uC2E0\uAC00\uC694? <a onclick="showStep('step-login')">\uB85C\uADF8\uC778</a>
       </div>
     </div>
 
-    <!-- Success Section (hidden) -->
-    <div id="success-section" class="success-section">
-      <div class="icon">&#x1F389;</div>
-      <h2 id="success-title">기기 등록 완료!</h2>
-      <div class="detail" id="success-detail">이제 카카오톡에서 이 컴퓨터를 제어할 수 있습니다.</div>
-      <div class="device-info" id="device-info">
-        <div class="row"><span class="label">기기 이름</span><span class="value" id="info-device"></span></div>
-        <div class="row"><span class="label">플랫폼</span><span class="value" id="info-platform"></span></div>
-        <div class="row"><span class="label">등록 상태</span><span class="value" id="info-status"></span></div>
+    <!-- Step 2: Device Registration (login only — shown after credential verify) -->
+    <div id="step-device" class="step-view">
+      <p style="font-size:15px; color:#333; margin-bottom:16px; text-align:center;">
+        <b id="device-welcome-user"></b>\uB2D8, \uD658\uC601\uD569\uB2C8\uB2E4!<br>
+        <span style="color:#666; font-size:13px;">\uC0C8 \uAE30\uAE30\uB97C \uB4F1\uB85D\uD574\uC8FC\uC138\uC694.</span>
+      </p>
+      <div id="existing-devices-box" class="existing-devices" style="display:none;">
+        <b>\uAE30\uC874 \uB4F1\uB85D\uB41C \uAE30\uAE30:</b>
+        <div class="dev-list" id="existing-dev-list"></div>
       </div>
-      <button class="activate-btn" onclick="downloadActivation()">설정 파일 다운로드</button>
+      <div class="form-group">
+        <label for="device-name">\uC0C8 \uAE30\uAE30 \uC774\uB984</label>
+        <input type="text" id="device-name" placeholder="\uC774 \uAE30\uAE30\uC758 \uC774\uB984">
+      </div>
+      <button class="submit-btn" id="device-btn" onclick="handleDeviceRegister()">\uAE30\uAE30 \uB4F1\uB85D</button>
+      <div class="status-msg" id="device-status"></div>
+    </div>
+
+    <!-- Step 3: Success -->
+    <div id="step-success" class="step-view success-section">
+      <div class="icon">&#x1F389;</div>
+      <h2 id="success-title">\uAE30\uAE30 \uB4F1\uB85D \uC644\uB8CC!</h2>
+      <div class="detail" id="success-detail">\uC774\uC81C \uCE74\uCE74\uC624\uD1A1\uC5D0\uC11C \uC774 \uCEF4\uD4E8\uD130\uB97C \uC81C\uC5B4\uD560 \uC218 \uC788\uC2B5\uB2C8\uB2E4.</div>
+      <div class="device-info">
+        <div class="row"><span class="label">\uAE30\uAE30 \uC774\uB984</span><span class="value" id="info-device"></span></div>
+        <div class="row"><span class="label">\uD50C\uB7AB\uD3FC</span><span class="value" id="info-platform"></span></div>
+        <div class="row"><span class="label">\uB4F1\uB85D \uC0C1\uD0DC</span><span class="value" id="info-status"></span></div>
+      </div>
+      <button class="activate-btn" onclick="downloadActivation()">\uC124\uC815 \uD30C\uC77C \uB2E4\uC6B4\uB85C\uB4DC</button>
       <div class="status-msg success" id="activate-status" style="margin-top:12px;"></div>
       <div class="next-steps">
-        <b>다음 단계:</b><br>
-        1. 다운로드된 파일을 <b>더블클릭</b>하여 설정을 완료하세요.<br>
-        2. <b>카카오톡</b>에서 MoA 채널을 열고 "사용자 인증" 버튼을 눌러주세요.<br>
-        3. 가입시 설정한 아이디와 비밀번호로 인증하면 기기 제어가 활성화됩니다!
+        <b>\uB2E4\uC74C \uB2E8\uACC4:</b><br>
+        1. \uB2E4\uC6B4\uB85C\uB4DC\uB41C \uD30C\uC77C\uC744 <b>\uB354\uBE14\uD074\uB9AD</b>\uD558\uC5EC \uC124\uC815\uC744 \uC644\uB8CC\uD558\uC138\uC694.<br>
+        2. <b>\uCE74\uCE74\uC624\uD1A1</b>\uC5D0\uC11C MoA \uCC44\uB110\uC744 \uC5F4\uACE0 "\uC0AC\uC6A9\uC790 \uC778\uC99D" \uBC84\uD2BC\uC744 \uB20C\uB7EC\uC8FC\uC138\uC694.<br>
+        3. \uAC00\uC785\uC2DC \uC124\uC815\uD55C \uC544\uC774\uB514\uC640 \uBE44\uBC00\uBC88\uD638\uB85C 1\uCC28 \uC778\uC99D \uD6C4,<br>
+        &nbsp;&nbsp;&nbsp;\uAD6C\uBB38\uBC88\uD638\uB97C \uC124\uC815\uD558\uBA74 2\uCC28 \uC778\uC99D\uC774 \uC644\uB8CC\uB429\uB2C8\uB2E4!
       </div>
     </div>
 
@@ -604,7 +552,7 @@ function generateWelcomePage(): string {
   </div>
 
   <script>
-    // Platform detection
+    // ── Platform detection ──
     var isWindows = navigator.userAgent.indexOf('Win') !== -1;
     var isMac = navigator.userAgent.indexOf('Mac') !== -1;
     var isAndroid = navigator.userAgent.indexOf('Android') !== -1;
@@ -617,61 +565,41 @@ function generateWelcomePage(): string {
     else if (isAndroid) { detectedPlatform = 'Android'; detectedType = 'mobile'; }
     else if (isiOS) { detectedPlatform = 'iOS'; detectedType = 'mobile'; }
 
-    // Auto-suggest device names
-    var defaultDeviceName = detectedPlatform === 'Windows' ? 'My Windows PC'
+    var baseDeviceName = detectedPlatform === 'Windows' ? 'My Windows PC'
       : detectedPlatform === 'macOS' ? 'My Mac'
       : detectedPlatform === 'Android' ? 'My Android'
       : detectedPlatform === 'iOS' ? 'My iPhone'
       : 'My Linux PC';
 
-    document.getElementById('login-device').value = defaultDeviceName;
-    document.getElementById('signup-device').value = defaultDeviceName;
-
-    // Focus first input
+    // Set default device name for signup form
+    document.getElementById('signup-device').value = baseDeviceName;
     document.getElementById('login-username').focus();
 
-    // Store result for activation download
+    // ── State ──
     var authResult = null;
+    var loginCredentials = null; // { username, password } saved after step 1
 
-    function showSignup() {
-      document.getElementById('login-form').style.display = 'none';
-      document.getElementById('signup-form').style.display = 'block';
-      document.getElementById('signup-username').focus();
-      document.title = 'MoA - \\ud68c\\uc6d0\\uac00\\uc785';
+    // ── Step navigation ──
+    function showStep(stepId) {
+      var views = document.querySelectorAll('.step-view');
+      for (var i = 0; i < views.length; i++) views[i].classList.remove('active');
+      document.getElementById(stepId).classList.add('active');
+      // Focus first input in new step
+      var firstInput = document.getElementById(stepId).querySelector('input');
+      if (firstInput) firstInput.focus();
     }
 
-    function showLogin() {
-      document.getElementById('signup-form').style.display = 'none';
-      document.getElementById('login-form').style.display = 'block';
-      document.getElementById('login-username').focus();
-      document.title = 'MoA - \\ub85c\\uadf8\\uc778';
+    // ── Device name de-duplication ──
+    function getUniqueDeviceName(existingDevices) {
+      if (!existingDevices || existingDevices.length === 0) return baseDeviceName;
+      var names = existingDevices.map(function(n) { return n.toLowerCase(); });
+      if (names.indexOf(baseDeviceName.toLowerCase()) === -1) return baseDeviceName;
+      var i = 2;
+      while (names.indexOf((baseDeviceName + ' ' + i).toLowerCase()) !== -1) { i++; }
+      return baseDeviceName + ' ' + i;
     }
 
-    function showSuccess(deviceName, platform, isNew) {
-      document.getElementById('login-form').style.display = 'none';
-      document.getElementById('signup-form').style.display = 'none';
-      var sec = document.getElementById('success-section');
-      sec.classList.add('visible');
-      document.getElementById('success-title').textContent = isNew ? '\\uae30\\uae30 \\ub4f1\\ub85d \\uc644\\ub8cc!' : '\\ub85c\\uadf8\\uc778 \\uc131\\uacf5!';
-      document.getElementById('success-detail').textContent = isNew
-        ? '\\uc0c8 \\uae30\\uae30\\uac00 \\ub4f1\\ub85d\\ub418\\uc5c8\\uc2b5\\ub2c8\\ub2e4. \\uc544\\ub798 \\uc124\\uc815 \\ud30c\\uc77c\\uc744 \\ub2e4\\uc6b4\\ub85c\\ub4dc\\ud574\\uc8fc\\uc138\\uc694.'
-        : '\\uae30\\uc874 \\uae30\\uae30\\ub85c \\ub85c\\uadf8\\uc778\\ub418\\uc5c8\\uc2b5\\ub2c8\\ub2e4.';
-      document.getElementById('info-device').textContent = deviceName;
-      document.getElementById('info-platform').textContent = platform;
-      document.getElementById('info-status').textContent = isNew ? '\\uc2e0\\uaddc \\ub4f1\\ub85d' : '\\uae30\\uc874 \\uae30\\uae30';
-      document.title = 'MoA - \\uc644\\ub8cc';
-      // Auto-trigger download
-      downloadActivation();
-    }
-
-    function getDevicePayload(formPrefix) {
-      return {
-        deviceName: document.getElementById(formPrefix + '-device').value.trim() || defaultDeviceName,
-        deviceType: detectedType,
-        platform: detectedPlatform
-      };
-    }
-
+    // ── Step 1a: Login ──
     function handleLogin() {
       var username = document.getElementById('login-username').value.trim();
       var password = document.getElementById('login-password').value;
@@ -680,106 +608,185 @@ function generateWelcomePage(): string {
 
       if (!username || !password) {
         status.className = 'status-msg error';
-        status.textContent = '\\uc544\\uc774\\ub514\\uc640 \\ube44\\ubc00\\ubc88\\ud638\\ub97c \\uc785\\ub825\\ud574\\uc8fc\\uc138\\uc694.';
+        status.textContent = '\\uC544\\uC774\\uB514\\uC640 \\uBE44\\uBC00\\uBC88\\uD638\\uB97C \\uC785\\uB825\\uD574\\uC8FC\\uC138\\uC694.';
         return;
       }
 
       status.className = 'status-msg loading';
-      status.textContent = '\\ub85c\\uadf8\\uc778 \\uc911...';
+      status.textContent = '\\uB85C\\uADF8\\uC778 \\uC911...';
       btn.disabled = true;
 
-      var device = getDevicePayload('login');
-
+      // Step 1: verify credentials only (no device)
       fetch('/api/relay/auth/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ username: username, password: password, device: device })
+        body: JSON.stringify({ username: username, password: password })
       })
-      .then(function(res) { return res.json(); })
+      .then(function(r) { return r.json(); })
       .then(function(data) {
         if (data.success) {
-          authResult = {
-            deviceToken: data.deviceToken,
-            deviceName: device.deviceName,
-            platform: device.platform,
-            username: username,
-            registeredAt: new Date().toISOString()
-          };
-          showSuccess(device.deviceName, device.platform, data.isNewDevice !== false);
+          loginCredentials = { username: username, password: password };
+          // Show device registration step with de-duplicated name
+          var existing = data.existingDevices || [];
+          document.getElementById('device-welcome-user').textContent = username;
+          document.getElementById('device-name').value = getUniqueDeviceName(existing);
+          // Show existing devices list
+          if (existing.length > 0) {
+            var box = document.getElementById('existing-devices-box');
+            var list = document.getElementById('existing-dev-list');
+            list.innerHTML = '';
+            for (var i = 0; i < existing.length; i++) {
+              var span = document.createElement('span');
+              span.className = 'dev-item';
+              span.textContent = existing[i];
+              list.appendChild(span);
+            }
+            box.style.display = 'block';
+          }
+          showStep('step-device');
         } else {
           status.className = 'status-msg error';
-          status.textContent = data.error || '\\ub85c\\uadf8\\uc778\\uc5d0 \\uc2e4\\ud328\\ud588\\uc2b5\\ub2c8\\ub2e4.';
+          status.textContent = data.error || '\\uB85C\\uADF8\\uC778\\uC5D0 \\uC2E4\\uD328\\uD588\\uC2B5\\uB2C8\\uB2E4.';
           btn.disabled = false;
         }
       })
       .catch(function() {
         status.className = 'status-msg error';
-        status.textContent = '\\uc11c\\ubc84\\uc5d0 \\uc5f0\\uacb0\\ud560 \\uc218 \\uc5c6\\uc2b5\\ub2c8\\ub2e4. \\uc7a0\\uc2dc \\ud6c4 \\ub2e4\\uc2dc \\uc2dc\\ub3c4\\ud574\\uc8fc\\uc138\\uc694.';
+        status.textContent = '\\uC11C\\uBC84\\uC5D0 \\uC5F0\\uACB0\\uD560 \\uC218 \\uC5C6\\uC2B5\\uB2C8\\uB2E4.';
         btn.disabled = false;
       });
     }
 
+    // ── Step 2: Device registration (login flow only) ──
+    function handleDeviceRegister() {
+      if (!loginCredentials) return;
+      var deviceName = document.getElementById('device-name').value.trim() || baseDeviceName;
+      var status = document.getElementById('device-status');
+      var btn = document.getElementById('device-btn');
+
+      status.className = 'status-msg loading';
+      status.textContent = '\\uAE30\\uAE30 \\uB4F1\\uB85D \\uC911...';
+      btn.disabled = true;
+
+      fetch('/api/relay/auth/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          username: loginCredentials.username,
+          password: loginCredentials.password,
+          device: { deviceName: deviceName, deviceType: detectedType, platform: detectedPlatform }
+        })
+      })
+      .then(function(r) { return r.json(); })
+      .then(function(data) {
+        if (data.success) {
+          authResult = {
+            deviceToken: data.deviceToken,
+            deviceName: deviceName,
+            platform: detectedPlatform,
+            username: loginCredentials.username,
+            registeredAt: new Date().toISOString()
+          };
+          document.getElementById('success-title').textContent =
+            data.isNewDevice !== false ? '\\uAE30\\uAE30 \\uB4F1\\uB85D \\uC644\\uB8CC!' : '\\uB85C\\uADF8\\uC778 \\uC131\\uACF5!';
+          document.getElementById('success-detail').textContent =
+            data.isNewDevice !== false
+              ? '\\uC0C8 \\uAE30\\uAE30\\uAC00 \\uB4F1\\uB85D\\uB418\\uC5C8\\uC2B5\\uB2C8\\uB2E4. \\uC544\\uB798 \\uC124\\uC815 \\uD30C\\uC77C\\uC744 \\uB2E4\\uC6B4\\uB85C\\uB4DC\\uD574\\uC8FC\\uC138\\uC694.'
+              : '\\uAE30\\uC874 \\uAE30\\uAE30\\uB85C \\uB85C\\uADF8\\uC778\\uB418\\uC5C8\\uC2B5\\uB2C8\\uB2E4.';
+          document.getElementById('info-device').textContent = deviceName;
+          document.getElementById('info-platform').textContent = detectedPlatform;
+          document.getElementById('info-status').textContent =
+            data.isNewDevice !== false ? '\\uC2E0\\uADDC \\uB4F1\\uB85D' : '\\uAE30\\uC874 \\uAE30\\uAE30';
+          showStep('step-success');
+          downloadActivation();
+        } else {
+          status.className = 'status-msg error';
+          status.textContent = data.error || '\\uAE30\\uAE30 \\uB4F1\\uB85D\\uC5D0 \\uC2E4\\uD328\\uD588\\uC2B5\\uB2C8\\uB2E4.';
+          btn.disabled = false;
+        }
+      })
+      .catch(function() {
+        status.className = 'status-msg error';
+        status.textContent = '\\uC11C\\uBC84\\uC5D0 \\uC5F0\\uACB0\\uD560 \\uC218 \\uC5C6\\uC2B5\\uB2C8\\uB2E4.';
+        btn.disabled = false;
+      });
+    }
+
+    // ── Step 1b: Signup (includes device in one step) ──
     function handleSignup() {
       var username = document.getElementById('signup-username').value.trim();
       var password = document.getElementById('signup-password').value;
       var confirm = document.getElementById('signup-confirm').value;
       var status = document.getElementById('signup-status');
       var btn = document.getElementById('signup-btn');
+      var deviceName = document.getElementById('signup-device').value.trim() || baseDeviceName;
 
       if (!username || !password) {
         status.className = 'status-msg error';
-        status.textContent = '\\uc544\\uc774\\ub514\\uc640 \\ube44\\ubc00\\ubc88\\ud638\\ub97c \\uc785\\ub825\\ud574\\uc8fc\\uc138\\uc694.';
+        status.textContent = '\\uC544\\uC774\\uB514\\uC640 \\uBE44\\uBC00\\uBC88\\uD638\\uB97C \\uC785\\uB825\\uD574\\uC8FC\\uC138\\uC694.';
         return;
       }
       if (password !== confirm) {
         status.className = 'status-msg error';
-        status.textContent = '\\ube44\\ubc00\\ubc88\\ud638\\uac00 \\uc77c\\uce58\\ud558\\uc9c0 \\uc54a\\uc2b5\\ub2c8\\ub2e4.';
+        status.textContent = '\\uBE44\\uBC00\\uBC88\\uD638\\uAC00 \\uC77C\\uCE58\\uD558\\uC9C0 \\uC54A\\uC2B5\\uB2C8\\uB2E4.';
         return;
       }
 
       status.className = 'status-msg loading';
-      status.textContent = '\\ud68c\\uc6d0\\uac00\\uc785 \\uc911...';
+      status.textContent = '\\uD68C\\uC6D0\\uAC00\\uC785 \\uC911...';
       btn.disabled = true;
-
-      var device = getDevicePayload('signup');
 
       fetch('/api/relay/auth/signup', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ username: username, password: password, device: device })
+        body: JSON.stringify({
+          username: username, password: password,
+          device: { deviceName: deviceName, deviceType: detectedType, platform: detectedPlatform }
+        })
       })
-      .then(function(res) { return res.json(); })
+      .then(function(r) { return r.json(); })
       .then(function(data) {
         if (data.success) {
           authResult = {
             deviceToken: data.deviceToken,
-            deviceName: device.deviceName,
-            platform: device.platform,
+            deviceName: deviceName,
+            platform: detectedPlatform,
             username: username,
             registeredAt: new Date().toISOString()
           };
-          showSuccess(device.deviceName, device.platform, true);
+          document.getElementById('success-title').textContent = '\\uD68C\\uC6D0\\uAC00\\uC785 \\uC644\\uB8CC!';
+          document.getElementById('success-detail').textContent =
+            '\\uACC4\\uC815\\uC774 \\uC0DD\\uC131\\uB418\\uACE0 \\uAE30\\uAE30\\uAC00 \\uB4F1\\uB85D\\uB418\\uC5C8\\uC2B5\\uB2C8\\uB2E4.';
+          document.getElementById('info-device').textContent = deviceName;
+          document.getElementById('info-platform').textContent = detectedPlatform;
+          document.getElementById('info-status').textContent = '\\uC2E0\\uADDC \\uB4F1\\uB85D';
+          showStep('step-success');
+          downloadActivation();
         } else {
           status.className = 'status-msg error';
-          status.textContent = data.error || '\\ud68c\\uc6d0\\uac00\\uc785\\uc5d0 \\uc2e4\\ud328\\ud588\\uc2b5\\ub2c8\\ub2e4.';
+          status.textContent = data.error || '\\uD68C\\uC6D0\\uAC00\\uC785\\uC5D0 \\uC2E4\\uD328\\uD588\\uC2B5\\uB2C8\\uB2E4.';
           btn.disabled = false;
         }
       })
       .catch(function() {
         status.className = 'status-msg error';
-        status.textContent = '\\uc11c\\ubc84\\uc5d0 \\uc5f0\\uacb0\\ud560 \\uc218 \\uc5c6\\uc2b5\\ub2c8\\ub2e4. \\uc7a0\\uc2dc \\ud6c4 \\ub2e4\\uc2dc \\uc2dc\\ub3c4\\ud574\\uc8fc\\uc138\\uc694.';
+        status.textContent = '\\uC11C\\uBC84\\uC5D0 \\uC5F0\\uACB0\\uD560 \\uC218 \\uC5C6\\uC2B5\\uB2C8\\uB2E4.';
         btn.disabled = false;
       });
     }
 
-    // Enter key support
+    // ── Enter key support ──
     document.getElementById('login-password').addEventListener('keydown', function(e) {
       if (e.key === 'Enter') handleLogin();
     });
     document.getElementById('signup-confirm').addEventListener('keydown', function(e) {
       if (e.key === 'Enter') handleSignup();
     });
+    document.getElementById('device-name').addEventListener('keydown', function(e) {
+      if (e.key === 'Enter') handleDeviceRegister();
+    });
 
+    // ── Activation file download ──
     function downloadActivation() {
       if (!authResult || !authResult.deviceToken) return;
       var config = JSON.stringify(authResult);
@@ -795,8 +802,8 @@ function generateWelcomePage(): string {
           + 'if not exist "%CONFIG_DIR%" mkdir "%CONFIG_DIR%"\\r\\n'
           + '(echo ' + batConfig + ')>"%CONFIG_DIR%\\\\device.json"\\r\\n'
           + 'echo.\\r\\n'
-          + 'echo   MoA \\uae30\\uae30 \\uc5f0\\uacb0\\uc774 \\uc644\\ub8cc\\ub418\\uc5c8\\uc2b5\\ub2c8\\ub2e4!\\r\\n'
-          + 'echo   \\uc774\\uc81c \\uce74\\uce74\\uc624\\ud1a1 MoA \\ucc44\\ub110\\uc5d0\\uc11c \\uba85\\ub839\\uc744 \\ubcf4\\ub0b4\\ubcf4\\uc138\\uc694.\\r\\n'
+          + 'echo   MoA \\uAE30\\uAE30 \\uC5F0\\uACB0\\uC774 \\uC644\\uB8CC\\uB418\\uC5C8\\uC2B5\\uB2C8\\uB2E4!\\r\\n'
+          + 'echo   \\uC774\\uC81C \\uCE74\\uCE74\\uC624\\uD1A1 MoA \\uCC44\\uB110\\uC5D0\\uC11C \\uBA85\\uB839\\uC744 \\uBCF4\\uB0B4\\uBCF4\\uC138\\uC694.\\r\\n'
           + 'echo.\\r\\n'
           + 'timeout /t 5 >nul\\r\\n';
       } else {
@@ -810,8 +817,8 @@ function generateWelcomePage(): string {
           + 'MOAEOF\\n'
           + 'chmod 600 "$CONFIG_DIR/device.json"\\n'
           + 'echo ""\\n'
-          + 'echo "  MoA \\uae30\\uae30 \\uc5f0\\uacb0\\uc774 \\uc644\\ub8cc\\ub418\\uc5c8\\uc2b5\\ub2c8\\ub2e4!"\\n'
-          + 'echo "  \\uc774\\uc81c \\uce74\\uce74\\uc624\\ud1a1 MoA \\ucc44\\ub110\\uc5d0\\uc11c \\uba85\\ub839\\uc744 \\ubcf4\\ub0b4\\ubcf4\\uc138\\uc694."\\n'
+          + 'echo "  MoA \\uAE30\\uAE30 \\uC5F0\\uACB0\\uC774 \\uC644\\uB8CC\\uB418\\uC5C8\\uC2B5\\uB2C8\\uB2E4!"\\n'
+          + 'echo "  \\uC774\\uC81C \\uCE74\\uCE74\\uC624\\uD1A1 MoA \\uCC44\\uB110\\uC5D0\\uC11C \\uBA85\\uB839\\uC744 \\uBCF4\\uB0B4\\uBCF4\\uC138\\uC694."\\n'
           + 'echo ""\\n'
           + 'sleep 3\\n';
       }
@@ -828,7 +835,7 @@ function generateWelcomePage(): string {
 
       var actStatus = document.getElementById('activate-status');
       if (actStatus) {
-        actStatus.textContent = '\\ub2e4\\uc6b4\\ub85c\\ub4dc\\ub41c ' + filename + ' \\ud30c\\uc77c\\uc744 \\ub354\\ube14\\ud074\\ub9ad\\ud558\\uba74 \\uc124\\uc815\\uc774 \\uc644\\ub8cc\\ub429\\ub2c8\\ub2e4!';
+        actStatus.textContent = '\\uB2E4\\uC6B4\\uB85C\\uB4DC\\uB41C ' + filename + ' \\uD30C\\uC77C\\uC744 \\uB354\\uBE14\\uD074\\uB9AD\\uD558\\uBA74 \\uC124\\uC815\\uC774 \\uC644\\uB8CC\\uB429\\uB2C8\\uB2E4!';
       }
     }
   </script>

@@ -473,6 +473,7 @@ async function handleAuthLogin(
       success: true,
       deviceToken: result.deviceToken,
       isNewDevice: result.isNewDevice,
+      existingDevices: result.existingDevices,
     });
   } else {
     sendJSON(res, 400, { success: false, error: result.error });

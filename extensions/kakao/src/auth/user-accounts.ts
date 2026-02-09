@@ -57,6 +57,8 @@ export interface LoginResult {
   success: boolean;
   deviceToken?: string;
   isNewDevice?: boolean;
+  /** 기존 등록 기기 이름 목록 (device 없이 로그인 시 반환, 기기이름 중복 방지용) */
+  existingDevices?: string[];
   error?: string;
 }
 
@@ -267,8 +269,11 @@ export function login(
     return { success: true, deviceToken, isNewDevice: true };
   }
 
-  // Login without device registration (e.g., KakaoTalk auth)
-  return { success: true };
+  // Login without device registration — return existing devices for de-duplication
+  return {
+    success: true,
+    existingDevices: account.devices.map((d) => d.deviceName),
+  };
 }
 
 /**
