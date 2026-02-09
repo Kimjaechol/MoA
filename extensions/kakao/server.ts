@@ -85,6 +85,20 @@ import {
   getUserFriendlyRecommendedSkills,
 } from "./src/skills/index.js";
 import {
+  logAction,
+  updateActionStatus,
+  getRecentActions,
+  getUndoableActions,
+  createCheckpoint,
+  getCheckpoints,
+  getMemoryHistory,
+  undoAction,
+  rollbackToCheckpoint,
+  formatActionHistory,
+  formatCheckpointList,
+  formatMemoryHistory,
+} from "./src/safety/index.js";
+import {
   authenticateUser,
   isOwnerAuthEnabled,
   getRequiredPermission,
@@ -408,6 +422,11 @@ MoA는 카카오톡, 텔레그램, WhatsApp, Discord 등 여러 메신저에서 
 - /기기 : 연결된 기기 목록
 - @기기명 명령 : 특정 기기에 원격 명령 (예: @노트북 ls ~/Desktop)
 - /도움말 : 전체 명령어 보기
+- !작업내역 : 최근 작업 기록 조회
+- !체크포인트 [이름] : 현재 시점 저장 (되돌리기 가능)
+- !되돌리기 [ID] : 특정 작업 되돌리기
+- !복원 [체크포인트ID] : 체크포인트 시점으로 전체 복원
+- !기억내역 : 장기 기억 버전 히스토리
 ${skillsPrompt}
 ## 응답 규칙
 - 한국어로 친절하고 자연스럽게 대화합니다
@@ -534,6 +553,126 @@ async function aiOnMessage(params: {
       text: "주인 인증이 해제되었습니다.\n다시 인증하려면 \"!인증 [비밀구문]\"을 입력하세요.",
       quickReplies: ["도움말"],
     };
+  }
+
+  // ── Safety Commands (owner only) ──────────────────────────
+  if (auth.role === "owner") {
+    // !작업내역 — 최근 작업 기록 조회
+    if (utterance.match(/^[!!/](?:작업내역|작업 내역|작업기록|history)$/i)) {
+      const actions = getRecentActions(15);
+      return {
+        text: formatActionHistory(actions, maxLen),
+        quickReplies: ["!체크포인트 목록", "!되돌리기 목록", "도움말"],
+      };
+    }
+
+    // !되돌리기 [ID] — 특정 작업 되돌리기
+    const undoMatch = utterance.match(/^[!!/](?:되돌리기|되돌려|undo)\s+(\S+)$/i);
+    if (undoMatch) {
+      const result = undoAction(undoMatch[1]);
+      return {
+        text: result.message,
+        quickReplies: ["!작업내역", "!체크포인트 목록"],
+      };
+    }
+
+    // !되돌리기 목록 — 되돌릴 수 있는 작업 목록
+    if (utterance.match(/^[!!/](?:되돌리기|undo)\s*(?:목록|list)?$/i)) {
+      const undoable = getUndoableActions(10);
+      if (undoable.length === 0) {
+        return {
+          text: "되돌릴 수 있는 작업이 없습니다.",
+          quickReplies: ["!작업내역", "!체크포인트 목록"],
+        };
+      }
+      return {
+        text: formatActionHistory(undoable, maxLen),
+        quickReplies: ["!작업내역", "!체크포인트 목록"],
+      };
+    }
+
+    // !체크포인트 [이름] — 체크포인트 생성
+    const cpCreateMatch = utterance.match(/^[!!/](?:체크포인트|checkpoint|저장)\s+(.+)$/i);
+    if (cpCreateMatch && !cpCreateMatch[1].match(/^(?:목록|list)$/i)) {
+      const cpName = cpCreateMatch[1].trim();
+      const cp = createCheckpoint({
+        name: cpName,
+        description: `수동 체크포인트: ${cpName}`,
+        auto: false,
+        userId: params.userId,
+        channelId,
+      });
+      return {
+        text: `체크포인트가 생성되었습니다!\n\n📌 ${cp.name}\nID: ${cp.id}\n시각: ${new Date(cp.createdAt).toLocaleString("ko-KR")}\n\n이 시점으로 언제든 되돌릴 수 있습니다.\n"!복원 ${cp.id}"`,
+        quickReplies: ["!체크포인트 목록", "!작업내역"],
+      };
+    }
+
+    // !체크포인트 목록 — 체크포인트 목록 조회
+    if (utterance.match(/^[!!/](?:체크포인트|checkpoint)\s*(?:목록|list)?$/i)) {
+      const checkpointList = getCheckpoints(15);
+      return {
+        text: formatCheckpointList(checkpointList, maxLen),
+        quickReplies: ["!작업내역", "도움말"],
+      };
+    }
+
+    // !복원 [체크포인트 ID] — 체크포인트로 되돌리기
+    const restoreMatch = utterance.match(/^[!!/](?:복원|restore|롤백|rollback)\s+(\S+)$/i);
+    if (restoreMatch) {
+      const result = rollbackToCheckpoint(restoreMatch[1]);
+      return {
+        text: result.message,
+        quickReplies: ["!작업내역", "!체크포인트 목록"],
+      };
+    }
+
+    // !기억내역 — 장기 기억 버전 히스토리
+    if (utterance.match(/^[!!/](?:기억내역|기억 내역|기억히스토리|memory\s*history)$/i)) {
+      const history = getMemoryHistory(10);
+      return {
+        text: formatMemoryHistory(history, maxLen),
+        quickReplies: ["!체크포인트 목록", "!작업내역"],
+      };
+    }
+
+    // !기억복원 [버전] — 장기 기억 특정 버전으로 되돌리기
+    const memRestoreMatch = utterance.match(/^[!!/](?:기억복원|memory\s*restore)\s+v?(\d+)$/i);
+    if (memRestoreMatch) {
+      const { restoreMemoryToVersion } = await import("./src/safety/index.js");
+      const version = parseInt(memRestoreMatch[1], 10);
+      const restored = restoreMemoryToVersion(version);
+      if (restored) {
+        return {
+          text: `장기 기억이 v${version}으로 복원되었습니다.\n\n사유: ${restored.reason}\n시각: ${new Date(restored.createdAt).toLocaleString("ko-KR")}`,
+          quickReplies: ["!기억내역", "!작업내역"],
+        };
+      }
+      return {
+        text: `v${version} 버전의 기억을 찾을 수 없습니다.\n"!기억내역"으로 사용 가능한 버전을 확인하세요.`,
+        quickReplies: ["!기억내역"],
+      };
+    }
+  }
+
+  // ── Device command logging (owner only) ──────────────────
+  // Log device commands to the action journal before execution
+  if (auth.role === "owner" && utterance.startsWith("@")) {
+    const deviceMatch = utterance.match(/^@(\S+)\s+(.+)$/);
+    if (deviceMatch) {
+      const action = logAction({
+        type: "device_command",
+        summary: `@${deviceMatch[1]}에 명령 전송`,
+        detail: utterance,
+        reversibility: "partially_reversible",
+        userId: params.userId,
+        channelId,
+        deviceName: deviceMatch[1],
+      });
+      // Store action ID for later status update (would be used by relay system)
+      // The relay system would call updateActionStatus() when command completes
+      console.log(`[Safety] Logged device command: ${action.id} — ${utterance.slice(0, 80)}`);
+    }
   }
 
   // 1) Greeting → Return welcome message with install button
