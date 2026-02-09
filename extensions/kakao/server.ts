@@ -65,8 +65,19 @@ import {
   isTelegramConfigured,
   handleWhatsAppRequest,
   isWhatsAppConfigured,
+  startDiscordGateway,
+  stopDiscordGateway,
+  isDiscordConfigured,
+  getDiscordBotInfo,
 } from "./src/channels/index.js";
-import { getLoadedSkills, getSkillsSystemPrompt } from "./src/skills/index.js";
+import {
+  getLoadedSkills,
+  getSkillsSystemPrompt,
+  searchSkills,
+  formatSkillCatalog,
+  formatSkillDetail,
+  getUserFriendlyRecommendedSkills,
+} from "./src/skills/index.js";
 
 const PORT = parseInt(process.env.PORT ?? process.env.KAKAO_WEBHOOK_PORT ?? "8788", 10);
 const HOST = process.env.HOST ?? "0.0.0.0";
@@ -584,7 +595,37 @@ MoA를 설치하면 이 모든 것이 가능합니다!
     };
   }
 
-  // 7) General AI chat — use LLM with MoA-optimized system prompt
+  // 7) Skill marketplace queries
+  const skillKeywords = ["스킬", "skill", "마켓", "market", "스킬 목록", "스킬 검색"];
+  const isSkillQuery = skillKeywords.some((k) => utterance.toLowerCase().includes(k));
+  if (isSkillQuery) {
+    // Check for search: "스킬 검색 날씨" or "스킬 음악"
+    const searchMatch = utterance.match(/스킬\s*(?:검색|찾기|search)?\s+(.+)/i);
+    if (searchMatch) {
+      const query = searchMatch[1].trim();
+      const results = searchSkills(query);
+      if (results.length > 0) {
+        const detail = results.length === 1 ? formatSkillDetail(results[0]) : formatSkillCatalog(results, maxLen);
+        return {
+          text: detail,
+          quickReplies: ["스킬 목록", "설치", "도움말"],
+        };
+      }
+      return {
+        text: `"${query}"에 대한 스킬을 찾지 못했습니다.\n\n"스킬 목록"을 입력하면 사용 가능한 전체 스킬을 볼 수 있습니다.`,
+        quickReplies: ["스킬 목록", "설치", "도움말"],
+      };
+    }
+
+    // Show catalog
+    const skills = getUserFriendlyRecommendedSkills();
+    return {
+      text: formatSkillCatalog(skills, maxLen),
+      quickReplies: ["설치", "기능 소개", "도움말"],
+    };
+  }
+
+  // 8) General AI chat — use LLM with MoA-optimized system prompt
   const llm = detectLlmProvider();
 
   if (!llm) {
@@ -716,6 +757,13 @@ async function main() {
     console.log("[MoA] WhatsApp: not configured (set WHATSAPP_TOKEN, WHATSAPP_PHONE_NUMBER_ID)");
   }
 
+  // Check Discord
+  if (isDiscordConfigured()) {
+    console.log("[MoA] Discord: configured (Gateway bot)");
+  } else {
+    console.log("[MoA] Discord: not configured (set DISCORD_BOT_TOKEN)");
+  }
+
   // Build relay callbacks for proactive messaging
   const relayCallbacks: RelayCallbacks = {
     onPairingComplete: async ({ userId, deviceId, deviceName }) => {
@@ -780,9 +828,20 @@ async function main() {
       await registerTelegramWebhook(publicUrl);
     }
 
+    // Start Discord Gateway if configured
+    if (isDiscordConfigured()) {
+      const discordStarted = await startDiscordGateway(aiOnMessage, console);
+      if (discordStarted) {
+        console.log("[MoA] Discord Gateway: connecting... (bot will appear online shortly)");
+      } else {
+        console.log("[MoA] Discord Gateway: failed to start");
+      }
+    }
+
     // Graceful shutdown
     const shutdown = async (signal: string) => {
       console.log(`[MoA] Received ${signal}, shutting down...`);
+      stopDiscordGateway();
       await webhook.stop();
       process.exit(0);
     };

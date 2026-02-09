@@ -21,3 +21,10 @@ export {
   handleWhatsAppRequest,
   isWhatsAppConfigured,
 } from "./whatsapp.js";
+
+export {
+  startDiscordGateway,
+  stopDiscordGateway,
+  getDiscordBotInfo,
+  isDiscordConfigured,
+} from "./discord.js";
