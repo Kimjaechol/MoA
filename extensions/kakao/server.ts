@@ -47,6 +47,7 @@ console.log(
 
 import type { RelayCallbacks } from "./src/relay/index.js";
 import type { ResolvedKakaoAccount } from "./src/types.js";
+import type { MoAMessageHandler } from "./src/channels/types.js";
 import { resolveKakaoAccount, getDefaultKakaoConfig } from "./src/config.js";
 import { handleInstallRequest } from "./src/installer/index.js";
 import { handlePaymentRequest } from "./src/payment/index.js";
@@ -57,6 +58,13 @@ import {
 import { generatePairingCode, handleRelayRequest } from "./src/relay/index.js";
 import { isSupabaseConfigured } from "./src/supabase.js";
 import { startKakaoWebhook } from "./src/webhook.js";
+import {
+  handleTelegramRequest,
+  registerTelegramWebhook,
+  getTelegramBotInfo,
+  isTelegramConfigured,
+} from "./src/channels/index.js";
+import { getLoadedSkills, getSkillsSystemPrompt } from "./src/skills/index.js";
 
 const PORT = parseInt(process.env.PORT ?? process.env.KAKAO_WEBHOOK_PORT ?? "8788", 10);
 const HOST = process.env.HOST ?? "0.0.0.0";
@@ -335,12 +343,26 @@ async function callGemini(
 // MoA System Prompt
 // ============================================
 
-function getMoASystemPrompt(): string {
+function getMoASystemPrompt(channelId?: string): string {
+  const channelName = channelId === "telegram" ? "텔레그램"
+    : channelId === "whatsapp" ? "WhatsApp"
+    : channelId === "discord" ? "Discord"
+    : "카카오톡";
+
+  const maxLen = channelId === "kakao" || !channelId ? 800 : 2000;
+
+  // Build skills section dynamically
+  const skillsPrompt = getSkillsSystemPrompt();
+
   return `당신은 MoA(Master of AI) 어시스턴트입니다.
 
 ## MoA란?
 MoA는 사용자의 여러 기기(노트북, 태블릿, 데스크탑 등)에 설치되어 동일한 기억을 공유하는 AI 에이전트입니다.
-카카오톡에서 명령을 보내면 연결된 기기에서 원격으로 실행할 수 있습니다.
+${channelName}에서 명령을 보내면 연결된 기기에서 원격으로 실행할 수 있습니다.
+
+## 지원 채널
+MoA는 카카오톡, 텔레그램, WhatsApp, Discord 등 여러 메신저에서 동일하게 사용할 수 있습니다.
+한 채널에서 등록한 기기는 다른 채널에서도 그대로 사용 가능합니다.
 
 ## 당신의 최우선 목표
 사용자가 MoA 에이전트를 기기에 설치하도록 안내하고 유도하는 것이 가장 중요합니다.
@@ -348,8 +370,8 @@ MoA는 사용자의 여러 기기(노트북, 태블릿, 데스크탑 등)에 설
 
 ## MoA의 핵심 기능
 - 쌍둥이 AI: 모든 기기가 같은 기억을 공유하는 AI
-- 원격 제어: 카카오톡에서 "@기기명 명령"으로 기기에 원격 명령
-- AI 대화: 카카오톡에서 언제든 AI와 대화
+- 원격 제어: ${channelName}에서 "@기기명 명령"으로 기기에 원격 명령
+- AI 대화: ${channelName}에서 언제든 AI와 대화
 - 파일 관리: 외출 중에도 집/회사 컴퓨터 파일 확인
 - 코드 실행: 원격으로 코드 작성 및 실행
 
@@ -359,22 +381,24 @@ MoA는 사용자의 여러 기기(노트북, 태블릿, 데스크탑 등)에 설
 - /기기 : 연결된 기기 목록
 - @기기명 명령 : 특정 기기에 원격 명령 (예: @노트북 ls ~/Desktop)
 - /도움말 : 전체 명령어 보기
-
+${skillsPrompt}
 ## 응답 규칙
 - 한국어로 친절하고 자연스럽게 대화합니다
-- 최대 800자 이내로 답변하세요 (카카오톡 특성상 짧은 답변 선호)
+- 최대 ${maxLen}자 이내로 답변하세요
 - 사용자가 MoA와 관련 없는 질문을 해도 친절히 답변하되, 자연스럽게 MoA 기능을 연결하세요
   예) "일정 관리 도와줘" → 답변 후 "MoA를 설치하면 컴퓨터에서 일정 파일을 직접 관리할 수도 있어요!"
 - MoA가 아직 설치되지 않은 사용자에게는 대화 마무리에 설치를 부드럽게 권유하세요
 - 확실하지 않은 정보는 그렇다고 솔직히 말씀하세요
+- 스킬 관련 질문이 오면 해당 스킬의 기능을 안내하고, MoA를 설치하면 기기에서 직접 사용할 수 있다고 안내하세요
 
 ## 설치 안내 시
 사용자가 설치에 관심을 보이면: "설치"라고 입력해주세요! 간편 설치 안내를 바로 보내드립니다.
+설치 후 https://moa.lawith.kr/welcome 페이지에서 기기 등록(페어링)을 할 수 있습니다.
 
 ## 사용 사례 (사용자에게 설명할 때 활용)
 - "회사에서 퇴근 후 집 컴퓨터에 있는 파일 확인"
 - "@노트북 git pull && npm run build"
-- "카카오톡으로 서버 상태 확인"
+- "${channelName}으로 서버 상태 확인"
 - "여러 기기에서 이어서 작업"`;
 }
 
@@ -442,12 +466,15 @@ async function aiOnMessage(params: {
   botId: string;
   blockId: string;
   timestamp: number;
+  channel?: import("./src/channels/types.js").ChannelContext;
 }): Promise<{
   text: string;
   quickReplies?: string[];
   buttons?: Array<{ label: string; url: string }>;
 }> {
   const utterance = params.text.trim();
+  const channelId = params.channel?.channelId ?? "kakao";
+  const maxLen = params.channel?.maxMessageLength ?? 950;
 
   // 1) Greeting → Return welcome message with install button
   if (isGreeting(utterance)) {
@@ -565,7 +592,7 @@ MoA를 설치하면 이 모든 것이 가능합니다!
     };
   }
 
-  const systemPrompt = getMoASystemPrompt();
+  const systemPrompt = getMoASystemPrompt(channelId);
 
   try {
     let responseText: string;
@@ -599,14 +626,15 @@ MoA를 설치하면 이 모든 것이 가능합니다!
         responseText = "지원되지 않는 AI 제공자입니다.";
     }
 
-    // Truncate to Kakao's limit
-    if (responseText.length > 950) {
-      responseText = responseText.slice(0, 947) + "...";
+    // Truncate to channel's limit
+    const truncateAt = maxLen - 3;
+    if (responseText.length > maxLen) {
+      responseText = responseText.slice(0, truncateAt) + "...";
     }
 
     return {
       text: responseText,
-      quickReplies: ["설치", "도움말"],
+      quickReplies: channelId === "kakao" ? ["설치", "도움말"] : undefined,
     };
   } catch (err) {
     console.error(`[MoA] LLM API error (${llm.provider}/${llm.model}):`, err);
@@ -663,6 +691,22 @@ async function main() {
     );
   }
 
+  // Load skills
+  const skills = getLoadedSkills();
+  console.log(`[MoA] Skills: ${skills.length} loaded (${skills.filter((s) => s.eligible).length} eligible)`);
+
+  // Check Telegram
+  if (isTelegramConfigured()) {
+    const botInfo = await getTelegramBotInfo();
+    if (botInfo) {
+      console.log(`[MoA] Telegram: configured (bot: @${botInfo.username})`);
+    } else {
+      console.log("[MoA] Telegram: token set but bot info unavailable");
+    }
+  } else {
+    console.log("[MoA] Telegram: not configured (set TELEGRAM_BOT_TOKEN)");
+  }
+
   // Build relay callbacks for proactive messaging
   const relayCallbacks: RelayCallbacks = {
     onPairingComplete: async ({ userId, deviceId, deviceName }) => {
@@ -681,34 +725,42 @@ async function main() {
       path: WEBHOOK_PATH,
       onMessage: aiOnMessage,
       logger: console,
-      // Mount install page, relay API, and payment routes on the same server
+      // Mount install page, relay API, payment routes, and channel webhooks
       requestInterceptor: (req, res) => {
-        // Try install page first (/install)
+        // Try install page first (/install, /welcome, etc.)
         if (handleInstallRequest(req, res)) {
           return true;
         }
-        // Then try payment callbacks (/payment/*)
+        // Telegram webhook (/telegram/webhook)
+        if (handleTelegramRequest(req, res, aiOnMessage, console)) {
+          return true;
+        }
+        // Payment callbacks (/payment/*)
         if (handlePaymentRequest(req, res, console)) {
           return true;
         }
-        // Then try relay API (/api/relay/*) — with pairing callbacks
+        // Relay API (/api/relay/*) — with pairing callbacks
         return handleRelayRequest(req, res, console, relayCallbacks);
       },
     });
 
+    const localBase = `http://${HOST === "0.0.0.0" ? "localhost" : HOST}:${PORT}`;
     console.log(`[MoA] Webhook server started at ${webhook.url}`);
-    console.log(
-      `[MoA] Install page: http://${HOST === "0.0.0.0" ? "localhost" : HOST}:${PORT}/install`,
-    );
-    console.log(
-      `[MoA] Payment API: http://${HOST === "0.0.0.0" ? "localhost" : HOST}:${PORT}/payment/*`,
-    );
-    console.log(
-      `[MoA] Relay API: http://${HOST === "0.0.0.0" ? "localhost" : HOST}:${PORT}/api/relay/*`,
-    );
-    console.log(
-      `[MoA] Health check: http://${HOST === "0.0.0.0" ? "localhost" : HOST}:${PORT}/health`,
-    );
+    console.log(`[MoA] Install page: ${localBase}/install`);
+    console.log(`[MoA] Welcome page: ${localBase}/welcome`);
+    console.log(`[MoA] Payment API: ${localBase}/payment/*`);
+    console.log(`[MoA] Relay API: ${localBase}/api/relay/*`);
+    console.log(`[MoA] Health check: ${localBase}/health`);
+
+    // Register Telegram webhook if configured
+    if (isTelegramConfigured()) {
+      const publicDomain = process.env.RAILWAY_PUBLIC_DOMAIN;
+      const publicUrl = publicDomain
+        ? `https://${publicDomain}/telegram/webhook`
+        : "https://moa.lawith.kr/telegram/webhook";
+      console.log(`[MoA] Telegram webhook: ${localBase}/telegram/webhook`);
+      await registerTelegramWebhook(publicUrl);
+    }
 
     // Graceful shutdown
     const shutdown = async (signal: string) => {
