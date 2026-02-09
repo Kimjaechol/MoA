@@ -27,7 +27,13 @@ import { appendExecutionLog } from "./relay-handler.js";
 import {
   signup,
   login,
+  verifyPassword,
 } from "../auth/user-accounts.js";
+import {
+  generateRecoveryKey,
+  createEncryptedBackup,
+  initializeVault,
+} from "../safety/index.js";
 
 const LONG_POLL_TIMEOUT_MS = 30_000; // 30 seconds
 const POLL_INTERVAL_MS = 2_000; // Check every 2 seconds during long-poll
@@ -117,6 +123,12 @@ export async function handleRelayRequest(
       case "/api/relay/auth/login":
         if (req.method === "POST") {
           await handleAuthLogin(req, res, logger);
+          return true;
+        }
+        break;
+      case "/api/relay/auth/backup":
+        if (req.method === "POST") {
+          await handleBackupRequest(req, res, logger);
           return true;
         }
         break;
@@ -477,6 +489,59 @@ async function handleAuthLogin(
     });
   } else {
     sendJSON(res, 400, { success: false, error: result.error });
+  }
+}
+
+/**
+ * POST /api/relay/auth/backup
+ * Body: { username: string, password: string }
+ *
+ * 백업 요청 — 사용자 인증 후 복구키 발급 + 암호화 백업 생성
+ * (톡서랍/톡클라우드와 동일 개념: 명시적 요청 시에만 백업)
+ */
+async function handleBackupRequest(
+  req: IncomingMessage,
+  res: ServerResponse,
+  logger: ReturnType<typeof console>,
+) {
+  const body = await readBody<{ username: string; password: string }>(req);
+  if (!body?.username || !body?.password) {
+    sendJSON(res, 400, { success: false, error: "username and password are required" });
+    return;
+  }
+
+  if (!verifyPassword(body.username, body.password)) {
+    sendJSON(res, 401, { success: false, error: "아이디 또는 비밀번호가 올바르지 않습니다." });
+    return;
+  }
+
+  try {
+    initializeVault();
+    const recovery = generateRecoveryKey();
+
+    // 암호화 백업 생성
+    const backupData = {
+      timestamp: Date.now(),
+      source: "user_request",
+      username: body.username,
+    };
+    const backup = createEncryptedBackup(backupData, body.password, "user");
+
+    logger.info(`[relay] Backup created for ${body.username}: ${backup.filePath.split("/").pop()}`);
+
+    sendJSON(res, 200, {
+      success: true,
+      recoveryWords: recovery.words,
+      backupFile: backup.filePath.split("/").pop(),
+      backupSize: backup.size,
+      createdAt: new Date().toISOString(),
+    });
+  } catch (err) {
+    logger.error(`[relay] Backup error for ${body.username}: ${err}`);
+    sendJSON(res, 500, {
+      success: false,
+      error: "백업 생성 중 오류가 발생했습니다.",
+    });
   }
 }
 
