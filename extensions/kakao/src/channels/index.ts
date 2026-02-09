@@ -16,3 +16,8 @@ export {
   getTelegramBotInfo,
   isTelegramConfigured,
 } from "./telegram.js";
+
+export {
+  handleWhatsAppRequest,
+  isWhatsAppConfigured,
+} from "./whatsapp.js";

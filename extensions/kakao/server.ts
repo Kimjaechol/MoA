@@ -63,6 +63,8 @@ import {
   registerTelegramWebhook,
   getTelegramBotInfo,
   isTelegramConfigured,
+  handleWhatsAppRequest,
+  isWhatsAppConfigured,
 } from "./src/channels/index.js";
 import { getLoadedSkills, getSkillsSystemPrompt } from "./src/skills/index.js";
 
@@ -707,6 +709,13 @@ async function main() {
     console.log("[MoA] Telegram: not configured (set TELEGRAM_BOT_TOKEN)");
   }
 
+  // Check WhatsApp
+  if (isWhatsAppConfigured()) {
+    console.log("[MoA] WhatsApp: configured (Cloud API)");
+  } else {
+    console.log("[MoA] WhatsApp: not configured (set WHATSAPP_TOKEN, WHATSAPP_PHONE_NUMBER_ID)");
+  }
+
   // Build relay callbacks for proactive messaging
   const relayCallbacks: RelayCallbacks = {
     onPairingComplete: async ({ userId, deviceId, deviceName }) => {
@@ -735,6 +744,10 @@ async function main() {
         if (handleTelegramRequest(req, res, aiOnMessage, console)) {
           return true;
         }
+        // WhatsApp webhook (/whatsapp/webhook)
+        if (handleWhatsAppRequest(req, res, aiOnMessage, console)) {
+          return true;
+        }
         // Payment callbacks (/payment/*)
         if (handlePaymentRequest(req, res, console)) {
           return true;
@@ -751,6 +764,11 @@ async function main() {
     console.log(`[MoA] Payment API: ${localBase}/payment/*`);
     console.log(`[MoA] Relay API: ${localBase}/api/relay/*`);
     console.log(`[MoA] Health check: ${localBase}/health`);
+
+    // Log WhatsApp webhook
+    if (isWhatsAppConfigured()) {
+      console.log(`[MoA] WhatsApp webhook: ${localBase}/whatsapp/webhook`);
+    }
 
     // Register Telegram webhook if configured
     if (isTelegramConfigured()) {
