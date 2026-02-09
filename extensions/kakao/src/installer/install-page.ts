@@ -338,9 +338,14 @@ export function generateInstallPage(userAgent: string, pairingCode?: string): st
 }
 
 /**
- * 설치 완료 후 안내 페이지 (GUI)
- * 설치 스크립트가 완료되면 브라우저에서 이 페이지를 자동으로 엽니다.
- * 페어링 코드 입력 폼이 포함되어 터미널 없이 기기 등록이 가능합니다.
+ * 설치 완료 후 로그인/회원가입 페이지
+ *
+ * 3단계 흐름:
+ * 1. 로그인/회원가입 (아이디 + 비밀번호)
+ * 2. 기기 등록 (기기 이름 확인 — 로그인 시만, 중복 자동 방지)
+ * 3. 완료 (설정 파일 다운로드)
+ *
+ * 회원가입은 첫 기기이므로 1→3 바로 진행 (기기 이름 폼에 포함)
  */
 function generateWelcomePage(): string {
   return `<!DOCTYPE html>
@@ -348,450 +353,449 @@ function generateWelcomePage(): string {
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>MoA 설치 완료 - 시작하기</title>
+  <title>MoA - \uB85C\uADF8\uC778</title>
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
     body {
       font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Malgun Gothic', sans-serif;
       background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
       min-height: 100vh;
-      padding: 30px 20px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 20px;
     }
     .container {
       background: white;
       border-radius: 20px;
       padding: 40px;
-      max-width: 680px;
-      margin: 0 auto;
+      max-width: 440px;
+      width: 100%;
       box-shadow: 0 20px 60px rgba(0,0,0,0.3);
     }
-    .header {
-      text-align: center;
-      margin-bottom: 32px;
+    .header { text-align: center; margin-bottom: 32px; }
+    .header .logo { font-size: 48px; }
+    .header h1 { font-size: 24px; color: #1a1a2e; margin: 8px 0 4px; }
+    .header .subtitle { color: #666; font-size: 14px; }
+    .step-view { display: none; }
+    .step-view.active { display: block; }
+    .form-group { margin-bottom: 16px; }
+    .form-group label {
+      display: block; font-size: 13px; font-weight: 600; color: #555; margin-bottom: 6px;
     }
-    .header .icon { font-size: 48px; }
-    .header h1 { font-size: 24px; color: #1a1a2e; margin: 12px 0 4px; }
-    .header .subtitle { color: #16a34a; font-weight: 600; font-size: 16px; }
-    .section {
-      background: #f8f9fa;
-      border-radius: 16px;
-      padding: 24px;
-      margin-bottom: 20px;
+    .form-group input {
+      width: 100%; padding: 12px 16px; border: 2px solid #e5e7eb;
+      border-radius: 10px; font-size: 15px; outline: none; transition: border-color 0.2s;
     }
-    .section h2 {
-      font-size: 18px;
-      color: #1a1a2e;
-      margin-bottom: 16px;
-      display: flex;
-      align-items: center;
-      gap: 8px;
+    .form-group input:focus {
+      border-color: #667eea; box-shadow: 0 0 0 3px rgba(102,126,234,0.15);
     }
-    .section h2 .num {
-      background: linear-gradient(135deg, #667eea, #764ba2);
-      color: white;
-      width: 28px; height: 28px;
-      border-radius: 50%;
-      display: inline-flex;
-      align-items: center;
-      justify-content: center;
-      font-size: 14px;
-      font-weight: 700;
-      flex-shrink: 0;
-    }
-    .channel {
-      background: white;
-      border-radius: 12px;
-      padding: 16px 20px;
-      margin-bottom: 12px;
-      border: 1px solid #e5e7eb;
-    }
-    .channel:last-child { margin-bottom: 0; }
-    .channel h3 {
-      font-size: 16px;
-      color: #333;
-      margin-bottom: 8px;
-      display: flex;
-      align-items: center;
-      gap: 8px;
-    }
-    .channel .steps {
-      color: #555;
-      font-size: 14px;
-      line-height: 1.8;
-    }
-    .channel .steps b { color: #1a1a2e; }
-
-    /* Pairing code input form */
-    .pairing-form {
-      background: white;
-      border-radius: 16px;
-      padding: 24px;
-      border: 2px solid #667eea;
-      text-align: center;
-    }
-    .pairing-form h3 {
-      font-size: 16px;
-      color: #1a1a2e;
-      margin-bottom: 16px;
-    }
-    .code-inputs {
-      display: flex;
-      gap: 8px;
-      justify-content: center;
-      margin-bottom: 20px;
-    }
-    .code-inputs input {
-      width: 52px;
-      height: 60px;
-      text-align: center;
-      font-size: 28px;
-      font-weight: 700;
-      border: 2px solid #d1d5db;
-      border-radius: 12px;
-      outline: none;
-      transition: border-color 0.2s;
-      font-family: 'Menlo', 'Consolas', monospace;
-    }
-    .code-inputs input:focus {
-      border-color: #667eea;
-      box-shadow: 0 0 0 3px rgba(102,126,234,0.2);
-    }
-    .pair-btn {
+    .form-group input::placeholder { color: #aaa; }
+    .submit-btn {
       background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-      color: white;
-      border: none;
-      padding: 16px 40px;
-      border-radius: 12px;
-      font-size: 16px;
-      font-weight: 700;
-      cursor: pointer;
-      width: 100%;
+      color: white; border: none; padding: 14px; border-radius: 12px;
+      font-size: 16px; font-weight: 700; cursor: pointer; width: 100%; margin-top: 8px;
       transition: transform 0.2s, box-shadow 0.2s, opacity 0.2s;
     }
-    .pair-btn:hover:not(:disabled) {
-      transform: translateY(-2px);
-      box-shadow: 0 8px 24px rgba(102,126,234,0.4);
+    .submit-btn:hover:not(:disabled) {
+      transform: translateY(-2px); box-shadow: 0 8px 24px rgba(102,126,234,0.4);
     }
-    .pair-btn:disabled {
-      opacity: 0.5;
-      cursor: not-allowed;
+    .submit-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+    .status-msg { margin-top: 12px; font-size: 14px; text-align: center; min-height: 20px; }
+    .status-msg.error { color: #dc2626; }
+    .status-msg.loading { color: #667eea; }
+    .status-msg.success { color: #16a34a; font-weight: 600; }
+    .toggle-link { text-align: center; margin-top: 20px; font-size: 14px; color: #666; }
+    .toggle-link a { color: #667eea; text-decoration: none; font-weight: 600; cursor: pointer; }
+    .toggle-link a:hover { text-decoration: underline; }
+    .existing-devices {
+      background: #f8f9fa; border-radius: 10px; padding: 12px 16px;
+      margin-bottom: 16px; font-size: 13px; color: #555;
     }
-    .pair-status {
-      margin-top: 16px;
-      font-size: 14px;
-      min-height: 24px;
+    .existing-devices b { color: #333; }
+    .existing-devices .dev-list { margin-top: 6px; }
+    .existing-devices .dev-item {
+      display: inline-block; background: #e5e7eb; border-radius: 6px;
+      padding: 3px 10px; margin: 3px 4px 3px 0; font-size: 12px; color: #333;
     }
-    .pair-status.success {
-      color: #16a34a;
-      font-weight: 600;
+    /* Success section */
+    .success-section { text-align: center; }
+    .success-section .icon { font-size: 56px; margin-bottom: 16px; }
+    .success-section h2 { font-size: 20px; color: #16a34a; margin-bottom: 8px; }
+    .success-section .detail {
+      font-size: 14px; color: #555; margin-bottom: 20px; line-height: 1.7;
     }
-    .pair-status.error {
-      color: #dc2626;
+    .success-section .device-info {
+      background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 12px;
+      padding: 16px; margin-bottom: 20px; text-align: left; font-size: 14px; color: #333;
     }
-    .pair-status.loading {
-      color: #667eea;
+    .success-section .device-info .row {
+      display: flex; justify-content: space-between; padding: 4px 0;
     }
-
-    /* Success activation section */
-    .activation-section {
-      background: #f0fdf4;
-      border: 2px solid #22c55e;
-      border-radius: 16px;
-      padding: 24px;
-      text-align: center;
-      display: none;
-    }
-    .activation-section.visible { display: block; }
-    .activation-section .success-icon { font-size: 48px; margin-bottom: 12px; }
-    .activation-section h3 { font-size: 18px; color: #16a34a; margin-bottom: 12px; }
-    .activation-section p { font-size: 14px; color: #555; margin-bottom: 8px; line-height: 1.6; }
+    .success-section .device-info .row .label { color: #666; }
+    .success-section .device-info .row .value { font-weight: 600; }
     .activate-btn {
-      background: #22c55e;
-      color: white;
-      border: none;
-      padding: 14px 32px;
-      border-radius: 12px;
-      font-size: 16px;
-      font-weight: 700;
-      cursor: pointer;
-      margin-top: 12px;
-      transition: transform 0.2s;
+      background: #22c55e; color: white; border: none; padding: 14px 32px;
+      border-radius: 12px; font-size: 16px; font-weight: 700; cursor: pointer;
+      width: 100%; transition: transform 0.2s;
     }
     .activate-btn:hover {
-      transform: translateY(-2px);
-      box-shadow: 0 8px 24px rgba(34,197,94,0.3);
+      transform: translateY(-2px); box-shadow: 0 8px 24px rgba(34,197,94,0.3);
     }
-
-    .device-name-input {
-      width: 100%;
-      max-width: 280px;
-      padding: 10px 16px;
-      border: 2px solid #d1d5db;
-      border-radius: 10px;
-      font-size: 14px;
-      outline: none;
-      margin-bottom: 16px;
-      text-align: center;
+    .success-section .next-steps {
+      background: #fffbeb; border: 1px solid #fde68a; border-radius: 12px;
+      padding: 16px; margin-top: 20px; text-align: left; font-size: 13px;
+      color: #78350f; line-height: 1.7;
     }
-    .device-name-input:focus {
-      border-color: #667eea;
-      box-shadow: 0 0 0 3px rgba(102,126,234,0.2);
-    }
-
-    .tip {
-      background: #fffbeb;
-      border: 1px solid #fde68a;
-      border-radius: 12px;
-      padding: 16px 20px;
-      margin-top: 20px;
-    }
-    .tip h3 { font-size: 14px; color: #92400e; margin-bottom: 6px; }
-    .tip p { font-size: 13px; color: #78350f; line-height: 1.6; }
-    .footer {
-      text-align: center;
-      margin-top: 24px;
-      color: #999;
-      font-size: 13px;
-    }
+    .success-section .next-steps b { color: #92400e; }
+    .footer { text-align: center; margin-top: 24px; color: #999; font-size: 12px; }
     .footer a { color: #667eea; text-decoration: none; }
-    .footer a:hover { text-decoration: underline; }
+    @media (max-width: 480px) {
+      .container { padding: 28px 20px; }
+      .header .logo { font-size: 40px; }
+      .header h1 { font-size: 20px; }
+    }
   </style>
 </head>
 <body>
   <div class="container">
     <div class="header">
-      <div class="icon">🎉</div>
-      <h1>MoA 설치가 완료되었습니다!</h1>
-      <p class="subtitle">이제 기기를 등록하면 메신저로 이 컴퓨터를 제어할 수 있습니다</p>
+      <div class="logo">&#x1F916;</div>
+      <h1>MoA</h1>
+      <p class="subtitle">Master of AI - AI \uC5B4\uC2DC\uC2A4\uD134\uD2B8</p>
     </div>
 
-    <!-- Step 1: Get pairing code from KakaoTalk -->
-    <div class="section">
-      <h2><span class="num">1</span> 페어링 코드 받기</h2>
-      <div class="channel">
-        <div class="steps">
-          <b>카카오톡</b>에서 <b>MoA 채널</b>을 열고<br>
-          <b>"이 기기등록"</b> 버튼을 클릭하세요.<br>
-          6자리 페어링 코드가 발급됩니다.
-        </div>
+    <!-- Step 1a: Login Form (default) -->
+    <div id="step-login" class="step-view active">
+      <div class="form-group">
+        <label for="login-username">\uC544\uC774\uB514</label>
+        <input type="text" id="login-username" placeholder="\uC544\uC774\uB514\uB97C \uC785\uB825\uD558\uC138\uC694" autocomplete="username">
+      </div>
+      <div class="form-group">
+        <label for="login-password">\uBE44\uBC00\uBC88\uD638</label>
+        <input type="password" id="login-password" placeholder="\uBE44\uBC00\uBC88\uD638\uB97C \uC785\uB825\uD558\uC138\uC694" autocomplete="current-password">
+      </div>
+      <button class="submit-btn" id="login-btn" onclick="handleLogin()">\uB85C\uADF8\uC778</button>
+      <div class="status-msg" id="login-status"></div>
+      <div class="toggle-link">
+        \uACC4\uC815\uC774 \uC5C6\uC73C\uC2E0\uAC00\uC694? <a onclick="showStep('step-signup')">\uD68C\uC6D0\uAC00\uC785</a>
       </div>
     </div>
 
-    <!-- Step 2: Enter pairing code here -->
-    <div class="section" id="pairing-section">
-      <h2><span class="num">2</span> 페어링 코드 입력</h2>
-      <div class="pairing-form" id="pairing-form">
-        <h3>카카오톡에서 받은 6자리 코드를 입력하세요</h3>
-        <div class="code-inputs" id="code-inputs">
-          <input type="text" maxlength="1" inputmode="numeric" pattern="[0-9]" autocomplete="off">
-          <input type="text" maxlength="1" inputmode="numeric" pattern="[0-9]" autocomplete="off">
-          <input type="text" maxlength="1" inputmode="numeric" pattern="[0-9]" autocomplete="off">
-          <input type="text" maxlength="1" inputmode="numeric" pattern="[0-9]" autocomplete="off">
-          <input type="text" maxlength="1" inputmode="numeric" pattern="[0-9]" autocomplete="off">
-          <input type="text" maxlength="1" inputmode="numeric" pattern="[0-9]" autocomplete="off">
-        </div>
-        <input type="text" class="device-name-input" id="device-name"
-          placeholder="기기 이름 (예: 내 노트북)"
-          value="">
-        <br>
-        <button class="pair-btn" id="pair-btn" disabled onclick="submitPairing()">
-          연결하기
-        </button>
-        <div class="pair-status" id="pair-status"></div>
+    <!-- Step 1b: Signup Form -->
+    <div id="step-signup" class="step-view">
+      <div class="form-group">
+        <label for="signup-username">\uC544\uC774\uB514</label>
+        <input type="text" id="signup-username" placeholder="\uC0AC\uC6A9\uD560 \uC544\uC774\uB514 (2\uC790 \uC774\uC0C1)" autocomplete="username">
       </div>
-
-      <!-- Success: activation download -->
-      <div class="activation-section" id="activation-section">
-        <div class="success-icon">🎊</div>
-        <h3>기기 연결 성공!</h3>
-        <p>마지막 단계: 아래 버튼을 클릭하여 설정 파일을 다운로드한 후,<br>
-        다운로드된 파일을 <b>더블클릭</b>하면 설정이 완료됩니다.</p>
-        <button class="activate-btn" id="activate-btn" onclick="downloadActivation()">
-          설정 파일 다운로드
-        </button>
-        <div class="pair-status success" style="margin-top:12px;" id="activate-status"></div>
+      <div class="form-group">
+        <label for="signup-password">\uBE44\uBC00\uBC88\uD638</label>
+        <input type="password" id="signup-password" placeholder="\uBE44\uBC00\uBC88\uD638 (4\uC790 \uC774\uC0C1)" autocomplete="new-password">
+      </div>
+      <div class="form-group">
+        <label for="signup-confirm">\uBE44\uBC00\uBC88\uD638 \uD655\uC778</label>
+        <input type="password" id="signup-confirm" placeholder="\uBE44\uBC00\uBC88\uD638\uB97C \uB2E4\uC2DC \uC785\uB825\uD558\uC138\uC694" autocomplete="new-password">
+      </div>
+      <div class="form-group">
+        <label for="signup-device">\uAE30\uAE30 \uC774\uB984</label>
+        <input type="text" id="signup-device" placeholder="\uC774 \uAE30\uAE30\uC758 \uC774\uB984 (\uC608: \uB0B4 \uB178\uD2B8\uBD81)">
+      </div>
+      <button class="submit-btn" id="signup-btn" onclick="handleSignup()">\uD68C\uC6D0\uAC00\uC785</button>
+      <div class="status-msg" id="signup-status"></div>
+      <div class="toggle-link">
+        \uC774\uBBF8 \uACC4\uC815\uC774 \uC788\uC73C\uC2E0\uAC00\uC694? <a onclick="showStep('step-login')">\uB85C\uADF8\uC778</a>
       </div>
     </div>
 
-    <!-- Step 3: Chat methods -->
-    <div class="section">
-      <h2><span class="num">3</span> MoA와 대화하는 방법</h2>
-      <p style="color:#555; font-size:14px; margin-bottom:12px;">
-        한 번 기기를 등록하면, 아래 모든 메신저에서 이 컴퓨터에 명령을 보낼 수 있습니다.
+    <!-- Step 2: Device Registration (login only — shown after credential verify) -->
+    <div id="step-device" class="step-view">
+      <p style="font-size:15px; color:#333; margin-bottom:16px; text-align:center;">
+        <b id="device-welcome-user"></b>\uB2D8, \uD658\uC601\uD569\uB2C8\uB2E4!<br>
+        <span style="color:#666; font-size:13px;">\uC0C8 \uAE30\uAE30\uB97C \uB4F1\uB85D\uD574\uC8FC\uC138\uC694.</span>
       </p>
-
-      <div class="channel">
-        <h3>💬 카카오톡</h3>
-        <div class="steps">
-          카카오톡에서 <b>MoA 채널</b>로 메시지를 보내면 됩니다.<br>
-          예시: <b>"바탕화면 파일 목록 보여줘"</b>
-        </div>
+      <div id="existing-devices-box" class="existing-devices" style="display:none;">
+        <b>\uAE30\uC874 \uB4F1\uB85D\uB41C \uAE30\uAE30:</b>
+        <div class="dev-list" id="existing-dev-list"></div>
       </div>
-
-      <div class="channel">
-        <h3>✈️ 텔레그램</h3>
-        <div class="steps">
-          텔레그램에서 <b>MoA 봇</b>을 검색하여 대화를 시작합니다.<br>
-          <span style="color:#999;">(준비 중 — 곧 지원 예정)</span>
-        </div>
+      <div class="form-group">
+        <label for="device-name">\uC0C8 \uAE30\uAE30 \uC774\uB984</label>
+        <input type="text" id="device-name" placeholder="\uC774 \uAE30\uAE30\uC758 \uC774\uB984">
       </div>
-
-      <div class="channel">
-        <h3>📱 WhatsApp</h3>
-        <div class="steps">
-          WhatsApp에서 <b>MoA 번호</b>로 메시지를 보냅니다.<br>
-          <span style="color:#999;">(준비 중 — 곧 지원 예정)</span>
-        </div>
-      </div>
+      <button class="submit-btn" id="device-btn" onclick="handleDeviceRegister()">\uAE30\uAE30 \uB4F1\uB85D</button>
+      <div class="status-msg" id="device-status"></div>
     </div>
 
-    <div class="tip">
-      <h3>💡 팁</h3>
-      <p>
-        기기 등록은 메신저와 무관하게 작동합니다. 카카오톡으로 등록한 기기에
-        텔레그램이나 WhatsApp으로도 명령을 보낼 수 있습니다.
-        추가 기기도 같은 방법으로 등록하면 모든 기기를 하나의 AI로 제어할 수 있습니다.
-      </p>
+    <!-- Step 3: Success -->
+    <div id="step-success" class="step-view success-section">
+      <div class="icon">&#x1F389;</div>
+      <h2 id="success-title">\uAE30\uAE30 \uB4F1\uB85D \uC644\uB8CC!</h2>
+      <div class="detail" id="success-detail">\uC774\uC81C \uCE74\uCE74\uC624\uD1A1\uC5D0\uC11C \uC774 \uCEF4\uD4E8\uD130\uB97C \uC81C\uC5B4\uD560 \uC218 \uC788\uC2B5\uB2C8\uB2E4.</div>
+      <div class="device-info">
+        <div class="row"><span class="label">\uAE30\uAE30 \uC774\uB984</span><span class="value" id="info-device"></span></div>
+        <div class="row"><span class="label">\uD50C\uB7AB\uD3FC</span><span class="value" id="info-platform"></span></div>
+        <div class="row"><span class="label">\uB4F1\uB85D \uC0C1\uD0DC</span><span class="value" id="info-status"></span></div>
+      </div>
+      <button class="activate-btn" onclick="downloadActivation()">\uC124\uC815 \uD30C\uC77C \uB2E4\uC6B4\uB85C\uB4DC</button>
+      <div class="status-msg success" id="activate-status" style="margin-top:12px;"></div>
+      <div class="next-steps">
+        <b>\uB2E4\uC74C \uB2E8\uACC4:</b><br>
+        1. \uB2E4\uC6B4\uB85C\uB4DC\uB41C \uD30C\uC77C\uC744 <b>\uB354\uBE14\uD074\uB9AD</b>\uD558\uC5EC \uC124\uC815\uC744 \uC644\uB8CC\uD558\uC138\uC694.<br>
+        2. <b>\uCE74\uCE74\uC624\uD1A1</b>\uC5D0\uC11C MoA \uCC44\uB110\uC744 \uC5F4\uACE0 "\uC0AC\uC6A9\uC790 \uC778\uC99D" \uBC84\uD2BC\uC744 \uB20C\uB7EC\uC8FC\uC138\uC694.<br>
+        3. \uAC00\uC785\uC2DC \uC124\uC815\uD55C \uC544\uC774\uB514\uC640 \uBE44\uBC00\uBC88\uD638\uB85C \uB85C\uADF8\uC778\uD558\uBA74 \uC778\uC99D \uC644\uB8CC!<br>
+        4. \uAD6C\uBB38\uBC88\uD638 \uC124\uC815 \uAD8C\uC7A5 \u2014 \uAE30\uAE30 \uC81C\uC5B4 \uC2DC \uBCF8\uC778 \uC7AC\uD655\uC778\uC73C\uB85C \uBCF4\uC548\uC774 \uAC15\uD654\uB429\uB2C8\uB2E4.<br>
+        5. <a href="/backup" style="color:#667eea; font-weight:600;">\uBC31\uC5C5 \uC124\uC815</a> \u2014 AI \uAE30\uC5B5\uC744 \uC554\uD638\uD654 \uBC31\uC5C5\uD558\uACE0 12\uB2E8\uC5B4 \uBCF5\uAD6C\uD0A4\uB97C \uBC1C\uAE09\uBC1B\uC73C\uC138\uC694.
+      </div>
     </div>
 
     <div class="footer">
-      <p><a href="https://moa.lawith.kr">moa.lawith.kr</a> · Master of AI</p>
+      <a href="https://moa.lawith.kr">moa.lawith.kr</a> &middot; Master of AI
     </div>
   </div>
 
   <script>
-    // Platform detection
+    // ── Platform detection ──
     var isWindows = navigator.userAgent.indexOf('Win') !== -1;
     var isMac = navigator.userAgent.indexOf('Mac') !== -1;
+    var isAndroid = navigator.userAgent.indexOf('Android') !== -1;
+    var isiOS = /iPhone|iPad|iPod/.test(navigator.userAgent);
 
-    // Auto-set device name from platform
-    var deviceNameInput = document.getElementById('device-name');
-    if (isWindows) deviceNameInput.value = 'My Windows PC';
-    else if (isMac) deviceNameInput.value = 'My Mac';
-    else deviceNameInput.value = 'My Linux PC';
+    var detectedPlatform = 'Linux';
+    var detectedType = 'desktop';
+    if (isWindows) { detectedPlatform = 'Windows'; detectedType = 'desktop'; }
+    else if (isMac) { detectedPlatform = 'macOS'; detectedType = 'laptop'; }
+    else if (isAndroid) { detectedPlatform = 'Android'; detectedType = 'mobile'; }
+    else if (isiOS) { detectedPlatform = 'iOS'; detectedType = 'mobile'; }
 
-    // Pairing code input handling
-    var inputs = document.querySelectorAll('#code-inputs input');
-    var pairBtn = document.getElementById('pair-btn');
+    var baseDeviceName = detectedPlatform === 'Windows' ? 'My Windows PC'
+      : detectedPlatform === 'macOS' ? 'My Mac'
+      : detectedPlatform === 'Android' ? 'My Android'
+      : detectedPlatform === 'iOS' ? 'My iPhone'
+      : 'My Linux PC';
 
-    inputs.forEach(function(input, index) {
-      input.addEventListener('input', function(e) {
-        var val = e.target.value.replace(/[^0-9]/g, '');
-        e.target.value = val;
-        if (val && index < inputs.length - 1) {
-          inputs[index + 1].focus();
-        }
-        checkCodeComplete();
-      });
-      input.addEventListener('keydown', function(e) {
-        if (e.key === 'Backspace' && !e.target.value && index > 0) {
-          inputs[index - 1].focus();
-        }
-        if (e.key === 'Enter') {
-          submitPairing();
-        }
-      });
-      // Handle paste of full code
-      input.addEventListener('paste', function(e) {
-        e.preventDefault();
-        var pasted = (e.clipboardData || window.clipboardData).getData('text').replace(/[^0-9]/g, '');
-        for (var i = 0; i < Math.min(pasted.length, inputs.length); i++) {
-          inputs[i].value = pasted[i];
-        }
-        if (pasted.length >= inputs.length) {
-          inputs[inputs.length - 1].focus();
+    // Set default device name for signup form
+    document.getElementById('signup-device').value = baseDeviceName;
+    document.getElementById('login-username').focus();
+
+    // ── State ──
+    var authResult = null;
+    var loginCredentials = null; // { username, password } saved after step 1
+
+    // ── Step navigation ──
+    function showStep(stepId) {
+      var views = document.querySelectorAll('.step-view');
+      for (var i = 0; i < views.length; i++) views[i].classList.remove('active');
+      document.getElementById(stepId).classList.add('active');
+      // Focus first input in new step
+      var firstInput = document.getElementById(stepId).querySelector('input');
+      if (firstInput) firstInput.focus();
+    }
+
+    // ── Device name de-duplication ──
+    function getUniqueDeviceName(existingDevices) {
+      if (!existingDevices || existingDevices.length === 0) return baseDeviceName;
+      var names = existingDevices.map(function(n) { return n.toLowerCase(); });
+      if (names.indexOf(baseDeviceName.toLowerCase()) === -1) return baseDeviceName;
+      var i = 2;
+      while (names.indexOf((baseDeviceName + ' ' + i).toLowerCase()) !== -1) { i++; }
+      return baseDeviceName + ' ' + i;
+    }
+
+    // ── Step 1a: Login ──
+    function handleLogin() {
+      var username = document.getElementById('login-username').value.trim();
+      var password = document.getElementById('login-password').value;
+      var status = document.getElementById('login-status');
+      var btn = document.getElementById('login-btn');
+
+      if (!username || !password) {
+        status.className = 'status-msg error';
+        status.textContent = '\\uC544\\uC774\\uB514\\uC640 \\uBE44\\uBC00\\uBC88\\uD638\\uB97C \\uC785\\uB825\\uD574\\uC8FC\\uC138\\uC694.';
+        return;
+      }
+
+      status.className = 'status-msg loading';
+      status.textContent = '\\uB85C\\uADF8\\uC778 \\uC911...';
+      btn.disabled = true;
+
+      // Step 1: verify credentials only (no device)
+      fetch('/api/relay/auth/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username: username, password: password })
+      })
+      .then(function(r) { return r.json(); })
+      .then(function(data) {
+        if (data.success) {
+          loginCredentials = { username: username, password: password };
+          // Show device registration step with de-duplicated name
+          var existing = data.existingDevices || [];
+          document.getElementById('device-welcome-user').textContent = username;
+          document.getElementById('device-name').value = getUniqueDeviceName(existing);
+          // Show existing devices list
+          if (existing.length > 0) {
+            var box = document.getElementById('existing-devices-box');
+            var list = document.getElementById('existing-dev-list');
+            list.innerHTML = '';
+            for (var i = 0; i < existing.length; i++) {
+              var span = document.createElement('span');
+              span.className = 'dev-item';
+              span.textContent = existing[i];
+              list.appendChild(span);
+            }
+            box.style.display = 'block';
+          }
+          showStep('step-device');
         } else {
-          inputs[Math.min(pasted.length, inputs.length - 1)].focus();
+          status.className = 'status-msg error';
+          status.textContent = data.error || '\\uB85C\\uADF8\\uC778\\uC5D0 \\uC2E4\\uD328\\uD588\\uC2B5\\uB2C8\\uB2E4.';
+          btn.disabled = false;
         }
-        checkCodeComplete();
+      })
+      .catch(function() {
+        status.className = 'status-msg error';
+        status.textContent = '\\uC11C\\uBC84\\uC5D0 \\uC5F0\\uACB0\\uD560 \\uC218 \\uC5C6\\uC2B5\\uB2C8\\uB2E4.';
+        btn.disabled = false;
       });
-    });
-
-    // Focus first input on load
-    inputs[0].focus();
-
-    function checkCodeComplete() {
-      var code = getCode();
-      pairBtn.disabled = code.length !== 6;
     }
 
-    function getCode() {
-      var code = '';
-      inputs.forEach(function(input) { code += input.value; });
-      return code;
-    }
+    // ── Step 2: Device registration (login flow only) ──
+    function handleDeviceRegister() {
+      if (!loginCredentials) return;
+      var deviceName = document.getElementById('device-name').value.trim() || baseDeviceName;
+      var status = document.getElementById('device-status');
+      var btn = document.getElementById('device-btn');
 
-    // Store pairing result for activation download
-    var pairingResult = null;
+      status.className = 'status-msg loading';
+      status.textContent = '\\uAE30\\uAE30 \\uB4F1\\uB85D \\uC911...';
+      btn.disabled = true;
 
-    function submitPairing() {
-      var code = getCode();
-      if (code.length !== 6) return;
-
-      var deviceName = deviceNameInput.value.trim() || 'My PC';
-      var status = document.getElementById('pair-status');
-      status.className = 'pair-status loading';
-      status.textContent = '연결 중...';
-      pairBtn.disabled = true;
-
-      // Detect device info
-      var platform = 'Unknown';
-      var deviceType = 'desktop';
-      if (isWindows) platform = 'Windows';
-      else if (isMac) { platform = 'macOS'; deviceType = 'laptop'; }
-      else platform = 'Linux';
-
-      fetch('/api/relay/pair', {
+      fetch('/api/relay/auth/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          code: code,
-          device: {
-            deviceName: deviceName,
-            deviceType: deviceType,
-            platform: platform,
-            capabilities: ['shell', 'file', 'browser', 'clipboard']
-          }
+          username: loginCredentials.username,
+          password: loginCredentials.password,
+          device: { deviceName: deviceName, deviceType: detectedType, platform: detectedPlatform }
         })
       })
-      .then(function(res) { return res.json(); })
+      .then(function(r) { return r.json(); })
       .then(function(data) {
         if (data.success) {
-          pairingResult = {
+          authResult = {
             deviceToken: data.deviceToken,
-            deviceId: data.deviceId,
             deviceName: deviceName,
-            platform: platform,
-            pairedAt: new Date().toISOString()
+            platform: detectedPlatform,
+            username: loginCredentials.username,
+            registeredAt: new Date().toISOString()
           };
-          // Show activation section, hide pairing form
-          document.getElementById('pairing-form').style.display = 'none';
-          var actSection = document.getElementById('activation-section');
-          actSection.classList.add('visible');
-          // Auto-trigger the activation download
+          document.getElementById('success-title').textContent =
+            data.isNewDevice !== false ? '\\uAE30\\uAE30 \\uB4F1\\uB85D \\uC644\\uB8CC!' : '\\uB85C\\uADF8\\uC778 \\uC131\\uACF5!';
+          document.getElementById('success-detail').textContent =
+            data.isNewDevice !== false
+              ? '\\uC0C8 \\uAE30\\uAE30\\uAC00 \\uB4F1\\uB85D\\uB418\\uC5C8\\uC2B5\\uB2C8\\uB2E4. \\uC544\\uB798 \\uC124\\uC815 \\uD30C\\uC77C\\uC744 \\uB2E4\\uC6B4\\uB85C\\uB4DC\\uD574\\uC8FC\\uC138\\uC694.'
+              : '\\uAE30\\uC874 \\uAE30\\uAE30\\uB85C \\uB85C\\uADF8\\uC778\\uB418\\uC5C8\\uC2B5\\uB2C8\\uB2E4.';
+          document.getElementById('info-device').textContent = deviceName;
+          document.getElementById('info-platform').textContent = detectedPlatform;
+          document.getElementById('info-status').textContent =
+            data.isNewDevice !== false ? '\\uC2E0\\uADDC \\uB4F1\\uB85D' : '\\uAE30\\uC874 \\uAE30\\uAE30';
+          showStep('step-success');
           downloadActivation();
         } else {
-          status.className = 'pair-status error';
-          status.textContent = data.error || '연결에 실패했습니다. 코드를 확인해주세요.';
-          pairBtn.disabled = false;
+          status.className = 'status-msg error';
+          status.textContent = data.error || '\\uAE30\\uAE30 \\uB4F1\\uB85D\\uC5D0 \\uC2E4\\uD328\\uD588\\uC2B5\\uB2C8\\uB2E4.';
+          btn.disabled = false;
         }
       })
-      .catch(function(err) {
-        status.className = 'pair-status error';
-        status.textContent = '서버에 연결할 수 없습니다. 잠시 후 다시 시도해주세요.';
-        pairBtn.disabled = false;
+      .catch(function() {
+        status.className = 'status-msg error';
+        status.textContent = '\\uC11C\\uBC84\\uC5D0 \\uC5F0\\uACB0\\uD560 \\uC218 \\uC5C6\\uC2B5\\uB2C8\\uB2E4.';
+        btn.disabled = false;
       });
     }
 
+    // ── Step 1b: Signup (includes device in one step) ──
+    function handleSignup() {
+      var username = document.getElementById('signup-username').value.trim();
+      var password = document.getElementById('signup-password').value;
+      var confirm = document.getElementById('signup-confirm').value;
+      var status = document.getElementById('signup-status');
+      var btn = document.getElementById('signup-btn');
+      var deviceName = document.getElementById('signup-device').value.trim() || baseDeviceName;
+
+      if (!username || !password) {
+        status.className = 'status-msg error';
+        status.textContent = '\\uC544\\uC774\\uB514\\uC640 \\uBE44\\uBC00\\uBC88\\uD638\\uB97C \\uC785\\uB825\\uD574\\uC8FC\\uC138\\uC694.';
+        return;
+      }
+      if (password !== confirm) {
+        status.className = 'status-msg error';
+        status.textContent = '\\uBE44\\uBC00\\uBC88\\uD638\\uAC00 \\uC77C\\uCE58\\uD558\\uC9C0 \\uC54A\\uC2B5\\uB2C8\\uB2E4.';
+        return;
+      }
+
+      status.className = 'status-msg loading';
+      status.textContent = '\\uD68C\\uC6D0\\uAC00\\uC785 \\uC911...';
+      btn.disabled = true;
+
+      fetch('/api/relay/auth/signup', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          username: username, password: password,
+          device: { deviceName: deviceName, deviceType: detectedType, platform: detectedPlatform }
+        })
+      })
+      .then(function(r) { return r.json(); })
+      .then(function(data) {
+        if (data.success) {
+          authResult = {
+            deviceToken: data.deviceToken,
+            deviceName: deviceName,
+            platform: detectedPlatform,
+            username: username,
+            registeredAt: new Date().toISOString()
+          };
+          document.getElementById('success-title').textContent = '\\uD68C\\uC6D0\\uAC00\\uC785 \\uC644\\uB8CC!';
+          document.getElementById('success-detail').textContent =
+            '\\uACC4\\uC815\\uC774 \\uC0DD\\uC131\\uB418\\uACE0 \\uAE30\\uAE30\\uAC00 \\uB4F1\\uB85D\\uB418\\uC5C8\\uC2B5\\uB2C8\\uB2E4.';
+          document.getElementById('info-device').textContent = deviceName;
+          document.getElementById('info-platform').textContent = detectedPlatform;
+          document.getElementById('info-status').textContent = '\\uC2E0\\uADDC \\uB4F1\\uB85D';
+          showStep('step-success');
+          downloadActivation();
+        } else {
+          status.className = 'status-msg error';
+          status.textContent = data.error || '\\uD68C\\uC6D0\\uAC00\\uC785\\uC5D0 \\uC2E4\\uD328\\uD588\\uC2B5\\uB2C8\\uB2E4.';
+          btn.disabled = false;
+        }
+      })
+      .catch(function() {
+        status.className = 'status-msg error';
+        status.textContent = '\\uC11C\\uBC84\\uC5D0 \\uC5F0\\uACB0\\uD560 \\uC218 \\uC5C6\\uC2B5\\uB2C8\\uB2E4.';
+        btn.disabled = false;
+      });
+    }
+
+    // ── Enter key support ──
+    document.getElementById('login-password').addEventListener('keydown', function(e) {
+      if (e.key === 'Enter') handleLogin();
+    });
+    document.getElementById('signup-confirm').addEventListener('keydown', function(e) {
+      if (e.key === 'Enter') handleSignup();
+    });
+    document.getElementById('device-name').addEventListener('keydown', function(e) {
+      if (e.key === 'Enter') handleDeviceRegister();
+    });
+
+    // ── Activation file download ──
     function downloadActivation() {
-      if (!pairingResult) return;
-      var config = JSON.stringify(pairingResult);
+      if (!authResult || !authResult.deviceToken) return;
+      var config = JSON.stringify(authResult);
       var filename, content, mimeType;
 
       if (isWindows) {
         filename = 'MoA-Activate.bat';
         mimeType = 'application/octet-stream';
-        // Escape % for batch (special in batch variable expansion)
         var batConfig = config.replace(/%/g, '%%');
         content = '@echo off\\r\\n'
           + 'chcp 65001 >nul 2>&1\\r\\n'
@@ -799,8 +803,8 @@ function generateWelcomePage(): string {
           + 'if not exist "%CONFIG_DIR%" mkdir "%CONFIG_DIR%"\\r\\n'
           + '(echo ' + batConfig + ')>"%CONFIG_DIR%\\\\device.json"\\r\\n'
           + 'echo.\\r\\n'
-          + 'echo   MoA 기기 연결이 완료되었습니다!\\r\\n'
-          + 'echo   이제 카카오톡 MoA 채널에서 명령을 보내보세요.\\r\\n'
+          + 'echo   MoA \\uAE30\\uAE30 \\uC5F0\\uACB0\\uC774 \\uC644\\uB8CC\\uB418\\uC5C8\\uC2B5\\uB2C8\\uB2E4!\\r\\n'
+          + 'echo   \\uC774\\uC81C \\uCE74\\uCE74\\uC624\\uD1A1 MoA \\uCC44\\uB110\\uC5D0\\uC11C \\uBA85\\uB839\\uC744 \\uBCF4\\uB0B4\\uBCF4\\uC138\\uC694.\\r\\n'
           + 'echo.\\r\\n'
           + 'timeout /t 5 >nul\\r\\n';
       } else {
@@ -814,13 +818,12 @@ function generateWelcomePage(): string {
           + 'MOAEOF\\n'
           + 'chmod 600 "$CONFIG_DIR/device.json"\\n'
           + 'echo ""\\n'
-          + 'echo "  MoA 기기 연결이 완료되었습니다!"\\n'
-          + 'echo "  이제 카카오톡 MoA 채널에서 명령을 보내보세요."\\n'
+          + 'echo "  MoA \\uAE30\\uAE30 \\uC5F0\\uACB0\\uC774 \\uC644\\uB8CC\\uB418\\uC5C8\\uC2B5\\uB2C8\\uB2E4!"\\n'
+          + 'echo "  \\uC774\\uC81C \\uCE74\\uCE74\\uC624\\uD1A1 MoA \\uCC44\\uB110\\uC5D0\\uC11C \\uBA85\\uB839\\uC744 \\uBCF4\\uB0B4\\uBCF4\\uC138\\uC694."\\n'
           + 'echo ""\\n'
           + 'sleep 3\\n';
       }
 
-      // Create and trigger download
       var blob = new Blob([content], { type: mimeType });
       var url = URL.createObjectURL(blob);
       var a = document.createElement('a');
@@ -832,8 +835,573 @@ function generateWelcomePage(): string {
       URL.revokeObjectURL(url);
 
       var actStatus = document.getElementById('activate-status');
-      actStatus.textContent = '다운로드된 ' + filename + ' 파일을 더블클릭하면 설정이 완료됩니다!';
+      if (actStatus) {
+        actStatus.textContent = '\\uB2E4\\uC6B4\\uB85C\\uB4DC\\uB41C ' + filename + ' \\uD30C\\uC77C\\uC744 \\uB354\\uBE14\\uD074\\uB9AD\\uD558\\uBA74 \\uC124\\uC815\\uC774 \\uC644\\uB8CC\\uB429\\uB2C8\\uB2E4!';
+      }
     }
+  </script>
+</body>
+</html>`;
+}
+
+/**
+ * 백업 & 복원 페이지
+ *
+ * ## 개념 (톡서랍/톡클라우드와 동일)
+ * - 백업 비밀번호: 서버 백업 시 암호화에 사용하는 별도 비밀번호 (로그인 비밀번호와 분리)
+ * - 복구키(12단어): 백업 비밀번호 분실 시 비밀번호를 재설정하는 니모닉
+ *
+ * ## 흐름
+ * [백업 탭]
+ *   첫 백업: 로그인 → 백업 비밀번호 설정 → 복구키 12단어 표시 → 완료
+ *   이후 백업: 로그인 → 백업 비밀번호 입력 → 완료
+ *
+ * [복원 탭]
+ *   로그인 → 백업 비밀번호 입력 → 복원 완료
+ *
+ * [비밀번호 찾기]
+ *   로그인 → 12단어 복구키 입력 → 새 비밀번호 설정 → 완료
+ */
+function generateBackupPage(): string {
+  return `<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>MoA - 백업 & 복원</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Malgun Gothic', sans-serif;
+      background: linear-gradient(135deg, #1e3a5f 0%, #2d1b69 100%);
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 20px;
+    }
+    .container {
+      background: white;
+      border-radius: 20px;
+      padding: 40px;
+      max-width: 480px;
+      width: 100%;
+      box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+    }
+    .header { text-align: center; margin-bottom: 24px; }
+    .header .icon { font-size: 48px; }
+    .header h1 { font-size: 22px; color: #1a1a2e; margin: 8px 0 4px; }
+    .header .subtitle { color: #666; font-size: 14px; line-height: 1.6; }
+    /* Tab bar */
+    .tab-bar {
+      display: flex; gap: 4px; margin-bottom: 24px;
+      background: #f1f5f9; border-radius: 12px; padding: 4px;
+    }
+    .tab-btn {
+      flex: 1; padding: 10px 8px; border: none; border-radius: 10px;
+      font-size: 14px; font-weight: 600; cursor: pointer;
+      background: transparent; color: #64748b; transition: all 0.2s;
+    }
+    .tab-btn.active { background: white; color: #1e3a5f; box-shadow: 0 2px 8px rgba(0,0,0,0.08); }
+    .tab-btn:hover:not(.active) { color: #334155; }
+    .step-view { display: none; }
+    .step-view.active { display: block; }
+    .form-group { margin-bottom: 16px; }
+    .form-group label {
+      display: block; font-size: 13px; font-weight: 600; color: #555; margin-bottom: 6px;
+    }
+    .form-group input, .form-group textarea {
+      width: 100%; padding: 12px 16px; border: 2px solid #e5e7eb;
+      border-radius: 10px; font-size: 15px; outline: none; transition: border-color 0.2s;
+      font-family: inherit;
+    }
+    .form-group input:focus, .form-group textarea:focus {
+      border-color: #1e3a5f; box-shadow: 0 0 0 3px rgba(30,58,95,0.15);
+    }
+    .form-group input::placeholder { color: #aaa; }
+    .submit-btn {
+      background: linear-gradient(135deg, #1e3a5f 0%, #2d1b69 100%);
+      color: white; border: none; padding: 14px; border-radius: 12px;
+      font-size: 16px; font-weight: 700; cursor: pointer; width: 100%; margin-top: 8px;
+      transition: transform 0.2s, box-shadow 0.2s, opacity 0.2s;
+    }
+    .submit-btn:hover:not(:disabled) {
+      transform: translateY(-2px); box-shadow: 0 8px 24px rgba(30,58,95,0.4);
+    }
+    .submit-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+    .status-msg { margin-top: 12px; font-size: 14px; text-align: center; min-height: 20px; }
+    .status-msg.error { color: #dc2626; }
+    .status-msg.loading { color: #1e3a5f; }
+    .status-msg.success { color: #16a34a; font-weight: 600; }
+    .info-box {
+      background: #f0f4ff; border: 1px solid #c7d2fe; border-radius: 12px;
+      padding: 16px; margin-bottom: 20px; font-size: 13px; color: #3730a3; line-height: 1.7;
+    }
+    .info-box b { color: #1e1b4b; }
+    .link-btn {
+      background: none; border: none; color: #667eea; font-size: 13px;
+      cursor: pointer; text-decoration: underline; padding: 0; margin-top: 8px;
+    }
+    /* Recovery key grid */
+    .recovery-section { text-align: center; }
+    .recovery-section h2 { font-size: 20px; color: #1e3a5f; margin-bottom: 8px; }
+    .recovery-section .desc {
+      font-size: 14px; color: #555; margin-bottom: 20px; line-height: 1.6;
+    }
+    .word-grid {
+      display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 20px;
+    }
+    .word-card {
+      background: #f8fafc; border: 2px solid #e2e8f0; border-radius: 10px;
+      padding: 10px 12px; text-align: left; font-size: 15px; color: #1e293b;
+    }
+    .word-card .num { font-size: 11px; color: #94a3b8; font-weight: 700; margin-right: 6px; }
+    .word-card .word { font-weight: 600; font-family: 'Monaco', 'Menlo', monospace; }
+    .warning-box {
+      background: #fef3c7; border: 2px solid #f59e0b; border-radius: 12px;
+      padding: 16px; margin-bottom: 20px; font-size: 13px; color: #92400e;
+      line-height: 1.7; text-align: left;
+    }
+    .warning-box b { color: #78350f; }
+    .confirm-check {
+      display: flex; align-items: center; gap: 10px; margin: 16px 0;
+      font-size: 14px; color: #333; cursor: pointer;
+    }
+    .confirm-check input[type="checkbox"] {
+      width: 20px; height: 20px; accent-color: #1e3a5f; cursor: pointer;
+    }
+    .result-box {
+      background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 12px;
+      padding: 16px; margin: 16px 0; text-align: left; font-size: 14px; color: #333;
+    }
+    .result-box .row { display: flex; justify-content: space-between; padding: 4px 0; }
+    .result-box .row .label { color: #666; }
+    .result-box .row .value { font-weight: 600; }
+    .footer { text-align: center; margin-top: 24px; color: #999; font-size: 12px; }
+    .footer a { color: #1e3a5f; text-decoration: none; }
+    @media (max-width: 480px) {
+      .container { padding: 28px 20px; }
+      .header .icon { font-size: 40px; }
+      .tab-btn { font-size: 13px; padding: 8px 4px; }
+      .word-grid { gap: 6px; }
+      .word-card { padding: 8px 10px; font-size: 14px; }
+    }
+    @media print {
+      body { background: white; }
+      .container { box-shadow: none; max-width: 100%; }
+      .submit-btn, .footer, .confirm-check, .tab-bar, .link-btn { display: none !important; }
+      .word-card { border: 1px solid #000; }
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <div class="icon">&#x1F512;</div>
+      <h1>MoA &#xBC31;&#xC5C5; &amp; &#xBCF5;&#xC6D0;</h1>
+      <p class="subtitle">AI &#xAE30;&#xC5B5;&#xACFC; &#xC124;&#xC815;&#xC744; &#xC548;&#xC804;&#xD558;&#xAC8C; &#xBCF4;&#xAD00;&#xD569;&#xB2C8;&#xB2E4;</p>
+    </div>
+
+    <!-- Tab bar -->
+    <div class="tab-bar">
+      <button class="tab-btn active" onclick="switchTab('backup')">&#xBC31;&#xC5C5;</button>
+      <button class="tab-btn" onclick="switchTab('restore')">&#xBCF5;&#xC6D0;</button>
+    </div>
+
+    <!-- ======== BACKUP TAB ======== -->
+
+    <!-- Backup Step 1: Login + Backup Password -->
+    <div id="backup-step-auth" class="step-view active">
+      <div class="info-box">
+        <b>&#xBC31;&#xC5C5;&#xC774;&#xB780;?</b><br>
+        MoA&#xC758; AI &#xAE30;&#xC5B5;&#xACFC; &#xC124;&#xC815;&#xC744; &#xC554;&#xD638;&#xD654;&#xD558;&#xC5EC; &#xC11C;&#xBC84;&#xC5D0; &#xBCF4;&#xAD00;&#xD569;&#xB2C8;&#xB2E4;.<br>
+        &#xBC31;&#xC5C5; &#xBE44;&#xBC00;&#xBC88;&#xD638;&#xB97C; &#xBD84;&#xC2E4;&#xD558;&#xBA74; <b>&#xBCF5;&#xAD6C;&#xD0A4;</b>(12&#xB2E8;&#xC5B4;)&#xB85C; &#xBE44;&#xBC00;&#xBC88;&#xD638;&#xB97C; &#xC7AC;&#xC124;&#xC815;&#xD560; &#xC218; &#xC788;&#xC2B5;&#xB2C8;&#xB2E4;.<br><br>
+        &#xCE74;&#xCE74;&#xC624;&#xD1A1; &#xD1A1;&#xC11C;&#xB78D;&#xACFC; &#xB3D9;&#xC77C;&#xD55C; &#xAC1C;&#xB150;&#xC785;&#xB2C8;&#xB2E4;.
+      </div>
+      <div class="form-group">
+        <label for="b-username">&#xC544;&#xC774;&#xB514;</label>
+        <input type="text" id="b-username" placeholder="MoA &#xC544;&#xC774;&#xB514;" autocomplete="username">
+      </div>
+      <div class="form-group">
+        <label for="b-password">&#xBE44;&#xBC00;&#xBC88;&#xD638;</label>
+        <input type="password" id="b-password" placeholder="MoA &#xBE44;&#xBC00;&#xBC88;&#xD638;" autocomplete="current-password">
+      </div>
+      <div class="form-group">
+        <label for="b-backup-pw" id="b-backup-pw-label">&#xBC31;&#xC5C5; &#xBE44;&#xBC00;&#xBC88;&#xD638;</label>
+        <input type="password" id="b-backup-pw" placeholder="&#xBC31;&#xC5C5;&#xC6A9; &#xBE44;&#xBC00;&#xBC88;&#xD638; (4&#xC790; &#xC774;&#xC0C1;)" autocomplete="new-password">
+      </div>
+      <div class="form-group" id="b-backup-pw-confirm-group">
+        <label for="b-backup-pw-confirm">&#xBC31;&#xC5C5; &#xBE44;&#xBC00;&#xBC88;&#xD638; &#xD655;&#xC778;</label>
+        <input type="password" id="b-backup-pw-confirm" placeholder="&#xBC31;&#xC5C5; &#xBE44;&#xBC00;&#xBC88;&#xD638; &#xB2E4;&#xC2DC; &#xC785;&#xB825;" autocomplete="new-password">
+      </div>
+      <button class="submit-btn" id="b-submit" onclick="handleBackup()">&#xBC31;&#xC5C5; &#xC2DC;&#xC791;</button>
+      <div class="status-msg" id="b-status"></div>
+    </div>
+
+    <!-- Backup Step 2: Recovery key display (first backup only) -->
+    <div id="backup-step-recovery" class="step-view recovery-section">
+      <h2>&#xBCF5;&#xAD6C;&#xD0A4; &#xBC1C;&#xAE09;</h2>
+      <p class="desc">
+        &#xC544;&#xB798; <b>12&#xAC1C; &#xB2E8;&#xC5B4;</b>&#xB97C; &#xC885;&#xC774;&#xC5D0; &#xC801;&#xC5B4;&#xB450;&#xC138;&#xC694;.<br>
+        &#xBC31;&#xC5C5; &#xBE44;&#xBC00;&#xBC88;&#xD638;&#xB97C; &#xC78A;&#xC5C8;&#xC744; &#xB54C; &#xC774; &#xB2E8;&#xC5B4;&#xB85C; &#xBE44;&#xBC00;&#xBC88;&#xD638;&#xB97C; &#xC7AC;&#xC124;&#xC815;&#xD560; &#xC218; &#xC788;&#xC2B5;&#xB2C8;&#xB2E4;.
+      </p>
+      <div class="word-grid" id="word-grid"></div>
+      <div class="warning-box">
+        <b>&#xC911;&#xC694;:</b><br>
+        &#x2022; &#xC774; 12&#xB2E8;&#xC5B4;&#xB294; <b>&#xB2E4;&#xC2DC; &#xD45C;&#xC2DC;&#xB418;&#xC9C0; &#xC54A;&#xC2B5;&#xB2C8;&#xB2E4;.</b><br>
+        &#x2022; &#xC885;&#xC774;&#xC5D0; &#xC801;&#xC5B4; &#xC548;&#xC804;&#xD55C; &#xACF3;&#xC5D0; &#xBCF4;&#xAD00;&#xD558;&#xC138;&#xC694;.<br>
+        &#x2022; &#xBC31;&#xC5C5; &#xBE44;&#xBC00;&#xBC88;&#xD638; &#xBD84;&#xC2E4; &#xC2DC; &#xC720;&#xC77C;&#xD55C; &#xBCF5;&#xAD6C; &#xC218;&#xB2E8;&#xC785;&#xB2C8;&#xB2E4;.
+      </div>
+      <button class="submit-btn" onclick="window.print()" style="background:#475569; margin-bottom:10px;">
+        &#xC778;&#xC1C4;&#xD558;&#xAE30;
+      </button>
+      <label class="confirm-check">
+        <input type="checkbox" id="confirm-saved" onchange="document.getElementById('confirm-btn').disabled = !this.checked">
+        12&#xB2E8;&#xC5B4;&#xB97C; &#xC548;&#xC804;&#xD558;&#xAC8C; &#xC801;&#xC5B4;&#xB450;&#xC5C8;&#xC2B5;&#xB2C8;&#xB2E4;.
+      </label>
+      <button class="submit-btn" id="confirm-btn" disabled onclick="showBackupComplete()">&#xD655;&#xC778; &#xC644;&#xB8CC;</button>
+    </div>
+
+    <!-- Backup Step 3: Complete -->
+    <div id="backup-step-complete" class="step-view" style="text-align:center;">
+      <div style="font-size:56px; margin-bottom:12px;">&#x2705;</div>
+      <h2 style="font-size:20px; color:#16a34a; margin-bottom:8px;">&#xBC31;&#xC5C5; &#xC644;&#xB8CC;!</h2>
+      <p style="font-size:14px; color:#555; margin-bottom:16px; line-height:1.6;">
+        AI &#xAE30;&#xC5B5;&#xACFC; &#xC124;&#xC815;&#xC774; &#xC554;&#xD638;&#xD654;&#xB418;&#xC5B4; &#xC11C;&#xBC84;&#xC5D0; &#xBCF4;&#xAD00;&#xB418;&#xC5C8;&#xC2B5;&#xB2C8;&#xB2E4;.
+      </p>
+      <div class="result-box">
+        <div class="row"><span class="label">&#xC554;&#xD638;&#xD654;</span><span class="value">AES-256-GCM</span></div>
+        <div class="row"><span class="label">&#xBC31;&#xC5C5; &#xC2DC;&#xAC01;</span><span class="value" id="info-time"></span></div>
+        <div class="row"><span class="label">&#xD30C;&#xC77C;</span><span class="value" id="info-file"></span></div>
+        <div class="row"><span class="label">&#xBCF5;&#xC6D0; &#xBC29;&#xBC95;</span><span class="value">&#xBC31;&#xC5C5; &#xBE44;&#xBC00;&#xBC88;&#xD638;</span></div>
+      </div>
+      <div class="info-box" style="text-align:left;">
+        <b>&#xBCF5;&#xC6D0;&#xC774; &#xD544;&#xC694;&#xD560; &#xB54C;:</b><br>
+        &#xC774; &#xD398;&#xC774;&#xC9C0;&#xC758; "&#xBCF5;&#xC6D0;" &#xD0ED;&#xC5D0;&#xC11C; &#xBC31;&#xC5C5; &#xBE44;&#xBC00;&#xBC88;&#xD638;&#xB85C; &#xBCF5;&#xC6D0;&#xD560; &#xC218; &#xC788;&#xC2B5;&#xB2C8;&#xB2E4;.<br>
+        &#xBC31;&#xC5C5; &#xBE44;&#xBC00;&#xBC88;&#xD638;&#xB97C; &#xC78A;&#xC73C;&#xC168;&#xB2E4;&#xBA74; &#xBCF5;&#xAD6C;&#xD0A4;(12&#xB2E8;&#xC5B4;)&#xB85C; &#xBE44;&#xBC00;&#xBC88;&#xD638;&#xB97C; &#xC7AC;&#xC124;&#xC815;&#xD558;&#xC138;&#xC694;.
+      </div>
+      <a href="/backup" class="submit-btn" style="display:block; text-align:center; text-decoration:none; margin-top:12px;">
+        &#xB3CC;&#xC544;&#xAC00;&#xAE30;
+      </a>
+    </div>
+
+    <!-- ======== RESTORE TAB ======== -->
+
+    <!-- Restore Step 1: Login + Backup Password -->
+    <div id="restore-step-auth" class="step-view">
+      <div class="info-box">
+        <b>&#xBCF5;&#xC6D0;&#xC774;&#xB780;?</b><br>
+        &#xC11C;&#xBC84;&#xC5D0; &#xBCF4;&#xAD00;&#xB41C; &#xBC31;&#xC5C5;&#xC744; &#xBC31;&#xC5C5; &#xBE44;&#xBC00;&#xBC88;&#xD638;&#xB85C; &#xBCF5;&#xD638;&#xD654;&#xD558;&#xC5EC; &#xBCF5;&#xC6D0;&#xD569;&#xB2C8;&#xB2E4;.<br>
+        &#xAE30;&#xAE30; &#xBCC0;&#xACBD;&#xC774;&#xB098; &#xBD84;&#xC2E4; &#xC2DC; AI &#xAE30;&#xC5B5;&#xACFC; &#xC124;&#xC815;&#xC744; &#xBCF5;&#xC6D0;&#xD560; &#xC218; &#xC788;&#xC2B5;&#xB2C8;&#xB2E4;.
+      </div>
+      <div class="form-group">
+        <label for="r-username">&#xC544;&#xC774;&#xB514;</label>
+        <input type="text" id="r-username" placeholder="MoA &#xC544;&#xC774;&#xB514;" autocomplete="username">
+      </div>
+      <div class="form-group">
+        <label for="r-password">&#xBE44;&#xBC00;&#xBC88;&#xD638;</label>
+        <input type="password" id="r-password" placeholder="MoA &#xBE44;&#xBC00;&#xBC88;&#xD638;" autocomplete="current-password">
+      </div>
+      <div class="form-group">
+        <label for="r-backup-pw">&#xBC31;&#xC5C5; &#xBE44;&#xBC00;&#xBC88;&#xD638;</label>
+        <input type="password" id="r-backup-pw" placeholder="&#xBC31;&#xC5C5; &#xC2DC; &#xC124;&#xC815;&#xD55C; &#xBE44;&#xBC00;&#xBC88;&#xD638;">
+      </div>
+      <button class="submit-btn" id="r-submit" onclick="handleRestore()">&#xBCF5;&#xC6D0; &#xC2DC;&#xC791;</button>
+      <div class="status-msg" id="r-status"></div>
+      <div style="text-align:center; margin-top:12px;">
+        <button class="link-btn" onclick="showResetPassword()">&#xBC31;&#xC5C5; &#xBE44;&#xBC00;&#xBC88;&#xD638;&#xB97C; &#xC78A;&#xC73C;&#xC168;&#xB098;&#xC694;?</button>
+      </div>
+    </div>
+
+    <!-- Restore Step 2: Complete -->
+    <div id="restore-step-complete" class="step-view" style="text-align:center;">
+      <div style="font-size:56px; margin-bottom:12px;">&#x2705;</div>
+      <h2 style="font-size:20px; color:#16a34a; margin-bottom:8px;">&#xBCF5;&#xC6D0; &#xC644;&#xB8CC;!</h2>
+      <p style="font-size:14px; color:#555; margin-bottom:16px; line-height:1.6;">
+        &#xBC31;&#xC5C5;&#xC5D0;&#xC11C; AI &#xAE30;&#xC5B5;&#xACFC; &#xC124;&#xC815;&#xC774; &#xBCF5;&#xC6D0;&#xB418;&#xC5C8;&#xC2B5;&#xB2C8;&#xB2E4;.
+      </p>
+      <div class="result-box">
+        <div class="row"><span class="label">&#xBCF5;&#xC6D0; &#xD30C;&#xC77C;</span><span class="value" id="r-info-file"></span></div>
+        <div class="row"><span class="label">&#xBC31;&#xC5C5; &#xC2DC;&#xAC01;</span><span class="value" id="r-info-time"></span></div>
+        <div class="row"><span class="label">&#xBB34;&#xACB0;&#xC131; &#xAC80;&#xC99D;</span><span class="value" id="r-info-verified"></span></div>
+      </div>
+      <a href="/backup" class="submit-btn" style="display:block; text-align:center; text-decoration:none; margin-top:12px;">
+        &#xB3CC;&#xC544;&#xAC00;&#xAE30;
+      </a>
+    </div>
+
+    <!-- ======== PASSWORD RESET (via recovery key) ======== -->
+
+    <div id="reset-step" class="step-view">
+      <h2 style="font-size:18px; color:#1e3a5f; margin-bottom:12px; text-align:center;">&#xBC31;&#xC5C5; &#xBE44;&#xBC00;&#xBC88;&#xD638; &#xC7AC;&#xC124;&#xC815;</h2>
+      <div class="info-box">
+        &#xBC31;&#xC5C5; &#xC2DC; &#xBC1C;&#xAE09;&#xBC1B;&#xC740; <b>12&#xB2E8;&#xC5B4; &#xBCF5;&#xAD6C;&#xD0A4;</b>&#xB97C; &#xC785;&#xB825;&#xD558;&#xBA74;<br>
+        &#xBC31;&#xC5C5; &#xBE44;&#xBC00;&#xBC88;&#xD638;&#xB97C; &#xC0C8;&#xB85C; &#xC124;&#xC815;&#xD560; &#xC218; &#xC788;&#xC2B5;&#xB2C8;&#xB2E4;.
+      </div>
+      <div class="form-group">
+        <label for="rk-username">&#xC544;&#xC774;&#xB514;</label>
+        <input type="text" id="rk-username" placeholder="MoA &#xC544;&#xC774;&#xB514;" autocomplete="username">
+      </div>
+      <div class="form-group">
+        <label for="rk-password">&#xBE44;&#xBC00;&#xBC88;&#xD638;</label>
+        <input type="password" id="rk-password" placeholder="MoA &#xBE44;&#xBC00;&#xBC88;&#xD638;" autocomplete="current-password">
+      </div>
+      <div class="form-group">
+        <label for="rk-words">&#xBCF5;&#xAD6C;&#xD0A4; (12&#xB2E8;&#xC5B4;, &#xACF5;&#xBC31;&#xC73C;&#xB85C; &#xAD6C;&#xBD84;)</label>
+        <textarea id="rk-words" rows="3" placeholder="&#xC0AC;&#xACFC; &#xBC14;&#xB2E4; &#xD558;&#xB298; &#xBCC4; &#xB2EC; &#xD574; &#xC0B0; &#xAC15; &#xAF43; &#xB098;&#xBB34; &#xBC14;&#xB78C; &#xAD6C;&#xB984;"></textarea>
+      </div>
+      <div class="form-group">
+        <label for="rk-new-pw">&#xC0C8; &#xBC31;&#xC5C5; &#xBE44;&#xBC00;&#xBC88;&#xD638;</label>
+        <input type="password" id="rk-new-pw" placeholder="&#xC0C8; &#xBC31;&#xC5C5; &#xBE44;&#xBC00;&#xBC88;&#xD638; (4&#xC790; &#xC774;&#xC0C1;)">
+      </div>
+      <button class="submit-btn" id="rk-submit" onclick="handleResetPassword()">&#xBE44;&#xBC00;&#xBC88;&#xD638; &#xC7AC;&#xC124;&#xC815;</button>
+      <div class="status-msg" id="rk-status"></div>
+      <div style="text-align:center; margin-top:12px;">
+        <button class="link-btn" onclick="switchTab('restore')">&#xB3CC;&#xC544;&#xAC00;&#xAE30;</button>
+      </div>
+    </div>
+
+    <div class="footer">
+      <a href="https://moa.lawith.kr">moa.lawith.kr</a> &middot; Master of AI
+    </div>
+  </div>
+
+  <script>
+    var backupResult = null;
+    var currentTab = 'backup';
+
+    // ── Tab switching ──
+    function switchTab(tab) {
+      currentTab = tab;
+      // Reset all views
+      var views = document.querySelectorAll('.step-view');
+      for (var i = 0; i < views.length; i++) views[i].classList.remove('active');
+      // Reset tab buttons
+      var tabs = document.querySelectorAll('.tab-btn');
+      for (var i = 0; i < tabs.length; i++) tabs[i].classList.remove('active');
+
+      if (tab === 'backup') {
+        document.getElementById('backup-step-auth').classList.add('active');
+        tabs[0].classList.add('active');
+        var el = document.getElementById('b-username');
+        if (el) el.focus();
+      } else {
+        document.getElementById('restore-step-auth').classList.add('active');
+        tabs[1].classList.add('active');
+        var el = document.getElementById('r-username');
+        if (el) el.focus();
+      }
+    }
+
+    function showStep(id) {
+      var views = document.querySelectorAll('.step-view');
+      for (var i = 0; i < views.length; i++) views[i].classList.remove('active');
+      document.getElementById(id).classList.add('active');
+    }
+
+    function showResetPassword() {
+      showStep('reset-step');
+      var el = document.getElementById('rk-username');
+      if (el) el.focus();
+    }
+
+    function esc(str) {
+      var d = document.createElement('div');
+      d.appendChild(document.createTextNode(str));
+      return d.innerHTML;
+    }
+
+    // ── Backup ──
+    function handleBackup() {
+      var username = document.getElementById('b-username').value.trim();
+      var password = document.getElementById('b-password').value;
+      var backupPw = document.getElementById('b-backup-pw').value;
+      var backupPwConfirm = document.getElementById('b-backup-pw-confirm').value;
+      var status = document.getElementById('b-status');
+      var btn = document.getElementById('b-submit');
+
+      if (!username || !password || !backupPw) {
+        status.className = 'status-msg error';
+        status.textContent = '\\uBAA8\\uB4E0 \\uD544\\uB4DC\\uB97C \\uC785\\uB825\\uD574\\uC8FC\\uC138\\uC694.';
+        return;
+      }
+      if (backupPwConfirm && backupPw !== backupPwConfirm) {
+        status.className = 'status-msg error';
+        status.textContent = '\\uBC31\\uC5C5 \\uBE44\\uBC00\\uBC88\\uD638\\uAC00 \\uC77C\\uCE58\\uD558\\uC9C0 \\uC54A\\uC2B5\\uB2C8\\uB2E4.';
+        return;
+      }
+
+      status.className = 'status-msg loading';
+      status.textContent = '\\uBC31\\uC5C5 \\uC0DD\\uC131 \\uC911...';
+      btn.disabled = true;
+
+      fetch('/api/relay/auth/backup', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          username: username,
+          password: password,
+          backupPassword: backupPw,
+          backupPasswordConfirm: backupPwConfirm || undefined
+        })
+      })
+      .then(function(r) { return r.json(); })
+      .then(function(data) {
+        if (data.success) {
+          backupResult = data;
+          if (data.isFirstBackup && data.recoveryWords) {
+            // First backup — show recovery key
+            var grid = document.getElementById('word-grid');
+            grid.innerHTML = '';
+            for (var i = 0; i < data.recoveryWords.length; i++) {
+              var card = document.createElement('div');
+              card.className = 'word-card';
+              card.innerHTML = '<span class="num">' + (i + 1) + '</span><span class="word">' + esc(data.recoveryWords[i]) + '</span>';
+              grid.appendChild(card);
+            }
+            showStep('backup-step-recovery');
+          } else {
+            // Subsequent backup — go straight to complete
+            showBackupComplete();
+          }
+        } else {
+          status.className = 'status-msg error';
+          status.textContent = data.error || '\\uBC31\\uC5C5\\uC5D0 \\uC2E4\\uD328\\uD588\\uC2B5\\uB2C8\\uB2E4.';
+          btn.disabled = false;
+        }
+      })
+      .catch(function() {
+        status.className = 'status-msg error';
+        status.textContent = '\\uC11C\\uBC84\\uC5D0 \\uC5F0\\uACB0\\uD560 \\uC218 \\uC5C6\\uC2B5\\uB2C8\\uB2E4.';
+        btn.disabled = false;
+      });
+    }
+
+    function showBackupComplete() {
+      if (!backupResult) return;
+      document.getElementById('info-time').textContent = new Date(backupResult.createdAt).toLocaleString('ko-KR');
+      document.getElementById('info-file').textContent = backupResult.backupFile || '';
+      showStep('backup-step-complete');
+    }
+
+    // ── Restore ──
+    function handleRestore() {
+      var username = document.getElementById('r-username').value.trim();
+      var password = document.getElementById('r-password').value;
+      var backupPw = document.getElementById('r-backup-pw').value;
+      var status = document.getElementById('r-status');
+      var btn = document.getElementById('r-submit');
+
+      if (!username || !password || !backupPw) {
+        status.className = 'status-msg error';
+        status.textContent = '\\uBAA8\\uB4E0 \\uD544\\uB4DC\\uB97C \\uC785\\uB825\\uD574\\uC8FC\\uC138\\uC694.';
+        return;
+      }
+
+      status.className = 'status-msg loading';
+      status.textContent = '\\uBCF5\\uC6D0 \\uC911...';
+      btn.disabled = true;
+
+      fetch('/api/relay/auth/restore', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          username: username,
+          password: password,
+          backupPassword: backupPw
+        })
+      })
+      .then(function(r) { return r.json(); })
+      .then(function(data) {
+        if (data.success) {
+          document.getElementById('r-info-file').textContent = data.backupFile || '';
+          document.getElementById('r-info-time').textContent = new Date(data.timestamp).toLocaleString('ko-KR');
+          document.getElementById('r-info-verified').textContent = data.verified ? '\\uAC80\\uC99D \\uC644\\uB8CC' : '\\uAC80\\uC99D \\uC2E4\\uD328';
+          showStep('restore-step-complete');
+        } else {
+          status.className = 'status-msg error';
+          status.textContent = data.error || '\\uBCF5\\uC6D0\\uC5D0 \\uC2E4\\uD328\\uD588\\uC2B5\\uB2C8\\uB2E4.';
+          btn.disabled = false;
+        }
+      })
+      .catch(function() {
+        status.className = 'status-msg error';
+        status.textContent = '\\uC11C\\uBC84\\uC5D0 \\uC5F0\\uACB0\\uD560 \\uC218 \\uC5C6\\uC2B5\\uB2C8\\uB2E4.';
+        btn.disabled = false;
+      });
+    }
+
+    // ── Reset backup password ──
+    function handleResetPassword() {
+      var username = document.getElementById('rk-username').value.trim();
+      var password = document.getElementById('rk-password').value;
+      var wordsRaw = document.getElementById('rk-words').value.trim();
+      var newPw = document.getElementById('rk-new-pw').value;
+      var status = document.getElementById('rk-status');
+      var btn = document.getElementById('rk-submit');
+
+      if (!username || !password || !wordsRaw || !newPw) {
+        status.className = 'status-msg error';
+        status.textContent = '\\uBAA8\\uB4E0 \\uD544\\uB4DC\\uB97C \\uC785\\uB825\\uD574\\uC8FC\\uC138\\uC694.';
+        return;
+      }
+
+      var words = wordsRaw.split(/[\\s,]+/).filter(function(w) { return w.length > 0; });
+      if (words.length !== 12) {
+        status.className = 'status-msg error';
+        status.textContent = '\\uBCF5\\uAD6C\\uD0A4\\uB294 12\\uB2E8\\uC5B4\\uC5EC\\uC57C \\uD569\\uB2C8\\uB2E4. \\uD604\\uC7AC ' + words.length + '\\uB2E8\\uC5B4\\uC785\\uB2C8\\uB2E4.';
+        return;
+      }
+
+      status.className = 'status-msg loading';
+      status.textContent = '\\uBE44\\uBC00\\uBC88\\uD638 \\uC7AC\\uC124\\uC815 \\uC911...';
+      btn.disabled = true;
+
+      fetch('/api/relay/auth/backup/reset-password', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          username: username,
+          password: password,
+          recoveryWords: words,
+          newBackupPassword: newPw
+        })
+      })
+      .then(function(r) { return r.json(); })
+      .then(function(data) {
+        if (data.success) {
+          status.className = 'status-msg success';
+          status.textContent = '\\uBC31\\uC5C5 \\uBE44\\uBC00\\uBC88\\uD638\\uAC00 \\uC7AC\\uC124\\uC815\\uB418\\uC5C8\\uC2B5\\uB2C8\\uB2E4!';
+          setTimeout(function() { switchTab('restore'); }, 2000);
+        } else {
+          status.className = 'status-msg error';
+          status.textContent = data.error || '\\uC7AC\\uC124\\uC815\\uC5D0 \\uC2E4\\uD328\\uD588\\uC2B5\\uB2C8\\uB2E4.';
+          btn.disabled = false;
+        }
+      })
+      .catch(function() {
+        status.className = 'status-msg error';
+        status.textContent = '\\uC11C\\uBC84\\uC5D0 \\uC5F0\\uACB0\\uD560 \\uC218 \\uC5C6\\uC2B5\\uB2C8\\uB2E4.';
+        btn.disabled = false;
+      });
+    }
+
+    // ── Enter key support ──
+    document.getElementById('b-backup-pw-confirm').addEventListener('keydown', function(e) {
+      if (e.key === 'Enter') handleBackup();
+    });
+    document.getElementById('b-backup-pw').addEventListener('keydown', function(e) {
+      if (e.key === 'Enter') handleBackup();
+    });
+    document.getElementById('r-backup-pw').addEventListener('keydown', function(e) {
+      if (e.key === 'Enter') handleRestore();
+    });
+    document.getElementById('rk-new-pw').addEventListener('keydown', function(e) {
+      if (e.key === 'Enter') handleResetPassword();
+    });
+
+    // Focus first field
+    document.getElementById('b-username').focus();
   </script>
 </body>
 </html>`;
@@ -898,6 +1466,17 @@ export function handleInstallRequest(req: IncomingMessage, res: ServerResponse):
   // /welcome — post-install guide page (auto-opened by installer)
   if (url.pathname === "/welcome") {
     const html = generateWelcomePage();
+    res.writeHead(200, {
+      "Content-Type": "text/html; charset=utf-8",
+      "Cache-Control": "no-cache",
+    });
+    res.end(html);
+    return true;
+  }
+
+  // /backup — 백업 설정 & 복구키 발급 페이지 (톡서랍 개념)
+  if (url.pathname === "/backup") {
+    const html = generateBackupPage();
     res.writeHead(200, {
       "Content-Type": "text/html; charset=utf-8",
       "Cache-Control": "no-cache",

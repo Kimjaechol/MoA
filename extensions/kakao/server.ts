@@ -62,7 +62,7 @@ import {
   sendWelcomeAfterPairing,
   isProactiveMessagingConfigured,
 } from "./src/proactive-messaging.js";
-import { generatePairingCode, handleRelayRequest } from "./src/relay/index.js";
+import { handleRelayRequest } from "./src/relay/index.js";
 import { isSupabaseConfigured } from "./src/supabase.js";
 import { startKakaoWebhook } from "./src/webhook.js";
 import {
@@ -121,10 +121,23 @@ import {
 import {
   authenticateUser,
   isOwnerAuthEnabled,
+  grantOwnerAuth,
   getRequiredPermission,
   getGuestDeniedResponse,
   wrapUserMessageForLLM,
   getSecuritySystemPrompt,
+  hasUserSecret,
+  setUserSecret,
+  verifyUserSecret,
+  changeUserSecret,
+  getUserSecretCount,
+  // User Accounts
+  findAccountByUsername,
+  findAccountByChannel,
+  verifyPassword,
+  linkChannel,
+  hasAnyAccount,
+  getAccountCount,
 } from "./src/auth/index.js";
 
 const PORT = parseInt(process.env.PORT ?? process.env.KAKAO_WEBHOOK_PORT ?? "8788", 10);
@@ -183,13 +196,44 @@ const MOA_INSTALL_GUIDE = `MoA 설치는 아주 간단합니다!
 [1단계] 아래 "MoA 설치하기" 버튼을 클릭하세요.
 사용하시는 기기(Windows/Mac/Linux)에 맞는 설치 파일이 다운로드됩니다. 다운로드된 파일을 더블클릭하면 자동으로 설치됩니다.
 
-[2단계] 설치 완료 후 자동으로 열리는 페이지에서 "이 기기등록" 버튼을 클릭하세요.
-6자리 페어링 코드가 발급됩니다.
+[2단계] 설치 완료 후 자동으로 열리는 페이지에서 회원가입을 해주세요.
+아이디, 비밀번호, 기기 이름을 설정하면 자동으로 기기가 등록됩니다.
 
-[3단계] 같은 페이지에서 받은 6자리 코드를 입력하면 끝!
-터미널이나 명령어 입력은 필요없습니다.
+[3단계] 이미 회원가입을 하셨다면 로그인만 하면 됩니다!
+새 기기에서 로그인하면 자동으로 새 기기가 등록됩니다.
 
-추가 기기도 같은 방법으로 등록하면 모든 기기가 하나의 AI로 연결됩니다!`;
+[4단계] 카카오톡에서 "사용자 인증" 버튼을 눌러 로그인하세요.
+아이디+비밀번호로 인증하면 모든 MoA 기능을 사용할 수 있습니다.
+보안 강화를 위해 구문번호 설정도 권장합니다!`;
+
+// ============================================
+// Pending Auth State (카카오톡 GUI 인증)
+// ============================================
+
+/**
+ * 인증 상태 추적
+ *
+ * 사용자 인증 (credentials): 아이디 + 비밀번호 → MoA 사용을 위한 로그인
+ * 구문 인증 (passphrase_setup): 구문번호 신규 설정 → setUserSecret()
+ * 구문 인증 (passphrase_verify): 크리티컬 작업 시 구문번호 재확인 → verifyUserSecret()
+ *
+ * 구문번호는 로그인이 아니라 기기제어 등 위험한 작업 시 "진짜 주인인가?" 재확인용.
+ * (sudo 같은 개념 — 제3자가 채팅창에서 기기제어를 요청하는 위험 방지)
+ */
+interface PendingAuth {
+  expiresAt: number;
+  step: "credentials" | "passphrase_setup" | "passphrase_verify";
+  /** 계정 인증 완료 후 저장된 사용자명 */
+  username?: string;
+  /** 구문 인증 완료 후 실행할 원래 명령 (크리티컬 작업 재확인 시) */
+  pendingCommand?: string;
+}
+const pendingAuthUsers = new Map<string, PendingAuth>();
+const AUTH_PENDING_TTL_MS = 5 * 60 * 1000; // 5분
+
+/** 구문 인증 통과 시각 — 일정 시간 내 재인증 불필요 */
+const passphraseVerifiedAt = new Map<string, number>();
+const PASSPHRASE_GRACE_PERIOD_MS = 10 * 60 * 1000; // 10분 유예
 
 // ============================================
 // Account Config Builder
@@ -438,9 +482,10 @@ MoA는 카카오톡, 텔레그램, WhatsApp, Discord 등 여러 메신저에서 
 
 ## 주요 명령어
 - 설치 : MoA 간편 설치 안내
-- /기기등록 : 새 기기 페어링
+- 사용자 인증 : 아이디+비밀번호 로그인
+- !구문번호 [문구] : 구문번호 설정 (기기 제어 시 본인 재확인용)
 - /기기 : 연결된 기기 목록
-- @기기명 명령 : 특정 기기에 원격 명령 (예: @노트북 ls ~/Desktop)
+- @기기명 명령 : 특정 기기에 원격 명령 (구문번호 설정 시 본인 확인 후 실행)
 - /도움말 : 전체 명령어 보기
 - !작업내역 : 최근 작업 기록 조회
 - !체크포인트 [이름] : 현재 시점 저장 (되돌리기 가능)
@@ -450,10 +495,10 @@ MoA는 카카오톡, 텔레그램, WhatsApp, Discord 등 여러 메신저에서 
 - !비상정지 : 모든 대기 명령 취소 + 기기 잠금
 - !취소 [ID] : 대기 중인 명령 취소
 - !대기목록 : 실행 대기 중인 명령 조회
-- !백업 : 수동 암호화 백업 생성
+- !백업 : 백업 설정 페이지 안내 (톡서랍 개념, 별도 백업 비밀번호)
+- !복원 : 백업 복원 페이지 안내
 - !백업 목록 : 저장된 백업 목록 조회
-- !백업 복원 [파일명] : 백업에서 복원
-- !복구키 : 12단어 복구 키 발급
+- !복구키 : 복구키 안내 (백업 비밀번호 분실 시 재설정용)
 - !복구키 검증 [12단어] : 복구 키 검증
 ${skillsPrompt}
 ## 응답 규칙
@@ -467,7 +512,10 @@ ${skillsPrompt}
 
 ## 설치 안내 시
 사용자가 설치에 관심을 보이면: "설치"라고 입력해주세요! 간편 설치 안내를 바로 보내드립니다.
-설치 후 https://moa.lawith.kr/welcome 페이지에서 기기 등록(페어링)을 할 수 있습니다.
+설치 후 https://moa.lawith.kr/welcome 페이지에서 회원가입/로그인으로 기기를 등록할 수 있습니다.
+카카오톡에서 "사용자 인증" 버튼을 누르면 아이디+비밀번호로 로그인합니다.
+로그인 후 구문번호 설정을 권장합니다 — 기기 제어 등 중요한 작업 시 구문번호로 본인 재확인합니다.
+(제3자가 채팅창에서 기기 제어를 요청하는 위험을 방지합니다)
 
 ## 사용 사례 (사용자에게 설명할 때 활용)
 - "회사에서 퇴근 후 집 컴퓨터에 있는 파일 확인"
@@ -551,10 +599,138 @@ async function aiOnMessage(params: {
   const channelId = params.channel?.channelId ?? "kakao";
   const maxLen = params.channel?.maxMessageLength ?? 950;
 
+  // ── Pending Auth 처리 ("사용자 인증" 또는 구문 인증 대기 중) ──
+  const pendingKey = `${channelId}:${params.userId}`;
+  const pending = pendingAuthUsers.get(pendingKey);
+  if (pending && Date.now() < pending.expiresAt) {
+
+    // ── 구문번호 설정 (첫 로그인 후 권장) ──
+    if (pending.step === "passphrase_setup" && pending.username) {
+      const secret = utterance.trim();
+      const error = setUserSecret(params.userId, channelId, secret);
+      if (error) {
+        return {
+          text: `구문번호 설정 실패: ${error}\n\n다시 입력해주세요. (4자 이상)`,
+        };
+      }
+      pendingAuthUsers.delete(pendingKey);
+      return {
+        text: `구문번호가 설정되었습니다!\n\n${pending.username}님, 기기 제어 등 중요한 작업 시 구문번호로 본인 확인을 요청합니다.\n이를 통해 제3자의 무단 사용을 방지할 수 있습니다.`,
+        quickReplies: ["기기 목록", "도움말"],
+      };
+    }
+
+    // ── 구문 인증: 크리티컬 작업 재확인 ──
+    if (pending.step === "passphrase_verify") {
+      if (verifyUserSecret(params.userId, channelId, utterance)) {
+        passphraseVerifiedAt.set(pendingKey, Date.now());
+        pendingAuthUsers.delete(pendingKey);
+        // 보류된 명령이 있으면 재실행
+        if (pending.pendingCommand) {
+          const linkedAccount = findAccountByChannel(channelId, params.userId);
+          const name = linkedAccount?.username ?? "";
+          return {
+            text: `구문 인증 완료! ${name}님\n\n명령을 다시 입력해주세요.`,
+            quickReplies: ["도움말"],
+          };
+        }
+        return {
+          text: "구문 인증 완료! 10분간 추가 인증 없이 기기 제어가 가능합니다.",
+          quickReplies: ["기기 목록", "도움말"],
+        };
+      }
+      return {
+        text: "구문번호가 일치하지 않습니다.\n다시 입력해주세요.",
+        quickReplies: ["사용자 인증", "도움말"],
+      };
+    }
+
+    // ── 사용자 인증: 아이디 + 비밀번호 (로그인) ──
+    if (pending.step === "credentials") {
+      const linkedAccount = findAccountByChannel(channelId, params.userId);
+      let authUsername: string | null = null;
+
+      // Case A: already linked → password only
+      if (linkedAccount && verifyPassword(linkedAccount.username, utterance)) {
+        authUsername = linkedAccount.username;
+      }
+
+      // Case B: not linked → "아이디 비밀번호" format
+      if (!authUsername) {
+        const parts = utterance.split(/\s+/);
+        if (parts.length >= 2) {
+          const tryUsername = parts[0];
+          const tryPassword = parts.slice(1).join(" ");
+          if (verifyPassword(tryUsername, tryPassword)) {
+            linkChannel(tryUsername, channelId, params.userId);
+            authUsername = tryUsername;
+          }
+        }
+      }
+
+      if (authUsername) {
+        grantOwnerAuth(params.userId, channelId);
+        pendingAuthUsers.delete(pendingKey);
+
+        // 구문번호 미설정 → 설정 권장
+        if (!hasUserSecret(params.userId, channelId)) {
+          pendingAuthUsers.set(pendingKey, {
+            expiresAt: Date.now() + AUTH_PENDING_TTL_MS,
+            step: "passphrase_setup",
+            username: authUsername,
+          });
+          return {
+            text: `인증 성공! ${authUsername}님, 환영합니다.\n\n[구문번호 설정 안내]\n구문번호란?\n카카오톡에서 기기 제어(@기기명 명령) 등 중요한 작업을 실행할 때 본인 재확인용으로 사용하는 비밀 문구입니다.\n\n왜 필요한가요?\n카카오톡 채팅창은 다른 사람이 볼 수 있어, 제3자가 기기 제어 명령을 입력할 위험이 있습니다. 구문번호를 설정하면 기기 제어 전에 항상 본인 확인을 요청하므로 무단 사용을 방지할 수 있습니다.\n\n사용 방법:\n기기 제어 명령 입력 시 → 구문번호 입력 요청 → 인증 후 10분간 추가 인증 없이 사용 가능\n\n구문번호를 입력하세요. (4자 이상)\n예: 나의비밀문장\n\n지금 설정하지 않으려면 아무 명령이나 입력하세요.`,
+            quickReplies: ["기기 목록", "도움말"],
+          };
+        }
+
+        return {
+          text: `인증 성공! ${authUsername}님, 환영합니다.\n\n이제 모든 MoA 기능을 사용할 수 있습니다.`,
+          quickReplies: ["기기 목록", "도움말"],
+        };
+      }
+
+      // 인증 실패
+      return {
+        text: "인증에 실패했습니다.\n\n아이디와 비밀번호를 정확히 입력해주세요.\n형식: 아이디 비밀번호\n\n예: myid mypassword",
+        quickReplies: ["사용자 인증", "설치", "도움말"],
+      };
+    }
+  }
+  // Clean up expired pending
+  if (pending) pendingAuthUsers.delete(pendingKey);
+
+  // ── "사용자 인증" 버튼 처리 (로그인) ──────────
+  if (/^(?:사용자\s*인증|인증하기|인증)$/i.test(utterance)) {
+    const linkedAccount = findAccountByChannel(channelId, params.userId);
+
+    // Case 1: 이미 연동된 계정 → 비밀번호만 요청
+    if (linkedAccount) {
+      pendingAuthUsers.set(pendingKey, {
+        expiresAt: Date.now() + AUTH_PENDING_TTL_MS,
+        step: "credentials",
+      });
+      return {
+        text: `${linkedAccount.username}님, 비밀번호를 입력해주세요.`,
+      };
+    }
+
+    // Case 2: 계정 미연동 → 아이디 + 비밀번호 요청
+    pendingAuthUsers.set(pendingKey, {
+      expiresAt: Date.now() + AUTH_PENDING_TTL_MS,
+      step: "credentials",
+    });
+    return {
+      text: `MoA에 접속하기 위하여 아이디와 비밀번호를 입력해주세요.\n\n형식: 아이디 비밀번호\n예: myid mypassword\n\n아직 MoA 계정이 없으시다면 "설치"를 입력하여 회원가입해주세요!`,
+      quickReplies: ["설치", "도움말"],
+    };
+  }
+
   // ── Owner Authentication Gate ──────────────────────────────
   const auth = authenticateUser(params.userId, channelId, utterance);
 
-  // Handle auth attempts (!인증 <secret>)
+  // Handle auth attempts (!인증 <secret> — backward compat)
   if (auth.isAuthAttempt) {
     // Release panic lock on successful re-auth
     if (auth.authSuccess && isPanicLocked()) {
@@ -562,7 +738,47 @@ async function aiOnMessage(params: {
     }
     return {
       text: auth.authMessage ?? "인증 처리 중 오류가 발생했습니다.",
-      quickReplies: auth.authSuccess ? ["기기 목록", "도움말"] : ["설치", "기능 소개"],
+      quickReplies: auth.authSuccess ? ["기기 목록", "도움말"] : ["사용자 인증", "설치"],
+    };
+  }
+
+  // ── 구문번호 설정 (!구문번호, !비밀구문 — 기기 제어 시 본인 재확인용) ─────
+  const secretSetMatch = utterance.match(/^[!!/](?:구문번호|구문 번호|비밀구문|비밀 구문|secret)\s+(.+)$/i);
+  if (secretSetMatch && !secretSetMatch[1].match(/^(?:변경|change)/i)) {
+    const newSecret = secretSetMatch[1].trim();
+
+    if (hasUserSecret(params.userId, channelId)) {
+      return {
+        text: "이미 구문번호가 설정되어 있습니다.\n\n변경하려면:\n!구문번호 변경 [현재구문번호] [새구문번호]",
+        quickReplies: ["도움말"],
+      };
+    }
+
+    const error = setUserSecret(params.userId, channelId, newSecret);
+    if (error) {
+      return { text: `구문번호 설정 실패: ${error}`, quickReplies: ["도움말"] };
+    }
+
+    return {
+      text: `구문번호가 설정되었습니다!\n\n기기 제어(@기기명 명령) 시 구문번호로 본인 확인을 요청합니다.\n인증 후 10분간 추가 인증 없이 사용 가능합니다.`,
+      quickReplies: ["기기 목록", "도움말"],
+    };
+  }
+
+  // !구문번호 변경 [현재] [새]
+  const secretChangeMatch = utterance.match(
+    /^[!!/](?:구문번호|구문 번호|비밀구문|비밀 구문|secret)\s*(?:변경|change)\s+(\S+)\s+(\S+)$/i,
+  );
+  if (secretChangeMatch) {
+    const oldSecret = secretChangeMatch[1];
+    const newSecret = secretChangeMatch[2];
+    const error = changeUserSecret(params.userId, channelId, oldSecret, newSecret);
+    if (error) {
+      return { text: `구문번호 변경 실패: ${error}`, quickReplies: ["도움말"] };
+    }
+    return {
+      text: "구문번호가 변경되었습니다.\n다음 기기 제어 시 새 구문번호를 사용해주세요.",
+      quickReplies: ["기기 목록", "도움말"],
     };
   }
 
@@ -606,8 +822,8 @@ async function aiOnMessage(params: {
   // ── Panic lock check (block device commands during lockdown) ─
   if (isPanicLocked() && auth.role === "owner" && utterance.startsWith("@")) {
     return {
-      text: "🚨 비상정지 상태입니다. 기기 제어가 잠겨 있습니다.\n\n재개하려면 \"!인증 [비밀구문]\"으로 다시 인증하세요.",
-      quickReplies: ["!작업내역", "!체크포인트 목록"],
+      text: "비상정지 상태입니다. 기기 제어가 잠겨 있습니다.\n\n재개하려면 \"사용자 인증\" 버튼을 눌러 다시 인증해주세요.",
+      quickReplies: ["사용자 인증", "!작업내역"],
     };
   }
 
@@ -627,8 +843,8 @@ async function aiOnMessage(params: {
     const { revokeOwnerAuth } = await import("./src/auth/index.js");
     revokeOwnerAuth(params.userId, channelId);
     return {
-      text: "주인 인증이 해제되었습니다.\n다시 인증하려면 \"!인증 [비밀구문]\"을 입력하세요.",
-      quickReplies: ["도움말"],
+      text: "인증이 해제되었습니다.\n다시 인증하려면 \"사용자 인증\" 버튼을 눌러주세요.",
+      quickReplies: ["사용자 인증", "도움말"],
     };
   }
 
@@ -733,28 +949,13 @@ async function aiOnMessage(params: {
 
     // ── Encrypted Vault Commands ──────────────────────────────
 
-    // !백업 — 수동 암호화 백업 생성
+    // !백업 — 백업 GUI 페이지로 안내 (톡서랍 개념: 사용자의 명시적 요청 시에만 백업)
     if (utterance.match(/^[!!/](?:백업|backup)$/i)) {
-      const secret = process.env.MOA_OWNER_SECRET;
-      if (!secret) {
-        return {
-          text: "MOA_OWNER_SECRET이 설정되지 않아 백업을 생성할 수 없습니다.\n환경변수를 설정해주세요.",
-          quickReplies: ["도움말"],
-        };
-      }
-      try {
-        const backupData = { timestamp: Date.now(), source: "manual", channelId };
-        const result = createEncryptedBackup(backupData, secret, "manual");
-        return {
-          text: `암호화 백업이 생성되었습니다!\n\n파일: ${result.filePath.split("/").pop()}\n크기: ${(result.size / 1024).toFixed(1)}KB\n암호화: AES-256-GCM\n\n복원: "!백업 복원 [파일명]"`,
-          quickReplies: ["!백업 목록", "!복구키", "!작업내역"],
-        };
-      } catch (err) {
-        return {
-          text: `백업 생성 중 오류가 발생했습니다.\n${err instanceof Error ? err.message : String(err)}`,
-          quickReplies: ["!작업내역"],
-        };
-      }
+      return {
+        text: `MoA 백업 안내\n\n아래 페이지에서 백업을 설정하세요.\n\n[백업 흐름]\n1. 로그인 (MoA 계정)\n2. 백업 비밀번호 설정 (백업 전용 별도 비밀번호)\n3. 12단어 복구키 발급 → 종이에 적어두세요\n4. AI 기억이 암호화되어 서버에 보관됩니다\n\n백업 비밀번호 분실 시 복구키(12단어)로 재설정 가능`,
+        buttons: [{ label: "백업 설정하기", url: "https://moa.lawith.kr/backup" }],
+        quickReplies: ["!복원", "!백업 목록", "도움말"],
+      };
     }
 
     // !백업 목록 — 백업 목록 조회
@@ -790,53 +991,32 @@ async function aiOnMessage(params: {
       };
     }
 
-    // !백업 복원 [파일명] — 암호화 백업 복원
-    const restoreBackupMatch = utterance.match(/^[!!/](?:백업|backup)\s*(?:복원|restore)\s+(.+)$/i);
-    if (restoreBackupMatch) {
-      const secret = process.env.MOA_OWNER_SECRET;
-      if (!secret) {
-        return {
-          text: "MOA_OWNER_SECRET이 설정되지 않아 복원할 수 없습니다.",
-          quickReplies: ["도움말"],
-        };
-      }
-      const fileName = restoreBackupMatch[1].trim();
-      // Find the backup file
-      const backups = listBackups();
-      const target = backups.find((b) => b.fileName === fileName || b.filePath.endsWith(fileName));
-      if (!target) {
-        return {
-          text: `"${fileName}" 백업 파일을 찾을 수 없습니다.\n\n"!백업 목록"으로 사용 가능한 백업을 확인하세요.`,
-          quickReplies: ["!백업 목록"],
-        };
-      }
-      const restored = restoreFromBackup(target.filePath, secret);
-      if (restored) {
-        return {
-          text: `백업이 복원되었습니다!\n\n파일: ${target.fileName}\n시각: ${new Date(restored.timestamp).toLocaleString("ko-KR")}\n무결성: ${restored.verified ? "검증 완료" : "검증 실패 (데이터 손상 가능)"}`,
-          quickReplies: ["!작업내역", "!백업 목록"],
-        };
-      }
+    // !복원 — 백업 복원 GUI 안내
+    if (utterance.match(/^[!!/](?:복원|restore)$/i)) {
       return {
-        text: "백업 복원에 실패했습니다.\n비밀구문이 올바른지 확인하세요.",
-        quickReplies: ["!백업 목록", "!복구키"],
+        text: `MoA 복원 안내\n\n아래 페이지의 "복원" 탭에서 백업을 복원하세요.\n\n필요한 것:\n1. MoA 계정 (아이디 + 비밀번호)\n2. 백업 비밀번호 (백업 시 설정한 비밀번호)\n\n백업 비밀번호를 잊으셨다면 복구키(12단어)로 재설정할 수 있습니다.`,
+        buttons: [{ label: "복원 페이지", url: "https://moa.lawith.kr/backup" }],
+        quickReplies: ["!백업", "!백업 목록", "도움말"],
       };
     }
 
-    // !복구키 — 12단어 복구 키 발급
+    // !백업 복원 [파일명] — 채팅에서 복원 안내 (GUI로 유도)
+    const restoreBackupMatch = utterance.match(/^[!!/](?:백업|backup)\s*(?:복원|restore)/i);
+    if (restoreBackupMatch) {
+      return {
+        text: `백업 복원은 아래 페이지의 "복원" 탭에서 진행해주세요.\n백업 비밀번호가 필요합니다.`,
+        buttons: [{ label: "복원 페이지", url: "https://moa.lawith.kr/backup" }],
+        quickReplies: ["!백업 목록", "도움말"],
+      };
+    }
+
+    // !복구키 — 백업 페이지로 안내 (복구키는 첫 백업 시 발급)
     if (utterance.match(/^[!!/](?:복구키|복구 키|recovery\s*key)$/i)) {
-      try {
-        const result = generateRecoveryKey();
-        return {
-          text: formatRecoveryKey(result),
-          quickReplies: ["!백업 목록", "!작업내역"],
-        };
-      } catch (err) {
-        return {
-          text: `복구 키 발급 중 오류가 발생했습니다.\n${err instanceof Error ? err.message : String(err)}`,
-          quickReplies: ["!작업내역"],
-        };
-      }
+      return {
+        text: `복구키는 첫 백업 시 자동으로 발급됩니다.\n\n복구키(12단어)는 백업 비밀번호를 잊었을 때\n비밀번호를 재설정하기 위한 수단입니다.\n\n복구키로 비밀번호 재설정이 필요하면\n아래 페이지에서 진행하세요.`,
+        buttons: [{ label: "백업 & 복원 페이지", url: "https://moa.lawith.kr/backup" }],
+        quickReplies: ["!백업", "!복원", "도움말"],
+      };
     }
 
     // !복구키 검증 [12단어] — 복구 키 검증
@@ -859,12 +1039,29 @@ async function aiOnMessage(params: {
     }
   }
 
-  // ── Device command: Gravity + Guardian Angel + Logging ─────
+  // ── Device command: Passphrase + Gravity + Guardian Angel + Logging ─────
   if (auth.role === "owner" && utterance.startsWith("@")) {
     const deviceMatch = utterance.match(/^@(\S+)\s+(.+)$/);
     if (deviceMatch) {
       const commandText = deviceMatch[2];
       const deviceName = deviceMatch[1];
+
+      // 0. Passphrase re-verification for critical device commands
+      //    구문번호가 설정된 사용자는 기기 제어 시 구문 인증 필요 (유예 기간 내 제외)
+      if (hasUserSecret(params.userId, channelId)) {
+        const lastVerified = passphraseVerifiedAt.get(pendingKey);
+        const inGracePeriod = lastVerified && (Date.now() - lastVerified) < PASSPHRASE_GRACE_PERIOD_MS;
+        if (!inGracePeriod) {
+          pendingAuthUsers.set(pendingKey, {
+            expiresAt: Date.now() + AUTH_PENDING_TTL_MS,
+            step: "passphrase_verify",
+            pendingCommand: utterance,
+          });
+          return {
+            text: `기기 제어를 위해 구문번호를 입력해주세요.\n\n명령: @${deviceName} ${commandText.slice(0, 30)}${commandText.length > 30 ? "..." : ""}`,
+          };
+        }
+      }
 
       // 1. Gravity assessment
       const gravity = assessCommandGravity(commandText);
@@ -947,54 +1144,56 @@ async function aiOnMessage(params: {
     }
   }
 
+  // ── Auto Auth Prompt for guests with accounts ──────────────
+  if (auth.role === "guest" && hasAnyAccount()) {
+    const requiredAction = getRequiredPermission(utterance);
+    if (requiredAction) {
+      return {
+        text: `이 기능은 인증된 사용자만 이용할 수 있습니다.\n\n아래 "사용자 인증" 버튼을 눌러주세요.\nMoA에 접속하기 위하여 가입시 설정하신 아이디와 비밀번호로 인증해주세요.`,
+        quickReplies: ["사용자 인증", "설치", "도움말"],
+      };
+    }
+  }
+
   // 1) Greeting → Return welcome message with install button
   if (isGreeting(utterance)) {
+    const quickReplies = hasAnyAccount()
+      ? ["사용자 인증", "설치", "기능 소개"]
+      : ["설치", "기능 소개"];
     return {
       text: MOA_WELCOME_MESSAGE,
       buttons: [{ label: "MoA 설치하기", url: getInstallUrl() }],
-      quickReplies: ["설치", "이 기기등록", "기능 소개"],
+      quickReplies,
     };
   }
 
-  // 2) Install request → Return install guide with install + register buttons
+  // 2) Install request → Return install guide with install + welcome buttons
   if (isInstallRequest(utterance)) {
     return {
       text: MOA_INSTALL_GUIDE,
       buttons: [{ label: "MoA 설치하기", url: getInstallUrl() }],
-      quickReplies: ["이 기기등록", "기능 소개", "도움말"],
+      quickReplies: ["사용자 인증", "기능 소개", "도움말"],
     };
   }
 
-  // 3) Device registration → Generate pairing code
+  // 3) Device registration → Direct to welcome page for login/signup
   if (isDeviceRegistration(utterance)) {
-    if (!isSupabaseConfigured()) {
-      return {
-        text: `기기 등록 기능이 현재 준비 중입니다.\n\nMoA가 설치되어 있지 않다면, 먼저 설치를 진행해주세요!`,
-        buttons: [{ label: "MoA 설치하기", url: getInstallUrl() }],
-        quickReplies: ["설치", "도움말"],
-      };
-    }
+    return {
+      text: `기기 등록은 MoA를 설치한 후 웹 페이지에서 진행됩니다.
 
-    try {
-      const result = await generatePairingCode(params.userId);
-      if (result.success && result.code) {
-        return {
-          text: `기기 등록을 위한 페어링 코드가 발급되었습니다!\n\n🔑 페어링 코드: ${result.code}\n⏰ 유효시간: 10분\n\n[사용 방법]\nMoA가 설치된 PC의 브라우저에서 아래 페이지를 열고 코드를 입력하세요:\nhttps://moa.lawith.kr/welcome\n\n(설치 직후라면 이미 열려 있습니다!)\n\n연결이 완료되면 카카오톡에서 바로 PC를 제어할 수 있습니다!`,
-          quickReplies: ["기능 소개", "사용 사례", "도움말"],
-        };
-      }
-      return {
-        text: `페어링 코드 발급 중 문제가 발생했습니다.\n${result.error ?? "잠시 후 다시 시도해주세요."}\n\nMoA가 아직 설치되어 있지 않다면, 먼저 설치를 진행해주세요!`,
-        buttons: [{ label: "MoA 설치하기", url: getInstallUrl() }],
-        quickReplies: ["이 기기등록", "설치", "도움말"],
-      };
-    } catch (err) {
-      console.error("[MoA] Pairing code generation error:", err);
-      return {
-        text: `페어링 코드 발급 중 오류가 발생했습니다.\n잠시 후 다시 시도해주세요.`,
-        quickReplies: ["이 기기등록", "설치", "도움말"],
-      };
-    }
+[기기 등록 방법]
+1. 기기에 MoA를 설치합니다.
+2. 설치 후 자동으로 열리는 페이지에서 회원가입 또는 로그인을 합니다.
+3. 로그인하면 기기가 자동으로 등록됩니다!
+
+이미 MoA를 설치하셨다면 아래 페이지에서 로그인해주세요:
+https://moa.lawith.kr/welcome`,
+      buttons: [
+        { label: "MoA 설치하기", url: getInstallUrl() },
+        { label: "기기 등록 (로그인)", url: "https://moa.lawith.kr/welcome" },
+      ],
+      quickReplies: ["설치", "도움말"],
+    };
   }
 
   // 4) Feature inquiry
@@ -1185,11 +1384,17 @@ async function main() {
   }
 
   // Check owner authentication
-  if (isOwnerAuthEnabled()) {
-    console.log("[MoA] Owner auth: ENABLED (MOA_OWNER_SECRET set — only authenticated owners can control devices)");
+  const accountCount = getAccountCount();
+  const userSecretCount = getUserSecretCount();
+  if (accountCount > 0 || userSecretCount > 0 || process.env.MOA_OWNER_SECRET) {
+    const parts = [];
+    if (accountCount > 0) parts.push(`${accountCount} account(s)`);
+    if (userSecretCount > 0) parts.push(`${userSecretCount} user secret(s)`);
+    if (process.env.MOA_OWNER_SECRET) parts.push("admin master key set");
+    console.log(`[MoA] Owner auth: ENABLED (${parts.join(", ")})`);
   } else {
-    console.warn(
-      "[MoA] Owner auth: DISABLED (set MOA_OWNER_SECRET to restrict device control to owner only)",
+    console.log(
+      "[MoA] Owner auth: DISABLED (users can register at /welcome, or set MOA_OWNER_SECRET for admin)",
     );
   }
 
@@ -1294,6 +1499,8 @@ async function main() {
             whatsapp: isWhatsAppConfigured(),
             discord: isDiscordConfigured(),
             ownerAuth: isOwnerAuthEnabled(),
+            accounts: getAccountCount(),
+            registeredUsers: getUserSecretCount(),
             vault: !!process.env.MOA_OWNER_SECRET,
             skills: getLoadedSkills().length,
             eligibleSkills: getLoadedSkills().filter((s) => s.eligible).length,
@@ -1331,6 +1538,7 @@ async function main() {
     console.log(`[MoA] Webhook server started at ${webhook.url}`);
     console.log(`[MoA] Install page: ${localBase}/install`);
     console.log(`[MoA] Welcome page: ${localBase}/welcome`);
+    console.log(`[MoA] Backup page: ${localBase}/backup`);
     console.log(`[MoA] Payment API: ${localBase}/payment/*`);
     console.log(`[MoA] Relay API: ${localBase}/api/relay/*`);
     console.log(`[MoA] Settings page: ${localBase}/settings`);
