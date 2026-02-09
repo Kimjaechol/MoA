@@ -35,6 +35,7 @@
  * - KAKAO_WEBHOOK_PATH — Webhook path (default: /kakao/webhook)
  * - MOA_INSTALL_URL — Override install page URL
  * - RAILWAY_PUBLIC_DOMAIN — Auto-set by Railway for public URL
+ * - WHATSAPP_APP_SECRET — Meta App Secret for webhook signature verification (optional but recommended)
  * - LAWCALL_ENCRYPTION_KEY — Encryption key for relay commands
  * - RELAY_MAX_DEVICES — Max devices per user (default: 5)
  */
@@ -69,7 +70,6 @@ import {
   startDiscordGateway,
   stopDiscordGateway,
   isDiscordConfigured,
-  getDiscordBotInfo,
 } from "./src/channels/index.js";
 import {
   getLoadedSkills,
@@ -540,7 +540,7 @@ async function aiOnMessage(params: {
     }
   }
 
-  // 5) Feature inquiry
+  // 4) Feature inquiry
   const featureKeywords = ["기능", "뭘 할 수", "뭘 해", "할 수 있"];
   if (featureKeywords.some((k) => utterance.includes(k))) {
     return {
@@ -567,7 +567,7 @@ async function aiOnMessage(params: {
     };
   }
 
-  // 6) Usage examples inquiry
+  // 5) Usage examples inquiry
   const usageKeywords = ["사용 사례", "사례", "예시", "활용", "어떻게 활용"];
   if (usageKeywords.some((k) => utterance.includes(k))) {
     return {
@@ -596,7 +596,7 @@ MoA를 설치하면 이 모든 것이 가능합니다!
     };
   }
 
-  // 7) Skill marketplace queries
+  // 6) Skill marketplace queries
   const skillKeywords = ["스킬", "skill", "마켓", "market", "스킬 목록", "스킬 검색"];
   const isSkillQuery = skillKeywords.some((k) => utterance.toLowerCase().includes(k));
   if (isSkillQuery) {
@@ -626,7 +626,7 @@ MoA를 설치하면 이 모든 것이 가능합니다!
     };
   }
 
-  // 8) General AI chat — use LLM with MoA-optimized system prompt
+  // 7) General AI chat — use LLM with MoA-optimized system prompt
   const llm = detectLlmProvider();
 
   if (!llm) {

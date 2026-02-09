@@ -249,7 +249,7 @@ function connectGateway(
             op: 2,
             d: {
               token,
-              intents: 512 | 32768, // GUILDS | MESSAGE_CONTENT
+              intents: 512 | 4096 | 32768, // GUILD_MESSAGES | DIRECT_MESSAGES | MESSAGE_CONTENT
               properties: {
                 os: "linux",
                 browser: "moa",

@@ -303,10 +303,10 @@ function generateSettingsPage(): string {
 
   <div class="container">
     <div class="nav-tabs">
-      <button class="nav-tab active" onclick="showSection('channels')">채널</button>
-      <button class="nav-tab" onclick="showSection('skills')">스킬</button>
-      <button class="nav-tab" onclick="showSection('devices')">기기</button>
-      <button class="nav-tab" onclick="showSection('setup')">설정 가이드</button>
+      <button class="nav-tab active" onclick="showSection('channels', this)">채널</button>
+      <button class="nav-tab" onclick="showSection('skills', this)">스킬</button>
+      <button class="nav-tab" onclick="showSection('devices', this)">기기</button>
+      <button class="nav-tab" onclick="showSection('setup', this)">설정 가이드</button>
     </div>
 
     <!-- Channels Section -->
@@ -555,12 +555,19 @@ function generateSettingsPage(): string {
   </div>
 
   <script>
+    // HTML escape helper to prevent XSS
+    function esc(str) {
+      const div = document.createElement('div');
+      div.textContent = str;
+      return div.innerHTML;
+    }
+
     // Tab navigation
-    function showSection(name) {
+    function showSection(name, el) {
       document.querySelectorAll('.section').forEach(s => s.classList.remove('active'));
       document.querySelectorAll('.nav-tab').forEach(t => t.classList.remove('active'));
       document.getElementById('section-' + name).classList.add('active');
-      event.target.classList.add('active');
+      if (el) el.classList.add('active');
     }
 
     // Check channel status
@@ -662,8 +669,8 @@ function generateSettingsPage(): string {
               <div class="device-item">
                 <div class="device-icon">\${d.platform === 'windows' ? '\\u{1F5A5}' : d.platform === 'darwin' ? '\\u{1F4BB}' : '\\u{1F5A5}'}</div>
                 <div class="device-info">
-                  <div class="device-name">\${d.name || d.device_id}</div>
-                  <div class="device-meta">\${d.platform || '알 수 없음'} &middot; \${d.last_seen ? new Date(d.last_seen).toLocaleString('ko-KR') : '정보 없음'}</div>
+                  <div class="device-name">\${esc(d.name || d.device_id)}</div>
+                  <div class="device-meta">\${esc(d.platform || '알 수 없음')} &middot; \${d.last_seen ? new Date(d.last_seen).toLocaleString('ko-KR') : '정보 없음'}</div>
                 </div>
               </div>
             \`).join('');

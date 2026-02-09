@@ -17,7 +17,11 @@
  */
 
 import type { IncomingMessage, ServerResponse } from "node:http";
+import { createHmac } from "node:crypto";
 import type { MoAMessageHandler, ChannelContext } from "./types.js";
+
+/** Max webhook request body size (1 MB) to prevent memory exhaustion */
+const MAX_BODY_SIZE = 1024 * 1024;
 
 // ============================================
 // WhatsApp Cloud API Types
@@ -235,10 +239,42 @@ export function handleWhatsAppRequest(
     }
 
     let body = "";
+    let bodySize = 0;
+    let aborted = false;
+
     req.on("data", (chunk: Buffer) => {
+      bodySize += chunk.length;
+      if (bodySize > MAX_BODY_SIZE) {
+        aborted = true;
+        res.writeHead(413);
+        res.end("Payload Too Large");
+        req.destroy();
+        return;
+      }
       body += chunk.toString();
     });
     req.on("end", () => {
+      if (aborted) return;
+
+      // Verify webhook signature if WHATSAPP_APP_SECRET is configured
+      const appSecret = process.env.WHATSAPP_APP_SECRET;
+      if (appSecret) {
+        const signature = req.headers["x-hub-signature-256"] as string | undefined;
+        if (!signature) {
+          logger.error("[WhatsApp] Missing X-Hub-Signature-256 header");
+          res.writeHead(401);
+          res.end("Unauthorized");
+          return;
+        }
+        const expected = "sha256=" + createHmac("sha256", appSecret).update(body).digest("hex");
+        if (signature !== expected) {
+          logger.error("[WhatsApp] Invalid webhook signature");
+          res.writeHead(401);
+          res.end("Unauthorized");
+          return;
+        }
+      }
+
       res.writeHead(200);
       res.end("OK");
 
@@ -329,7 +365,7 @@ async function handleWhatsAppMessage(
       text,
       botId: "moa-whatsapp",
       blockId: "",
-      timestamp: parseInt(message.timestamp) * 1000,
+      timestamp: parseInt(message.timestamp, 10) * 1000,
       channel,
     });
 

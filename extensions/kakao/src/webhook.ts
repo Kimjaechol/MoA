@@ -107,14 +107,7 @@ export async function startKakaoWebhook(opts: KakaoWebhookOptions): Promise<{
   let server: ReturnType<typeof createServer> | null = null;
 
   const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
-    // Health check
-    if (req.url === "/health" && req.method === "GET") {
-      res.writeHead(200, { "Content-Type": "text/plain" });
-      res.end("ok");
-      return;
-    }
-
-    // Request interceptor (e.g., relay API routes)
+    // Request interceptor runs first (handles /health, channel webhooks, etc.)
     if (requestInterceptor) {
       const handled = await requestInterceptor(req, res);
       if (handled) { return; }

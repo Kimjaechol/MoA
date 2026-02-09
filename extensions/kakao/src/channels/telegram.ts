@@ -15,7 +15,7 @@
  */
 
 import type { IncomingMessage, ServerResponse } from "node:http";
-import type { MoAMessageHandler, MoAMessageResult, ChannelContext } from "./types.js";
+import type { MoAMessageHandler, ChannelContext } from "./types.js";
 
 // ============================================
 // Telegram API Types (minimal)
