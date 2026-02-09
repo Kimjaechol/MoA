@@ -495,10 +495,10 @@ MoA는 카카오톡, 텔레그램, WhatsApp, Discord 등 여러 메신저에서 
 - !비상정지 : 모든 대기 명령 취소 + 기기 잠금
 - !취소 [ID] : 대기 중인 명령 취소
 - !대기목록 : 실행 대기 중인 명령 조회
-- !백업 : 백업 설정 페이지 안내 (톡서랍 개념 — 복구키 발급)
+- !백업 : 백업 설정 페이지 안내 (톡서랍 개념, 별도 백업 비밀번호)
+- !복원 : 백업 복원 페이지 안내
 - !백업 목록 : 저장된 백업 목록 조회
-- !백업 복원 [파일명] : 백업에서 복원
-- !복구키 : 백업 페이지 안내 (복구키는 백업 시 발급)
+- !복구키 : 복구키 안내 (백업 비밀번호 분실 시 재설정용)
 - !복구키 검증 [12단어] : 복구 키 검증
 ${skillsPrompt}
 ## 응답 규칙
@@ -952,9 +952,9 @@ async function aiOnMessage(params: {
     // !백업 — 백업 GUI 페이지로 안내 (톡서랍 개념: 사용자의 명시적 요청 시에만 백업)
     if (utterance.match(/^[!!/](?:백업|backup)$/i)) {
       return {
-        text: `MoA 백업 안내\n\n아래 페이지에서 백업을 설정하세요.\n로그인 후 AI 기억과 설정이 암호화되어 서버에 안전하게 보관됩니다.\n\n백업 시 발급되는 12단어 복구키를 종이에 적어두세요.\n기기 변경·분실 시 복구키로 복원할 수 있습니다.\n\n(카카오톡 톡서랍과 동일한 개념입니다)`,
+        text: `MoA 백업 안내\n\n아래 페이지에서 백업을 설정하세요.\n\n[백업 흐름]\n1. 로그인 (MoA 계정)\n2. 백업 비밀번호 설정 (백업 전용 별도 비밀번호)\n3. 12단어 복구키 발급 → 종이에 적어두세요\n4. AI 기억이 암호화되어 서버에 보관됩니다\n\n백업 비밀번호 분실 시 복구키(12단어)로 재설정 가능`,
         buttons: [{ label: "백업 설정하기", url: "https://moa.lawith.kr/backup" }],
-        quickReplies: ["!백업 목록", "!작업내역", "도움말"],
+        quickReplies: ["!복원", "!백업 목록", "도움말"],
       };
     }
 
@@ -991,45 +991,31 @@ async function aiOnMessage(params: {
       };
     }
 
-    // !백업 복원 [파일명] — 암호화 백업 복원
-    const restoreBackupMatch = utterance.match(/^[!!/](?:백업|backup)\s*(?:복원|restore)\s+(.+)$/i);
-    if (restoreBackupMatch) {
-      const secret = process.env.MOA_OWNER_SECRET;
-      if (!secret) {
-        return {
-          text: "MOA_OWNER_SECRET이 설정되지 않아 복원할 수 없습니다.",
-          quickReplies: ["도움말"],
-        };
-      }
-      const fileName = restoreBackupMatch[1].trim();
-      // Find the backup file
-      const backups = listBackups();
-      const target = backups.find((b) => b.fileName === fileName || b.filePath.endsWith(fileName));
-      if (!target) {
-        return {
-          text: `"${fileName}" 백업 파일을 찾을 수 없습니다.\n\n"!백업 목록"으로 사용 가능한 백업을 확인하세요.`,
-          quickReplies: ["!백업 목록"],
-        };
-      }
-      const restored = restoreFromBackup(target.filePath, secret);
-      if (restored) {
-        return {
-          text: `백업이 복원되었습니다!\n\n파일: ${target.fileName}\n시각: ${new Date(restored.timestamp).toLocaleString("ko-KR")}\n무결성: ${restored.verified ? "검증 완료" : "검증 실패 (데이터 손상 가능)"}`,
-          quickReplies: ["!작업내역", "!백업 목록"],
-        };
-      }
+    // !복원 — 백업 복원 GUI 안내
+    if (utterance.match(/^[!!/](?:복원|restore)$/i)) {
       return {
-        text: "백업 복원에 실패했습니다.\n비밀구문이 올바른지 확인하세요.",
-        quickReplies: ["!백업 목록", "!복구키"],
+        text: `MoA 복원 안내\n\n아래 페이지의 "복원" 탭에서 백업을 복원하세요.\n\n필요한 것:\n1. MoA 계정 (아이디 + 비밀번호)\n2. 백업 비밀번호 (백업 시 설정한 비밀번호)\n\n백업 비밀번호를 잊으셨다면 복구키(12단어)로 재설정할 수 있습니다.`,
+        buttons: [{ label: "복원 페이지", url: "https://moa.lawith.kr/backup" }],
+        quickReplies: ["!백업", "!백업 목록", "도움말"],
       };
     }
 
-    // !복구키 — 백업 페이지로 안내 (복구키는 백업 시 발급)
+    // !백업 복원 [파일명] — 채팅에서 복원 안내 (GUI로 유도)
+    const restoreBackupMatch = utterance.match(/^[!!/](?:백업|backup)\s*(?:복원|restore)/i);
+    if (restoreBackupMatch) {
+      return {
+        text: `백업 복원은 아래 페이지의 "복원" 탭에서 진행해주세요.\n백업 비밀번호가 필요합니다.`,
+        buttons: [{ label: "복원 페이지", url: "https://moa.lawith.kr/backup" }],
+        quickReplies: ["!백업 목록", "도움말"],
+      };
+    }
+
+    // !복구키 — 백업 페이지로 안내 (복구키는 첫 백업 시 발급)
     if (utterance.match(/^[!!/](?:복구키|복구 키|recovery\s*key)$/i)) {
       return {
-        text: `복구키는 백업 시 자동으로 발급됩니다.\n\n아래 페이지에서 백업을 진행하면 12단어 복구키가 발급됩니다.\n복구키를 종이에 적어 안전한 곳에 보관하세요.`,
-        buttons: [{ label: "백업 설정하기", url: "https://moa.lawith.kr/backup" }],
-        quickReplies: ["!백업 목록", "!작업내역", "도움말"],
+        text: `복구키는 첫 백업 시 자동으로 발급됩니다.\n\n복구키(12단어)는 백업 비밀번호를 잊었을 때\n비밀번호를 재설정하기 위한 수단입니다.\n\n복구키로 비밀번호 재설정이 필요하면\n아래 페이지에서 진행하세요.`,
+        buttons: [{ label: "백업 & 복원 페이지", url: "https://moa.lawith.kr/backup" }],
+        quickReplies: ["!백업", "!복원", "도움말"],
       };
     }
 

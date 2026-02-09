@@ -30,9 +30,18 @@ import {
   verifyPassword,
 } from "../auth/user-accounts.js";
 import {
+  hasBackupPassword,
+  setBackupPassword,
+  verifyBackupPassword,
+  resetBackupPasswordWithRecoveryKey,
+  updateLastBackupTime,
+} from "../auth/backup-credentials.js";
+import {
   generateRecoveryKey,
   createEncryptedBackup,
+  restoreFromBackup,
   initializeVault,
+  listBackups,
 } from "../safety/index.js";
 
 const LONG_POLL_TIMEOUT_MS = 30_000; // 30 seconds
@@ -129,6 +138,18 @@ export async function handleRelayRequest(
       case "/api/relay/auth/backup":
         if (req.method === "POST") {
           await handleBackupRequest(req, res, logger);
+          return true;
+        }
+        break;
+      case "/api/relay/auth/restore":
+        if (req.method === "POST") {
+          await handleRestoreRequest(req, res, logger);
+          return true;
+        }
+        break;
+      case "/api/relay/auth/backup/reset-password":
+        if (req.method === "POST") {
+          await handleBackupResetPassword(req, res, logger);
           return true;
         }
         break;
@@ -494,19 +515,109 @@ async function handleAuthLogin(
 
 /**
  * POST /api/relay/auth/backup
- * Body: { username: string, password: string }
+ * Body: { username, password, backupPassword, backupPasswordConfirm? }
  *
- * 백업 요청 — 사용자 인증 후 복구키 발급 + 암호화 백업 생성
- * (톡서랍/톡클라우드와 동일 개념: 명시적 요청 시에만 백업)
+ * 백업 요청:
+ * - 첫 백업: 계정 인증 + 백업 비밀번호 설정 → 복구키(12단어) 발급 + 암호화 백업 생성
+ * - 이후 백업: 계정 인증 + 백업 비밀번호 확인 → 암호화 백업 생성
  */
 async function handleBackupRequest(
   req: IncomingMessage,
   res: ServerResponse,
   logger: ReturnType<typeof console>,
 ) {
-  const body = await readBody<{ username: string; password: string }>(req);
-  if (!body?.username || !body?.password) {
-    sendJSON(res, 400, { success: false, error: "username and password are required" });
+  const body = await readBody<{
+    username: string;
+    password: string;
+    backupPassword: string;
+    backupPasswordConfirm?: string;
+  }>(req);
+
+  if (!body?.username || !body?.password || !body?.backupPassword) {
+    sendJSON(res, 400, { success: false, error: "username, password, backupPassword are required" });
+    return;
+  }
+
+  // 1. 계정 인증
+  if (!verifyPassword(body.username, body.password)) {
+    sendJSON(res, 401, { success: false, error: "아이디 또는 비밀번호가 올바르지 않습니다." });
+    return;
+  }
+
+  const isFirstBackup = !hasBackupPassword(body.username);
+
+  try {
+    initializeVault();
+    let recoveryWords: string[] | undefined;
+
+    if (isFirstBackup) {
+      // 첫 백업 — 백업 비밀번호 설정 + 복구키 발급
+      if (body.backupPasswordConfirm && body.backupPassword !== body.backupPasswordConfirm) {
+        sendJSON(res, 400, { success: false, error: "백업 비밀번호가 일치하지 않습니다." });
+        return;
+      }
+
+      const recovery = generateRecoveryKey();
+      recoveryWords = recovery.words;
+
+      const setError = setBackupPassword(body.username, body.backupPassword, recovery.hash);
+      if (setError) {
+        sendJSON(res, 400, { success: false, error: setError });
+        return;
+      }
+    } else {
+      // 이후 백업 — 백업 비밀번호 확인
+      if (!verifyBackupPassword(body.username, body.backupPassword)) {
+        sendJSON(res, 401, { success: false, error: "백업 비밀번호가 올바르지 않습니다." });
+        return;
+      }
+    }
+
+    // 암호화 백업 생성 (백업 비밀번호로 암호화)
+    const backupData = {
+      timestamp: Date.now(),
+      source: "user_request",
+      username: body.username,
+    };
+    const backup = createEncryptedBackup(backupData, body.backupPassword, "manual");
+    updateLastBackupTime(body.username);
+
+    logger.info(`[relay] Backup created for ${body.username}: ${backup.filePath.split("/").pop()}`);
+
+    sendJSON(res, 200, {
+      success: true,
+      isFirstBackup,
+      recoveryWords,
+      backupFile: backup.filePath.split("/").pop(),
+      backupSize: backup.size,
+      createdAt: new Date().toISOString(),
+    });
+  } catch (err) {
+    logger.error(`[relay] Backup error for ${body.username}: ${err}`);
+    sendJSON(res, 500, { success: false, error: "백업 생성 중 오류가 발생했습니다." });
+  }
+}
+
+/**
+ * POST /api/relay/auth/restore
+ * Body: { username, password, backupPassword, backupFile? }
+ *
+ * 복원 요청: 계정 인증 + 백업 비밀번호 → 최신 백업 복호화
+ */
+async function handleRestoreRequest(
+  req: IncomingMessage,
+  res: ServerResponse,
+  logger: ReturnType<typeof console>,
+) {
+  const body = await readBody<{
+    username: string;
+    password: string;
+    backupPassword: string;
+    backupFile?: string;
+  }>(req);
+
+  if (!body?.username || !body?.password || !body?.backupPassword) {
+    sendJSON(res, 400, { success: false, error: "username, password, backupPassword are required" });
     return;
   }
 
@@ -515,34 +626,100 @@ async function handleBackupRequest(
     return;
   }
 
+  if (!verifyBackupPassword(body.username, body.backupPassword)) {
+    sendJSON(res, 401, { success: false, error: "백업 비밀번호가 올바르지 않습니다." });
+    return;
+  }
+
   try {
-    initializeVault();
-    const recovery = generateRecoveryKey();
+    const backups = listBackups();
+    if (backups.length === 0) {
+      sendJSON(res, 404, { success: false, error: "저장된 백업이 없습니다." });
+      return;
+    }
 
-    // 암호화 백업 생성
-    const backupData = {
-      timestamp: Date.now(),
-      source: "user_request",
-      username: body.username,
-    };
-    const backup = createEncryptedBackup(backupData, body.password, "user");
+    // 특정 파일 지정 또는 최신 백업
+    let target = backups[0]; // 최신
+    if (body.backupFile) {
+      const found = backups.find(
+        (b) => b.fileName === body.backupFile || b.filePath.endsWith(body.backupFile!),
+      );
+      if (!found) {
+        sendJSON(res, 404, { success: false, error: `"${body.backupFile}" 백업 파일을 찾을 수 없습니다.` });
+        return;
+      }
+      target = found;
+    }
 
-    logger.info(`[relay] Backup created for ${body.username}: ${backup.filePath.split("/").pop()}`);
+    const restored = restoreFromBackup(target.filePath, body.backupPassword);
+    if (!restored) {
+      sendJSON(res, 400, { success: false, error: "백업 복원에 실패했습니다. 백업 비밀번호를 확인하세요." });
+      return;
+    }
+
+    logger.info(`[relay] Backup restored for ${body.username}: ${target.fileName}`);
 
     sendJSON(res, 200, {
       success: true,
-      recoveryWords: recovery.words,
-      backupFile: backup.filePath.split("/").pop(),
-      backupSize: backup.size,
-      createdAt: new Date().toISOString(),
+      backupFile: target.fileName,
+      timestamp: restored.timestamp,
+      verified: restored.verified,
     });
   } catch (err) {
-    logger.error(`[relay] Backup error for ${body.username}: ${err}`);
-    sendJSON(res, 500, {
-      success: false,
-      error: "백업 생성 중 오류가 발생했습니다.",
-    });
+    logger.error(`[relay] Restore error for ${body.username}: ${err}`);
+    sendJSON(res, 500, { success: false, error: "복원 중 오류가 발생했습니다." });
   }
+}
+
+/**
+ * POST /api/relay/auth/backup/reset-password
+ * Body: { username, password, recoveryWords: string[], newBackupPassword }
+ *
+ * 복구키(12단어)로 백업 비밀번호 재설정
+ */
+async function handleBackupResetPassword(
+  req: IncomingMessage,
+  res: ServerResponse,
+  logger: ReturnType<typeof console>,
+) {
+  const body = await readBody<{
+    username: string;
+    password: string;
+    recoveryWords: string[];
+    newBackupPassword: string;
+  }>(req);
+
+  if (!body?.username || !body?.password || !body?.recoveryWords || !body?.newBackupPassword) {
+    sendJSON(res, 400, {
+      success: false,
+      error: "username, password, recoveryWords, newBackupPassword are required",
+    });
+    return;
+  }
+
+  if (!verifyPassword(body.username, body.password)) {
+    sendJSON(res, 401, { success: false, error: "아이디 또는 비밀번호가 올바르지 않습니다." });
+    return;
+  }
+
+  if (body.recoveryWords.length !== 12) {
+    sendJSON(res, 400, { success: false, error: "복구키는 12단어여야 합니다." });
+    return;
+  }
+
+  const error = resetBackupPasswordWithRecoveryKey(
+    body.username,
+    body.recoveryWords,
+    body.newBackupPassword,
+  );
+
+  if (error) {
+    sendJSON(res, 400, { success: false, error });
+    return;
+  }
+
+  logger.info(`[relay] Backup password reset for ${body.username}`);
+  sendJSON(res, 200, { success: true });
 }
 
 // ============================================

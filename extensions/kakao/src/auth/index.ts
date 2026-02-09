@@ -49,3 +49,13 @@ export {
   type SignupResult,
   type LoginResult,
 } from "./user-accounts.js";
+
+export {
+  hasBackupPassword,
+  setBackupPassword,
+  verifyBackupPassword,
+  resetBackupPasswordWithRecoveryKey,
+  updateLastBackupTime,
+  getBackupCredential,
+  type BackupCredential,
+} from "./backup-credentials.js";
