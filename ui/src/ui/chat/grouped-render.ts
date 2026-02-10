@@ -83,17 +83,17 @@ export function renderStreamingGroup(
     <div class="chat-group assistant">
       ${renderAvatar("assistant", assistant)}
       <div class="chat-group-messages">
-        ${renderGroupedMessage(
-          {
-            role: "assistant",
-            content: [{ type: "text", text }],
-            timestamp: startedAt,
-          },
-          { isStreaming: true, showReasoning: false },
-          onOpenSidebar,
-        )}
-        <div class="chat-group-footer">
-          <span class="chat-sender-name">${name}</span>
+        <span class="chat-sender-name">${name}</span>
+        <div class="chat-bubble-row">
+          ${renderGroupedMessage(
+            {
+              role: "assistant",
+              content: [{ type: "text", text }],
+              timestamp: startedAt,
+            },
+            { isStreaming: true, showReasoning: false },
+            onOpenSidebar,
+          )}
           <span class="chat-group-timestamp">${timestamp}</span>
         </div>
       </div>
@@ -132,20 +132,23 @@ export function renderMessageGroup(
         avatar: opts.assistantAvatar ?? null,
       })}
       <div class="chat-group-messages">
-        ${group.messages.map((item, index) =>
-          renderGroupedMessage(
+        <span class="chat-sender-name">${who}</span>
+        ${group.messages.map((item, index) => {
+          const isLast = index === group.messages.length - 1;
+          const bubble = renderGroupedMessage(
             item.message,
             {
-              isStreaming: group.isStreaming && index === group.messages.length - 1,
+              isStreaming: group.isStreaming && isLast,
               showReasoning: opts.showReasoning,
             },
             opts.onOpenSidebar,
-          ),
-        )}
-        <div class="chat-group-footer">
-          <span class="chat-sender-name">${who}</span>
-          <span class="chat-group-timestamp">${timestamp}</span>
-        </div>
+          );
+          // Wrap last bubble with timestamp beside it (KakaoTalk-style)
+          if (isLast) {
+            return html`<div class="chat-bubble-row">${bubble}<span class="chat-group-timestamp">${timestamp}</span></div>`;
+          }
+          return bubble;
+        })}
       </div>
     </div>
   `;

@@ -1,13 +1,13 @@
 /* =============================================
-   GROUPED CHAT LAYOUT (Slack-style)
+   GROUPED CHAT LAYOUT (KakaoTalk-style)
    ============================================= */
 
 /* Chat Group Layout - default (assistant/other on left) */
 .chat-group {
   display: flex;
-  gap: 12px;
+  gap: 10px;
   align-items: flex-start;
-  margin-bottom: 16px;
+  margin-bottom: 12px;
   margin-left: 4px;
   margin-right: 16px;
 }
@@ -30,43 +30,55 @@
   align-items: flex-end;
 }
 
-.chat-group.user .chat-group-footer {
-  justify-content: flex-end;
-}
-
-/* Footer at bottom of message group (role + time) */
-.chat-group-footer {
-  display: flex;
-  gap: 8px;
-  align-items: baseline;
-  margin-top: 6px;
-}
-
+/* Sender name - above the bubbles (KakaoTalk-style) */
 .chat-sender-name {
-  font-weight: 500;
-  font-size: 12px;
-  color: var(--muted);
+  font-weight: 600;
+  font-size: 13px;
+  color: var(--text);
+  margin-bottom: 4px;
+  display: block;
 }
 
+/* Hide sender name for user messages (it's "You" - no need to show) */
+.chat-group.user .chat-sender-name {
+  display: none;
+}
+
+/* Bubble row - bubble + timestamp side by side */
+.chat-bubble-row {
+  display: flex;
+  align-items: flex-end;
+  gap: 6px;
+}
+
+/* User bubble row: timestamp on left, bubble on right */
+.chat-group.user .chat-bubble-row {
+  flex-direction: row-reverse;
+}
+
+/* Timestamp beside the last bubble (KakaoTalk-style) */
 .chat-group-timestamp {
   font-size: 11px;
   color: var(--muted);
   opacity: 0.7;
+  white-space: nowrap;
+  flex-shrink: 0;
+  padding-bottom: 2px;
 }
 
-/* Avatar Styles */
+/* Avatar Styles - round (KakaoTalk-style) */
 .chat-avatar {
   width: 40px;
   height: 40px;
-  border-radius: 8px;
+  border-radius: 50%;
   background: var(--panel-strong);
   display: grid;
   place-items: center;
   font-weight: 600;
   font-size: 14px;
   flex-shrink: 0;
-  align-self: flex-end; /* Align with last message in group */
-  margin-bottom: 4px; /* Optical alignment */
+  align-self: flex-start; /* Align with first message/name in group */
+  margin-top: 2px;
 }
 
 .chat-avatar.user {
@@ -96,13 +108,13 @@ img.chat-avatar {
   object-position: center;
 }
 
-/* Minimal Bubble Design - dynamic width based on content */
+/* Minimal Bubble Design - KakaoTalk style */
 .chat-bubble {
   position: relative;
   display: inline-block;
   border: 1px solid transparent;
   background: var(--card);
-  border-radius: var(--radius-lg);
+  border-radius: 16px;
   padding: 10px 14px;
   box-shadow: none;
   transition:
@@ -110,6 +122,17 @@ img.chat-avatar {
     border-color 150ms ease-out;
   max-width: 100%;
   word-wrap: break-word;
+}
+
+/* KakaoTalk-style bubble tails: top-left rounded for assistant, top-right for user */
+.chat-group:not(.user) .chat-group-messages > .chat-bubble:first-of-type,
+.chat-group:not(.user) .chat-bubble-row:first-of-type .chat-bubble {
+  border-top-left-radius: 4px;
+}
+
+.chat-group.user .chat-group-messages > .chat-bubble:first-of-type,
+.chat-group.user .chat-bubble-row:first-of-type .chat-bubble {
+  border-top-right-radius: 4px;
 }
 
 .chat-bubble.has-copy {
@@ -226,7 +249,7 @@ img.chat-avatar {
   background: var(--bg-hover);
 }
 
-/* User bubbles have different styling */
+/* User bubbles - warm accent color (KakaoTalk-style) */
 .chat-group.user .chat-bubble {
   background: var(--accent-subtle);
   border-color: transparent;
