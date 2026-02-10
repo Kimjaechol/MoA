@@ -70,6 +70,35 @@ Publish
 clawhub publish ./my-skill --slug my-skill --name "My Skill" --version 1.2.0 --changelog "Fixes + docs"
 ```
 
+## Auth Benefits
+
+ClawHub에 로그인하면:
+
+- **스킬 퍼블리싱** — 직접 만든 스킬을 커뮤니티에 공유
+- **프라이빗 스킬** — 비공개 스킬 설치 및 관리
+- **버전 관리** — 스킬 업데이트 이력 추적 및 롤백
+- **사용 통계** — 내 스킬의 설치 수, 평가 확인
+
+로그인 없이도 스킬 검색, 설치, 업데이트는 모두 정상 동작합니다.
+
+## Free Fallback (로그인 없이)
+
+로그인하지 않아도 대부분의 기능을 사용할 수 있습니다:
+
+1. **스킬 검색 및 설치** — `clawhub search`, `clawhub install` 모두 인증 불필요
+2. **스킬 업데이트** — `clawhub update` 인증 불필요
+3. **로컬 스킬 목록** — `clawhub list` 인증 불필요
+4. **수동 스킬 설치** — SKILL.md 파일을 직접 `skills/` 디렉토리에 복사
+
+```bash
+# 로그인 없이 스킬 검색 및 설치
+clawhub search "image generation"
+clawhub install nano-banana-pro
+
+# 수동 설치 (인터넷 없어도 가능)
+cp -r /path/to/my-skill ./skills/my-skill
+```
+
 Notes
 
 - Default registry: https://clawhub.com (override with CLAWHUB_REGISTRY or --registry)

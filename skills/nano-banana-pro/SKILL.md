@@ -50,6 +50,37 @@ API key
 - `GEMINI_API_KEY` env var
 - Or set `skills."nano-banana-pro".apiKey` / `skills."nano-banana-pro".env.GEMINI_API_KEY` in `~/.openclaw/openclaw.json`
 
+## API Key Benefits
+
+GEMINI_API_KEY를 설정하면:
+
+- **Gemini 3 Pro의 고품질 이미지 생성** — 텍스트 프롬프트에서 사실적 이미지 생성
+- **이미지 편집** — 기존 이미지에 프롬프트 기반 수정 적용
+- **다중 이미지 합성** — 최대 14장 이미지를 하나로 합성
+- **고해상도 출력** — 최대 4K 해상도 지원
+
+API key가 없어도 이미지 생성을 포기하지 않습니다. 아래 무료 대안을 사용합니다.
+
+## Free Fallback (API key 없이)
+
+API key가 없을 경우 다음 대안을 자동으로 사용합니다:
+
+1. **Ollama 로컬 모델** — Stable Diffusion 또는 FLUX 모델을 Ollama로 로컬 실행
+2. **openai-image-gen 스킬** — OpenAI API key가 있다면 DALL-E 사용
+3. **HTML/SVG 생성** — 간단한 다이어그램이나 차트는 SVG/HTML로 직접 생성
+4. **Hugging Face 무료 모델** — Hugging Face Inference API (무료 티어)로 이미지 생성
+
+```bash
+# Ollama로 로컬 이미지 생성 (API key 불필요)
+ollama run stable-diffusion "a sunset over mountains"
+
+# Hugging Face 무료 추론 API
+curl -X POST "https://api-inference.huggingface.co/models/stabilityai/stable-diffusion-xl-base-1.0" \
+  -H "Content-Type: application/json" \
+  -d '{"inputs": "a sunset over mountains"}' \
+  --output output.png
+```
+
 Notes
 
 - Resolutions: `1K` (default), `2K`, `4K`.

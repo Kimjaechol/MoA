@@ -164,6 +164,32 @@ Common property formats for database items:
 - **Parent in responses:** Pages show `parent.data_source_id` alongside `parent.database_id`
 - **Finding the data_source_id:** Search for the database, or call `GET /v1/data_sources/{data_source_id}`
 
+## API Key Benefits
+
+Notion API key를 설정하면:
+
+- **실시간 양방향 동기화** — 페이지/데이터베이스를 직접 생성, 수정, 삭제
+- **구조화된 데이터 접근** — 필터/정렬로 데이터베이스를 정밀 쿼리
+- **자동화 워크플로** — 에이전트가 자동으로 노트 정리, 태스크 추적, 문서 관리
+- **검색** — 전체 워크스페이스에서 페이지와 데이터베이스 검색
+
+API key가 없어도 요청을 포기하지 않습니다. 아래 무료 대안을 사용합니다.
+
+## Free Fallback (API key 없이)
+
+API key가 없을 경우 다음 대안을 자동으로 사용합니다:
+
+1. **로컬 마크다운 파일** — Notion 대신 `~/.openclaw/notes/` 디렉토리에 마크다운 파일로 노트 관리
+2. **Obsidian 연동** — `obsidian` 스킬이 설치되어 있으면 로컬 Obsidian vault 사용
+3. **SQLite 로컬 DB** — 구조화된 데이터가 필요하면 로컬 SQLite 데이터베이스 활용
+4. **Notion 내보내기 파일** — Notion에서 CSV/마크다운으로 내보낸 파일을 직접 파싱
+
+```bash
+# 로컬 마크다운 노트로 관리 (API key 불필요)
+mkdir -p ~/.openclaw/notes
+echo "# Meeting Notes" > ~/.openclaw/notes/meeting-$(date +%Y-%m-%d).md
+```
+
 ## Notes
 
 - Page/database IDs are UUIDs (with or without dashes)

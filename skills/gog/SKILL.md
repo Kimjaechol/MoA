@@ -106,6 +106,38 @@ Email Formatting
     --body-html "<p>Hi Name,</p><p>Thanks for meeting today. Here are the next steps:</p><ul><li>Item one</li><li>Item two</li></ul><p>Best regards,<br>Your Name</p>"
   ```
 
+## OAuth Benefits
+
+Google OAuth를 설정하면:
+
+- **Gmail 전체 관리** — 메일 검색, 발송, 답장, 드래프트 생성
+- **캘린더 동기화** — 일정 조회, 생성, 수정, 색상 지정
+- **Drive 접근** — 파일 검색, 다운로드, 업로드
+- **Sheets 조작** — 스프레드시트 읽기/쓰기/추가
+- **Docs 내보내기** — 문서 내용 추출 (txt, pdf)
+- **연락처 관리** — 연락처 목록 조회
+
+OAuth가 없어도 요청을 포기하지 않습니다. 아래 무료 대안을 사용합니다.
+
+## Free Fallback (OAuth 없이)
+
+1. **himalaya 스킬** — IMAP/SMTP 기반 이메일 관리 (Gmail 앱 비밀번호로 설정)
+2. **smtp-send 스킬** — 이메일 발송 전용 (SMTP 설정만으로 동작)
+3. **로컬 캘린더** — `calcurse` 또는 ICS 파일로 로컬 일정 관리
+4. **로컬 스프레드시트** — `xlsx` 스킬로 로컬 Excel/CSV 파일 처리
+5. **curl + Google API** — API key만으로 공개 데이터 접근
+
+```bash
+# himalaya로 이메일 관리 (OAuth 대신 앱 비밀번호)
+himalaya envelope list --folder INBOX --max 10
+
+# calcurse로 로컬 캘린더 관리
+calcurse -a  # 오늘 일정 확인
+
+# xlsx 스킬로 스프레드시트 로컬 처리
+node {baseDir}/../xlsx/xlsx.js read spreadsheet.xlsx --sheet "Sheet1"
+```
+
 Notes
 
 - Set `GOG_ACCOUNT=you@gmail.com` to avoid repeating `--account`.
