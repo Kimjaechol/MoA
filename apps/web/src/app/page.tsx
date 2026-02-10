@@ -66,8 +66,8 @@ const WHY_MOA = [
 const FEATURES = [
   {
     icon: "\uD83E\uDDE0",
-    title: "쌍둥이 AI 메모리",
-    desc: "모든 기기에서 동일한 AI 기억과 맥락을 공유합니다. 노트북에서 시작한 대화를 휴대폰에서 이어가세요.",
+    title: "여러 AI가 기억을 공유",
+    desc: "GPT-4o, Claude, Gemini 등 어떤 AI를 사용하든 대화 맥락과 기억을 공유합니다. 노트북에서 시작한 대화를 휴대폰에서 이어가세요.",
   },
   {
     icon: "\uD83D\uDCAC",
