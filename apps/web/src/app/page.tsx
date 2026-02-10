@@ -230,12 +230,12 @@ const STEPS = [
   {
     num: "\u2460",
     title: "MoA 설치",
-    desc: "Windows, macOS, Linux, Android, iOS에서 1분 안에 설치 완료.",
+    desc: "Windows, macOS, Linux, Android, iOS에서 1분 안에 설치 완료. 기기는 자동 등록되고 이름만 설정하면 됩니다.",
   },
   {
     num: "\u2461",
-    title: "기기 등록",
-    desc: "6자리 코드로 기기를 간편하게 연결. 여러 기기를 하나로 묶으세요.",
+    title: "2단계 보안 인증",
+    desc: "기기 인증 + 사용자 인증(아이디/암호 + 구문번호)으로 2중 3중 보안. 제3자는 절대 접근할 수 없습니다.",
   },
   {
     num: "\u2462",
