@@ -1,75 +1,29 @@
 /**
- * MoA Advanced Memory System - OpenClaw Integration Bridge
+ * MoA Advanced Memory v2 — OpenClaw Integration Bridge
  *
- * Connects the advanced memory system to the existing OpenClaw
- * MemoryIndexManager. Hooks into the sync/index pipeline to
- * automatically enrich chunks with graph metadata.
+ * Hooks into OpenClaw's existing indexFile() pipeline to enrich chunks
+ * with structured metadata. Non-breaking — failures are silently caught.
  *
- * Integration strategy:
- * - Uses the same SQLite database as OpenClaw (extends it with new tables)
- * - Hooks into the indexFile pipeline to add chunk metadata
- * - Enhances search results with graph-based scoring
- * - Maintains backward compatibility: OpenClaw's original search still works
+ * v2 changes:
+ *   - No graph.db operations (removed)
+ *   - Only writes to chunk_metadata table
+ *   - Uses regex extraction only (no LLM calls)
  */
 
 import type { DatabaseSync } from "node:sqlite";
-import type { ClassifyFunction } from "./manager.js";
-import type { AdvancedSearchFilters, AdvancedSearchResult } from "./types.js";
-import { createSubsystemLogger } from "../../logging/subsystem.js";
-import { classifyWithRules } from "./classifier.js";
-import { parseFrontmatter, extractInternalLinks } from "./frontmatter.js";
-import { ensureAdvancedMemorySchema } from "./graph-schema.js";
-import { upsertChunkMetadata } from "./graph.js";
-import { AdvancedMemoryManager } from "./manager.js";
-
-const log = createSubsystemLogger("memory-advanced");
-
-// ─── Singleton cache for AdvancedMemoryManager instances ───
-const ADVANCED_CACHE = new Map<string, AdvancedMemoryManager>();
+import { parseFrontmatter, frontmatterToMetadata, extractLinkTargets } from "./frontmatter.js";
+import { extractMetadata } from "./metadata-extractor.js";
+import { ensureAdvancedSchema } from "./schema.js";
 
 /**
- * Get or create an AdvancedMemoryManager that extends an existing OpenClaw memory database.
+ * Enrich indexed file chunks with structured metadata.
+ * Called from OpenClaw's MemoryIndexManager.indexFile() method.
  *
- * @param db - The existing SQLite DatabaseSync from MemoryIndexManager
- * @param workspaceDir - The workspace directory (same as OpenClaw's workspaceDir)
- * @param classifyFn - Optional LLM function for auto-classification
- */
-export async function getAdvancedMemoryManager(params: {
-  db: DatabaseSync;
-  workspaceDir: string;
-  userId?: string;
-  classifyFn?: ClassifyFunction;
-}): Promise<AdvancedMemoryManager> {
-  const cacheKey = `${params.userId ?? "default"}:${params.workspaceDir}`;
-  const existing = ADVANCED_CACHE.get(cacheKey);
-  if (existing) {
-    return existing;
-  }
-
-  const manager = new AdvancedMemoryManager({
-    userId: params.userId,
-    memoryBaseDir: params.workspaceDir,
-  });
-
-  await manager.initialize({
-    existingDb: params.db,
-    classifyFn: params.classifyFn,
-  });
-
-  ADVANCED_CACHE.set(cacheKey, manager);
-  return manager;
-}
-
-/**
- * Hook into the OpenClaw indexFile pipeline.
- * Called after each file is indexed by the base MemoryIndexManager.
- *
- * This function:
- * 1. Parses YAML frontmatter for metadata
- * 2. Extracts [[internal links]] for graph construction
- * 3. Classifies content for each chunk
- * 4. Updates chunk_metadata with advanced metadata
- * 5. Adds entities and relationships to the knowledge graph
+ * This is the main integration point — processes each indexed file to:
+ * 1. Parse YAML frontmatter (if present)
+ * 2. Extract metadata via regex (type, people, place, tags, etc.)
+ * 3. Extract [[internal links]] for backlink tracking
+ * 4. Store everything in chunk_metadata table
  */
 export function enrichIndexedFile(params: {
   db: DatabaseSync;
@@ -77,155 +31,64 @@ export function enrichIndexedFile(params: {
   content: string;
   chunkIds: string[];
   chunkTexts: string[];
-  workspaceDir: string;
 }): void {
-  try {
-    // Ensure advanced schema exists (idempotent)
-    ensureAdvancedMemorySchema(params.db);
+  const { db, filePath, content, chunkIds, chunkTexts: _chunkTexts } = params;
 
-    const { frontmatter, body } = parseFrontmatter(params.content);
-    const internalLinks = extractInternalLinks(body);
+  // Ensure schema exists (safe to call multiple times)
+  ensureAdvancedSchema(db);
 
-    // Classify the full document content
-    const fullClassification = classifyWithRules(params.content);
+  // Parse frontmatter if present
+  const { frontmatter, body } = parseFrontmatter(content);
+  const fmMetadata = frontmatterToMetadata(frontmatter);
 
-    // Enrich each chunk with metadata
-    for (let i = 0; i < params.chunkIds.length; i++) {
-      const chunkId = params.chunkIds[i];
-      const chunkText = params.chunkTexts[i];
-      if (!chunkId || !chunkText) {
-        continue;
-      }
+  // Extract metadata from body text via regex
+  const extracted = extractMetadata(body);
 
-      // Use frontmatter data if available, otherwise use document-level classification
-      const type = frontmatter?.type ?? fullClassification.type;
-      const people = frontmatter?.people ?? fullClassification.people;
-      const caseRef = frontmatter?.case ?? fullClassification.case;
-      const place = frontmatter?.place ?? fullClassification.place;
-      const tags = frontmatter?.tags ?? fullClassification.tags;
-      const importance = frontmatter?.importance ?? fullClassification.importance;
-      const domain = frontmatter?.domain ?? fullClassification.domain;
-      const emotion = frontmatter?.emotion ?? fullClassification.emotion;
+  // Merge: frontmatter takes priority over regex extraction
+  const merged = {
+    type: fmMetadata.type ?? extracted.type,
+    people: fmMetadata.people?.length ? fmMetadata.people : extracted.people,
+    place: fmMetadata.place ?? extracted.place,
+    tags: fmMetadata.tags?.length ? fmMetadata.tags : extracted.tags,
+    importance: fmMetadata.importance ?? extracted.importance,
+    emotion: fmMetadata.emotion ?? extracted.emotion,
+    emotionRaw: extracted.emotionRaw,
+    domain: fmMetadata.domain ?? extracted.domain,
+    status: fmMetadata.status ?? extracted.status ?? "active",
+    caseRef: fmMetadata.caseRef ?? extracted.caseRef,
+  };
 
-      // Build linked node IDs from entities and links
-      const linkedNodes: string[] = [];
-      for (const entity of fullClassification.entities) {
-        linkedNodes.push(entity.id);
-      }
-      for (const link of internalLinks) {
-        linkedNodes.push(`topic_${slugify(link.target)}`);
-      }
+  // Extract outgoing [[links]]
+  const outgoingLinks = extractLinkTargets(content);
+  const now = new Date().toISOString();
 
-      upsertChunkMetadata(params.db, {
-        chunkId,
-        memoryFile: params.filePath,
-        type: type as string,
-        createdAt: frontmatter?.created ?? new Date().toISOString(),
-        people: people,
-        caseRef: caseRef,
-        place: place,
-        tags: tags as string[] | undefined,
-        importance: importance as number | undefined,
-        domain: domain as string | undefined,
-        emotion: emotion as string | undefined,
-        linkedNodes: linkedNodes.length > 0 ? linkedNodes : undefined,
-        frontmatter: frontmatter as Record<string, unknown> | undefined,
-      });
-    }
+  // Store metadata for each chunk
+  const stmt = db.prepare(
+    `INSERT OR REPLACE INTO chunk_metadata
+     (id, memory_file, chunk_index, type, case_ref, place, tags,
+      importance, status, emotion, emotion_raw, domain, people,
+      created_at, updated_at, outgoing_links)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+  );
 
-    log.debug("Enriched indexed file", {
-      file: params.filePath,
-      chunks: params.chunkIds.length,
-      type: fullClassification.type,
-      entities: fullClassification.entities.length,
-    });
-  } catch (err) {
-    // Non-fatal: don't break the main indexing pipeline
-    log.warn(`Failed to enrich indexed file ${params.filePath}: ${String(err)}`);
+  for (let i = 0; i < chunkIds.length; i++) {
+    stmt.run(
+      chunkIds[i],
+      filePath,
+      i,
+      merged.type ?? null,
+      merged.caseRef ?? null,
+      merged.place ?? null,
+      merged.tags.length > 0 ? JSON.stringify(merged.tags) : null,
+      merged.importance,
+      merged.status,
+      merged.emotion ?? null,
+      merged.emotionRaw ?? null,
+      merged.domain ?? null,
+      merged.people.length > 0 ? JSON.stringify(merged.people) : null,
+      now,
+      now,
+      outgoingLinks.length > 0 ? JSON.stringify(outgoingLinks) : null,
+    );
   }
-}
-
-/**
- * Enhance OpenClaw search results with graph-based scoring.
- * Called after the base MemoryIndexManager.search() returns results.
- *
- * This function:
- * 1. Classifies the query type for weight optimization
- * 2. Performs graph search for additional results
- * 3. Merges graph scores with existing vector+BM25 scores
- * 4. Optionally expands results with related context
- */
-export async function enhanceSearchResults(params: {
-  db: DatabaseSync;
-  query: string;
-  baseResults: Array<{
-    path: string;
-    startLine: number;
-    endLine: number;
-    score: number;
-    snippet: string;
-    source: string;
-  }>;
-  filters?: AdvancedSearchFilters;
-  expandGraph?: boolean;
-  workspaceDir: string;
-}): Promise<AdvancedSearchResult[]> {
-  try {
-    const manager = await getAdvancedMemoryManager({
-      db: params.db,
-      workspaceDir: params.workspaceDir,
-    });
-
-    // Convert base results to the format expected by the advanced search
-    const vectorResults = params.baseResults.map((r) => ({
-      id: `${r.path}:${r.startLine}:${r.endLine}`,
-      path: r.path,
-      startLine: r.startLine,
-      endLine: r.endLine,
-      score: r.score,
-      snippet: r.snippet,
-      source: r.source,
-    }));
-
-    return manager.search({
-      query: params.query,
-      vectorResults,
-      filters: params.filters,
-      expandGraph: params.expandGraph,
-    });
-  } catch (err) {
-    log.warn(`Failed to enhance search results: ${String(err)}`);
-    // Fall back to original results
-    return params.baseResults.map((r) => ({
-      ...r,
-      type: undefined,
-      people: undefined,
-      case: undefined,
-      place: undefined,
-      tags: undefined,
-      importance: undefined,
-    }));
-  }
-}
-
-/**
- * Clean up cached managers for a workspace.
- */
-export function closeAdvancedMemory(workspaceDir: string): void {
-  for (const [key, manager] of ADVANCED_CACHE) {
-    if (key.includes(workspaceDir)) {
-      manager.close();
-      ADVANCED_CACHE.delete(key);
-    }
-  }
-}
-
-// ─── Helpers ───
-
-function slugify(text: string): string {
-  return text
-    .toLowerCase()
-    .replace(/[^a-z0-9\u3131-\u314e\u314f-\u3163\uac00-\ud7a3\u4e00-\u9fff]+/g, "_")
-    .replace(/^_|_$/g, "")
-    .slice(0, 40);
 }

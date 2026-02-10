@@ -1,17 +1,10 @@
 /**
- * MoA Advanced Memory System
+ * MoA Advanced Memory v2 — Public Exports
  *
- * A 4-layer hybrid memory architecture that extends OpenClaw's basic memory
- * with knowledge graph, auto-classification, and triple hybrid search.
- *
- * Layer 1: Obsidian-style structured storage (Markdown + YAML + [[links]])
- * Layer 2: AI-based auto-classification & tagging (7-dimension taxonomy)
- * Layer 3: Knowledge Graph (SQLite nodes + edges + traversal)
- * Layer 4: Triple hybrid search (vector + BM25 + graph fusion)
+ * 2-Layer architecture:
+ *   Layer 1: Markdown + YAML metadata + [[links]] (metadata = classification)
+ *   Layer 2: Vector + keyword search + metadata filter + link traversal
  */
-
-export { AdvancedMemoryManager } from "./manager.js";
-export type { AdvancedMemoryConfig, ClassifyFunction } from "./manager.js";
 
 // Types
 export type {
@@ -19,70 +12,53 @@ export type {
   EmotionType,
   EntryStatus,
   DomainType,
-  MemoryFrontmatter,
-  NodeType,
-  GraphNode,
-  GraphEdge,
-  TagEntry,
-  ExtractedEntity,
-  ExtractedRelationship,
-  ClassificationResult,
+  PersonEntry,
+  ExtractedMetadata,
+  ChunkMetadataRow,
   AdvancedSearchFilters,
   AdvancedSearchResult,
-  GraphExploreResult,
   HubType,
-  KnowledgeUploadRequest,
   MemoryStats,
-  SearchWeightProfile,
-  SearchQueryType,
+  AdvancedMemoryConfig,
 } from "./types.js";
 
-// Graph operations (for direct access)
-export {
-  upsertNode,
-  upsertEdge,
-  ensureTag,
-  tagNode,
-  getNode,
-  findNodeByName,
-  searchNodes,
-  getEdgesForNode,
-  getNodeTags,
-  getPopularTags,
-  exploreGraph,
-  searchGraphForChunks,
-  getMemoryStats,
-  upsertChunkMetadata,
-  deleteNode,
-} from "./graph.js";
-
-// Classification
-export {
-  buildClassificationPrompt,
-  parseClassificationResponse,
-  classifyWithRules,
-} from "./classifier.js";
+// Schema
+export { ensureAdvancedSchema } from "./schema.js";
 
 // Frontmatter
 export {
   parseFrontmatter,
   serializeFrontmatter,
   extractInternalLinks,
-  extractExternalLinks,
+  extractLinkTargets,
   autoLinkEntities,
+  frontmatterToMetadata,
 } from "./frontmatter.js";
 
-// Search
+// Metadata extraction
+export { extractMetadata, extractPeople } from "./metadata-extractor.js";
+
+// Backlinks
 export {
-  classifyQueryType,
-  getSearchWeights,
-  mergeTripleResults,
-  expandSearchContext,
-  applyFilters,
-} from "./hybrid-search.js";
+  findBacklinks,
+  findOutgoingLinks,
+  findCoOccurringPeople,
+  expandViaLinks,
+} from "./backlinks.js";
 
-// Hub documents
-export { generateHubDocument } from "./hub-generator.js";
+// Time decay
+export { applyTimeDecay, recencyScore, touchAccessedChunks } from "./time-decay.js";
 
-// Schema
-export { ensureAdvancedMemorySchema } from "./graph-schema.js";
+// Search enhancement
+export {
+  buildMetadataFilter,
+  getFilteredChunkIds,
+  enhanceSearchResults,
+  getMemoryStats,
+} from "./search-enhancer.js";
+
+// Integration
+export { enrichIndexedFile } from "./integration.js";
+
+// Tools
+export { createAdvancedMemoryTools } from "./tools.js";

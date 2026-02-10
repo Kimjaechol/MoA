@@ -2394,7 +2394,8 @@ export class MemoryIndexManager {
       )
       .run(entry.path, options.source, entry.hash, entry.mtimeMs, entry.size);
 
-    // Advanced memory: enrich chunks with graph metadata and auto-classification
+    // Advanced memory v2: enrich chunks with structured metadata
+    // Uses regex + SLM extraction only (no LLM calls, $0 cost)
     const chunkIds: string[] = [];
     const chunkTexts: string[] = [];
     for (const chunk of chunks) {
@@ -2411,7 +2412,6 @@ export class MemoryIndexManager {
         content,
         chunkIds,
         chunkTexts,
-        workspaceDir: this.workspaceDir,
       });
     } catch (enrichErr) {
       log.debug(`advanced memory enrichment skipped: ${String(enrichErr)}`);
