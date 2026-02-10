@@ -12,6 +12,7 @@ import { resolveSessionTranscriptsDirForAgent } from "../config/sessions/paths.j
 import { createSubsystemLogger } from "../logging/subsystem.js";
 import { onSessionTranscriptUpdate } from "../sessions/transcript-events.js";
 import { resolveUserPath } from "../utils.js";
+import { enrichIndexedFile } from "./advanced/integration.js";
 import { runGeminiEmbeddingBatches, type GeminiBatchRequest } from "./batch-gemini.js";
 import {
   OPENAI_BATCH_ENDPOINT,
@@ -2392,5 +2393,28 @@ export class MemoryIndexManager {
            size=excluded.size`,
       )
       .run(entry.path, options.source, entry.hash, entry.mtimeMs, entry.size);
+
+    // Advanced memory v2: enrich chunks with structured metadata
+    // Uses regex + SLM extraction only (no LLM calls, $0 cost)
+    const chunkIds: string[] = [];
+    const chunkTexts: string[] = [];
+    for (const chunk of chunks) {
+      const chunkId = hashText(
+        `${options.source}:${entry.path}:${chunk.startLine}:${chunk.endLine}:${chunk.hash}:${this.provider.model}`,
+      );
+      chunkIds.push(chunkId);
+      chunkTexts.push(chunk.text);
+    }
+    try {
+      enrichIndexedFile({
+        db: this.db,
+        filePath: entry.path,
+        content,
+        chunkIds,
+        chunkTexts,
+      });
+    } catch (enrichErr) {
+      log.debug(`advanced memory enrichment skipped: ${String(enrichErr)}`);
+    }
   }
 }
