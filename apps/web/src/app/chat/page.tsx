@@ -13,11 +13,11 @@ interface ChatMessage {
 }
 
 const QUICK_ACTIONS = [
-  { icon: "\uD83D\uDC4B", label: "\uC548\uB155\uD558\uC138\uC694", message: "\uC548\uB155\uD558\uC138\uC694!" },
-  { icon: "\u2753", label: "\uBB34\uC5C7\uC744 \uD560 \uC218 \uC788\uB098\uC694?", message: "\uB3C4\uC6C0\uB9D0" },
-  { icon: "\uD83C\uDF24\uFE0F", label: "\uC624\uB298 \uB0A0\uC528", message: "\uC624\uB298 \uB0A0\uC528 \uC54C\uB824\uC918" },
-  { icon: "\uD83D\uDCCA", label: "\uBAA8\uB378 \uC804\uB7B5", message: "\uD604\uC7AC \uBAA8\uB378 \uC804\uB7B5 \uC815\uBCF4 \uC54C\uB824\uC918" },
-  { icon: "\uD83D\uDCE2", label: "\uCC44\uB110 \uC548\uB0B4", message: "\uC9C0\uC6D0\uD558\uB294 \uCC44\uB110 \uC54C\uB824\uC918" },
+  { icon: "👋", label: "안녕하세요", message: "안녕하세요!" },
+  { icon: "❓", label: "무엇을 할 수 있나요?", message: "도움말" },
+  { icon: "🌤️", label: "오늘 날씨", message: "오늘 날씨 알려줘" },
+  { icon: "📊", label: "모델 전략", message: "현재 모델 전략 정보 알려줘" },
+  { icon: "📢", label: "채널 안내", message: "지원하는 채널 알려줘" },
 ];
 
 export default function ChatPage() {
@@ -113,7 +113,7 @@ export default function ChatPage() {
       const errorMsg: ChatMessage = {
         id: `err_${Date.now()}`,
         role: "system",
-        content: "\uB124\uD2B8\uC6CC\uD06C \uC624\uB958\uAC00 \uBC1C\uC0DD\uD588\uC2B5\uB2C8\uB2E4. \uB2E4\uC2DC \uC2DC\uB3C4\uD574\uC8FC\uC138\uC694.",
+        content: "네트워크 오류가 발생했습니다. 다시 시도해주세요.",
         created_at: new Date().toISOString(),
       };
       setMessages((prev) => [...prev, errorMsg]);
@@ -144,44 +144,44 @@ export default function ChatPage() {
         {/* Sidebar */}
         <aside className={`chat-sidebar ${sidebarOpen ? "open" : ""}`}>
           <div className="chat-sidebar-header">
-            <h2>\uD83D\uDCAC MoA \uCC44\uD305</h2>
+            <h2>{"💬"} MoA 채팅</h2>
             <button className="chat-sidebar-close" onClick={() => setSidebarOpen(false)}>
-              {"\u2715"}
+              {"✕"}
             </button>
           </div>
           <button className="chat-new-btn" onClick={startNewSession}>
-            + \uC0C8 \uB300\uD654
+            + 새 대화
           </button>
           <div className="chat-sidebar-section">
-            <h3>\uCC44\uB110 \uBC14\uB85C\uAC00\uAE30</h3>
+            <h3>채널 바로가기</h3>
             <div className="chat-channel-links">
               <Link href="/channels/kakaotalk" className="chat-channel-link">
-                <span>\uD83D\uDFE1</span> \uCE74\uCE74\uC624\uD1A1
+                <span>{"🟡"}</span> 카카오톡
               </Link>
               <Link href="/channels/telegram" className="chat-channel-link">
-                <span>\u2708\uFE0F</span> \uD154\uB808\uADF8\uB7A8
+                <span>{"✈️"}</span> 텔레그램
               </Link>
               <Link href="/channels/discord" className="chat-channel-link">
-                <span>\uD83C\uDFAE</span> Discord
+                <span>{"🎮"}</span> Discord
               </Link>
               <Link href="/channels/whatsapp" className="chat-channel-link">
-                <span>\uD83D\uDCDE</span> WhatsApp
+                <span>{"📞"}</span> WhatsApp
               </Link>
               <Link href="/channels/line" className="chat-channel-link">
-                <span>\uD83D\uDFE2</span> LINE
+                <span>{"🟢"}</span> LINE
               </Link>
               <Link href="/channels" className="chat-channel-link" style={{ color: "var(--primary)" }}>
-                \uBAA8\uB4E0 \uCC44\uB110 \uBCF4\uAE30 &rarr;
+                모든 채널 보기 &rarr;
               </Link>
             </div>
           </div>
           <div className="chat-sidebar-section">
-            <h3>\uBC14\uB85C\uAC00\uAE30</h3>
+            <h3>바로가기</h3>
             <Link href="/mypage" className="chat-channel-link">
-              <span>\u2699\uFE0F</span> \uB9C8\uC774\uD398\uC774\uC9C0 (API \uD0A4 \uAD00\uB9AC)
+              <span>{"⚙️"}</span> 마이페이지 (API 키 관리)
             </Link>
             <Link href="/" className="chat-channel-link">
-              <span>\uD83C\uDFE0</span> \uD648\uC73C\uB85C
+              <span>{"🏠"}</span> 홈으로
             </Link>
           </div>
         </aside>
@@ -191,16 +191,16 @@ export default function ChatPage() {
           {/* Chat Header */}
           <div className="chat-header">
             <button className="chat-menu-btn" onClick={() => setSidebarOpen(true)}>
-              {"\u2630"}
+              {"☰"}
             </button>
             <div className="chat-header-title">
               <h1>MoA AI</h1>
               <span className="chat-header-status">
-                {"\u25CF"} \uC628\uB77C\uC778 &middot; 15\uAC1C \uCC44\uB110 \uC5F0\uB3D9
+                {"●"} 온라인 &middot; 15개 채널 연동
               </span>
             </div>
             <Link href="/channels" className="chat-header-channels">
-              \uCC44\uB110 \uD5C8\uBE0C
+              채널 허브
             </Link>
           </div>
 
@@ -208,12 +208,12 @@ export default function ChatPage() {
           <div className="chat-messages">
             {messages.length === 0 && (
               <div className="chat-welcome">
-                <div className="chat-welcome-icon">{"\uD83E\uDD16"}</div>
-                <h2>MoA\uC5D0 \uC624\uC2E0 \uAC83\uC744 \uD658\uC601\uD569\uB2C8\uB2E4!</h2>
+                <div className="chat-welcome-icon">{"🤖"}</div>
+                <h2>MoA에 오신 것을 환영합니다!</h2>
                 <p>
-                  \uCE74\uCE74\uC624\uD1A1, \uD154\uB808\uADF8\uB7A8, Discord \uB4F1 15\uAC1C \uCC44\uB110\uC5D0\uC11C
-                  \uB3D9\uC77C\uD55C AI\uC640 \uB300\uD654\uD560 \uC218 \uC788\uC2B5\uB2C8\uB2E4.
-                  \uC5EC\uAE30\uC11C \uBC14\uB85C \uC2DC\uC791\uD574\uBCF4\uC138\uC694!
+                  카카오톡, 텔레그램, Discord 등 15개 채널에서
+                  동일한 AI와 대화할 수 있습니다.
+                  여기서 바로 시작해보세요!
                 </p>
                 <div className="chat-quick-actions">
                   {QUICK_ACTIONS.map((action) => (
@@ -233,12 +233,12 @@ export default function ChatPage() {
             {messages.map((msg) => (
               <div key={msg.id} className={`chat-msg chat-msg-${msg.role}`}>
                 <div className="chat-msg-avatar">
-                  {msg.role === "user" ? "\uD83D\uDC64" : msg.role === "assistant" ? "\uD83E\uDD16" : "\u26A0\uFE0F"}
+                  {msg.role === "user" ? "👤" : msg.role === "assistant" ? "🤖" : "⚠️"}
                 </div>
                 <div className="chat-msg-body">
                   <div className="chat-msg-meta">
                     <span className="chat-msg-sender">
-                      {msg.role === "user" ? "\uB098" : msg.role === "assistant" ? "MoA" : "\uC2DC\uC2A4\uD15C"}
+                      {msg.role === "user" ? "나" : msg.role === "assistant" ? "MoA" : "시스템"}
                     </span>
                     <span className="chat-msg-time">
                       {new Date(msg.created_at).toLocaleTimeString("ko-KR", {
@@ -264,7 +264,7 @@ export default function ChatPage() {
 
             {sending && (
               <div className="chat-msg chat-msg-assistant">
-                <div className="chat-msg-avatar">{"\uD83E\uDD16"}</div>
+                <div className="chat-msg-avatar">{"🤖"}</div>
                 <div className="chat-msg-body">
                   <div className="chat-typing">
                     <span></span><span></span><span></span>
@@ -282,7 +282,7 @@ export default function ChatPage() {
               <textarea
                 ref={inputRef}
                 className="chat-input"
-                placeholder="MoA\uC5D0\uAC8C \uBA54\uC2DC\uC9C0\uB97C \uBCF4\uB0B4\uC138\uC694... (Enter\uB85C \uC804\uC1A1, Shift+Enter\uB85C \uC904\uBC14\uAFBC)"
+                placeholder="MoA에게 메시지를 보내세요... (Enter로 전송, Shift+Enter로 줄바꿈)"
                 value={input}
                 onChange={(e) => setInput(e.target.value)}
                 onKeyDown={handleKeyDown}
@@ -294,12 +294,12 @@ export default function ChatPage() {
                 onClick={() => sendMessage(input)}
                 disabled={sending || !input.trim()}
               >
-                {sending ? "\u23F3" : "\u27A4"}
+                {sending ? "⏳" : "➤"}
               </button>
             </div>
             <p className="chat-input-hint">
-              \uD83D\uDD12 E2E \uC554\uD638\uD654 &middot; \uCE74\uCE74\uC624\uD1A1\uC5D0\uC11C\uB3C4 \uB3D9\uC77C\uD55C \uB300\uD654 \uAC00\uB2A5 &middot;{" "}
-              <Link href="/channels">\uB2E4\uB978 \uCC44\uB110\uB85C \uC5F0\uACB0</Link>
+              {"🔒"} E2E 암호화 &middot; 카카오톡에서도 동일한 대화 가능 &middot;{" "}
+              <Link href="/channels">다른 채널로 연결</Link>
             </p>
           </div>
         </main>

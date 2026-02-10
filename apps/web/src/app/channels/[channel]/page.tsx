@@ -26,150 +26,150 @@ interface ChannelDetail {
 const CHANNEL_DETAILS: Record<string, ChannelDetail> = {
   kakaotalk: {
     name: "KakaoTalk",
-    emoji: "\uD83D\uDFE1",
+    emoji: "🟡",
     color: "#FFE812",
     textColor: "#3B1E1E",
     tagline: "한국 최대 메신저에서 AI를 만나세요",
     description: "5,000만 한국인이 매일 사용하는 카카오톡에서 MoA AI와 대화하세요. 채널을 추가하는 것만으로 바로 시작할 수 있습니다. 별도 앱 설치 없이 익숙한 환경에서 AI를 활용하세요.",
     connectUrl: "https://pf.kakao.com/moa-ai",
-    connectLabel: "\uCE74\uCE74\uC624\uD1A1 \uCC44\uB110 \uCD94\uAC00\uD558\uAE30",
-    features: ["\uBA54\uC2DC\uC9C0\uB85C AI \uB300\uD654", "\uD30C\uC77C \uC804\uC1A1/\uC218\uC2E0", "\uC74C\uC131 \uBA54\uC2DC\uC9C0 \uC9C0\uC6D0", "\uC6D0\uACA9 PC \uC81C\uC5B4", "\uADF8\uB8F9\uCC44\uD305 AI \uD638\uCD9C", "\uC2A4\uD0AC \uBA85\uB839\uC5B4 \uC0AC\uC6A9"],
+    connectLabel: "카카오톡 채널 추가하기",
+    features: ["메시지로 AI 대화", "파일 전송/수신", "음성 메시지 지원", "원격 PC 제어", "그룹채팅 AI 호출", "스킬 명령어 사용"],
     setupGuide: [
-      { step: 1, title: "\uCE74\uCE74\uC624\uD1A1 \uC571 \uC5F4\uAE30", detail: "\uD734\uB300\uD3F0\uC5D0\uC11C \uCE74\uCE74\uC624\uD1A1 \uC571\uC744 \uC5F4\uC5B4\uC8FC\uC138\uC694." },
-      { step: 2, title: "MoA AI \uCC44\uB110 \uAC80\uC0C9", detail: "\uCC44\uB110 \uD0ED\uC5D0\uC11C 'MoA AI'\uB97C \uAC80\uC0C9\uD558\uAC70\uB098 \uC544\uB798 \uBC84\uD2BC\uC744 \uD074\uB9AD\uD558\uC138\uC694." },
-      { step: 3, title: "\uCC44\uB110 \uCD94\uAC00", detail: "MoA AI \uCC44\uB110\uC744 \uCD94\uAC00\uD558\uBA74 \uC790\uB3D9\uC73C\uB85C \uCE5C\uAD6C \uBAA9\uB85D\uC5D0 \uB4F1\uB85D\uB429\uB2C8\uB2E4." },
-      { step: 4, title: "\uB300\uD654 \uC2DC\uC791!", detail: "\uCE74\uCE74\uC624\uD1A1\uCC98\uB7FC \uBA54\uC2DC\uC9C0\uB97C \uBCF4\uB0B4\uBA74 AI\uAC00 \uBC14\uB85C \uC751\uB2F5\uD569\uB2C8\uB2E4. '\uC548\uB155'\uC73C\uB85C \uC2DC\uC791\uD574\uBCF4\uC138\uC694!" },
+      { step: 1, title: "카카오톡 앱 열기", detail: "휴대폰에서 카카오톡 앱을 열어주세요." },
+      { step: 2, title: "MoA AI 채널 검색", detail: "채널 탭에서 'MoA AI'를 검색하거나 아래 버튼을 클릭하세요." },
+      { step: 3, title: "채널 추가", detail: "MoA AI 채널을 추가하면 자동으로 친구 목록에 등록됩니다." },
+      { step: 4, title: "대화 시작!", detail: "카카오톡처럼 메시지를 보내면 AI가 바로 응답합니다. '안녕'으로 시작해보세요!" },
     ],
-    tips: ["\uADF8\uB8F9\uCC44\uD305\uC5D0\uC11C\uB294 @MoA\uB85C \uD638\uCD9C\uD558\uC138\uC694", "\uC74C\uC131 \uBA54\uC2DC\uC9C0\uB97C \uBCF4\uB0B4\uBA74 \uC74C\uC131 AI\uAC00 \uC751\uB2F5\uD569\uB2C8\uB2E4", "\uD30C\uC77C\uC744 \uBCF4\uB0B4\uBA74 \uC790\uB3D9\uC73C\uB85C \uBD84\uC11D/\uC694\uC57D\uD569\uB2C8\uB2E4"],
-    supportedActions: ["\uD14D\uC2A4\uD2B8 \uB300\uD654", "\uC74C\uC131 \uBA54\uC2DC\uC9C0", "\uD30C\uC77C \uC804\uC1A1", "\uC774\uBBF8\uC9C0 \uBD84\uC11D", "\uC6D0\uACA9 \uBA85\uB839"],
+    tips: ["그룹채팅에서는 @MoA로 호출하세요", "음성 메시지를 보내면 음성 AI가 응답합니다", "파일을 보내면 자동으로 분석/요약합니다"],
+    supportedActions: ["텍스트 대화", "음성 메시지", "파일 전송", "이미지 분석", "원격 명령"],
   },
   telegram: {
     name: "Telegram",
-    emoji: "\u2708\uFE0F",
+    emoji: "✈️",
     color: "#0088cc",
     textColor: "#ffffff",
-    tagline: "\uC804 \uC138\uACC4\uC5D0\uC11C \uAC00\uC7A5 \uBE60\uB978 AI \uB300\uD654",
-    description: "Telegram\uC758 \uBE60\uB978 \uC18D\uB3C4\uC640 \uBCF4\uC548\uC744 \uADF8\uB300\uB85C \uD65C\uC6A9\uD558\uC5EC MoA AI\uC640 \uB300\uD654\uD558\uC138\uC694. \uBD07 API\uB97C \uD1B5\uD574 \uCD5C\uC801\uD654\uB41C \uC751\uB2F5\uC744 \uC81C\uACF5\uD569\uB2C8\uB2E4.",
+    tagline: "전 세계에서 가장 빠른 AI 대화",
+    description: "Telegram의 빠른 속도와 보안을 그대로 활용하여 MoA AI와 대화하세요. 봇 API를 통해 최적화된 응답을 제공합니다.",
     connectUrl: "https://t.me/MoA_AI_Bot",
-    connectLabel: "\uD154\uB808\uADF8\uB7A8\uC5D0\uC11C \uB300\uD654 \uC2DC\uC791",
-    features: ["\uCD08\uACE0\uC18D \uC751\uB2F5", "\uC778\uB77C\uC778 \uBC84\uD2BC \uBA85\uB839", "Markdown \uD3EC\uB9F7 \uC9C0\uC6D0", "\uD30C\uC77C/\uBBF8\uB514\uC5B4 \uC804\uC1A1", "\uADF8\uB8F9 \uCC44\uD305 AI", "\uBD07 \uBA85\uB839\uC5B4 (/moa, /help)"],
+    connectLabel: "텔레그램에서 대화 시작",
+    features: ["초고속 응답", "인라인 버튼 명령", "Markdown 포맷 지원", "파일/미디어 전송", "그룹 채팅 AI", "봇 명령어 (/moa, /help)"],
     setupGuide: [
-      { step: 1, title: "Telegram \uC571 \uC5F4\uAE30", detail: "\uBAA8\uBC14\uC77C \uB610\uB294 \uB370\uC2A4\uD06C\uD1B1\uC5D0\uC11C Telegram\uC744 \uC5F4\uC5B4\uC8FC\uC138\uC694." },
-      { step: 2, title: "@MoA_AI_Bot \uAC80\uC0C9", detail: "\uAC80\uC0C9\uCC3D\uC5D0\uC11C @MoA_AI_Bot\uC744 \uAC80\uC0C9\uD558\uC138\uC694." },
-      { step: 3, title: "Start \uBC84\uD2BC \uD074\uB9AD", detail: "\uBD07 \uD504\uB85C\uD544\uC5D0\uC11C Start \uBC84\uD2BC\uC744 \uB204\uB974\uBA74 \uBC14\uB85C \uC5F0\uACB0\uB429\uB2C8\uB2E4." },
-      { step: 4, title: "\uBA54\uC2DC\uC9C0 \uBCF4\uB0B4\uAE30", detail: "\uC77C\uBC18 \uBA54\uC2DC\uC9C0\uB97C \uBCF4\uB0B4\uBA74 AI\uAC00 \uC989\uC2DC \uC751\uB2F5\uD569\uB2C8\uB2E4." },
+      { step: 1, title: "Telegram 앱 열기", detail: "모바일 또는 데스크톱에서 Telegram을 열어주세요." },
+      { step: 2, title: "@MoA_AI_Bot 검색", detail: "검색창에서 @MoA_AI_Bot을 검색하세요." },
+      { step: 3, title: "Start 버튼 클릭", detail: "봇 프로필에서 Start 버튼을 누르면 바로 연결됩니다." },
+      { step: 4, title: "메시지 보내기", detail: "일반 메시지를 보내면 AI가 즉시 응답합니다." },
     ],
-    tips: ["/help \uBA85\uB839\uC5B4\uB85C \uC0AC\uC6A9 \uAC00\uB2A5\uD55C \uAE30\uB2A5 \uD655\uC778", "\uADF8\uB8F9\uC5D0 \uBD07\uC744 \uCD08\uB300\uD558\uBA74 \uD300 \uC804\uCCB4\uAC00 \uC0AC\uC6A9 \uAC00\uB2A5", "Secret Chat\uC5D0\uC11C\uB3C4 \uC0AC\uC6A9 \uAC00\uB2A5"],
-    supportedActions: ["\uD14D\uC2A4\uD2B8 \uB300\uD654", "\uC74C\uC131 \uBA54\uC2DC\uC9C0", "\uD30C\uC77C \uC804\uC1A1", "\uC774\uBBF8\uC9C0 \uBD84\uC11D", "\uC778\uB77C\uC778 \uBC84\uD2BC", "\uBD07 \uBA85\uB839\uC5B4", "\uADF8\uB8F9 \uCC44\uD305"],
+    tips: ["/help 명령어로 사용 가능한 기능 확인", "그룹에 봇을 초대하면 팀 전체가 사용 가능", "Secret Chat에서도 사용 가능"],
+    supportedActions: ["텍스트 대화", "음성 메시지", "파일 전송", "이미지 분석", "인라인 버튼", "봇 명령어", "그룹 채팅"],
   },
   discord: {
     name: "Discord",
-    emoji: "\uD83C\uDFAE",
+    emoji: "🎮",
     color: "#5865F2",
     textColor: "#ffffff",
-    tagline: "\uCEE4\uBBA4\uB2C8\uD2F0\uC5D0 AI\uB97C \uCD08\uB300\uD558\uC138\uC694",
-    description: "Discord \uC11C\uBC84\uC5D0 MoA \uBD07\uC744 \uCD08\uB300\uD558\uBA74 \uBAA8\uB4E0 \uBA64\uBC84\uAC00 AI\uB97C \uC0AC\uC6A9\uD560 \uC218 \uC788\uC2B5\uB2C8\uB2E4. DM\uC73C\uB85C \uAC1C\uC778 \uB300\uD654\uB3C4 \uAC00\uB2A5\uD569\uB2C8\uB2E4.",
+    tagline: "커뮤니티에 AI를 초대하세요",
+    description: "Discord 서버에 MoA 봇을 초대하면 모든 멤버가 AI를 사용할 수 있습니다. DM으로 개인 대화도 가능합니다.",
     connectUrl: "https://discord.com/oauth2/authorize?client_id=MOA_BOT_ID&permissions=274878023680&scope=bot",
-    connectLabel: "Discord \uBD07 \uCD08\uB300\uD558\uAE30",
-    features: ["\uC11C\uBC84 \uBD07 + DM", "\uC2A4\uB808\uB4DC \uC9C0\uC6D0", "\uC784\uBCA0\uB4DC \uC751\uB2F5", "Slash \uBA85\uB839\uC5B4", "\uBC18\uC751 \uD53C\uB4DC\uBC31", "\uD30C\uC77C \uCCA8\uBD80 \uBD84\uC11D"],
+    connectLabel: "Discord 봇 초대하기",
+    features: ["서버 봇 + DM", "스레드 지원", "임베드 응답", "Slash 명령어", "반응 피드백", "파일 첨부 분석"],
     setupGuide: [
-      { step: 1, title: "Discord \uC5F4\uAE30", detail: "\uB370\uC2A4\uD06C\uD1B1 \uB610\uB294 \uBAA8\uBC14\uC77C\uC5D0\uC11C Discord\uB97C \uC5F4\uC5B4\uC8FC\uC138\uC694." },
-      { step: 2, title: "\uBD07 \uCD08\uB300 \uB9C1\uD06C \uD074\uB9AD", detail: "\uC544\uB798 \uBC84\uD2BC\uC744 \uD074\uB9AD\uD558\uC5EC MoA \uBD07\uC744 \uC11C\uBC84\uC5D0 \uCD08\uB300\uD558\uC138\uC694." },
-      { step: 3, title: "\uC11C\uBC84 \uC120\uD0DD & \uAD8C\uD55C \uC2B9\uC778", detail: "MoA \uBD07\uC744 \uCD08\uB300\uD560 \uC11C\uBC84\uB97C \uC120\uD0DD\uD558\uACE0 \uAD8C\uD55C\uC744 \uC2B9\uC778\uD558\uC138\uC694." },
-      { step: 4, title: "\uCC44\uB110\uC5D0\uC11C @MoA \uD638\uCD9C", detail: "@MoA \uBA58\uC158\uC73C\uB85C AI\uB97C \uD638\uCD9C\uD558\uAC70\uB098 /moa \uBA85\uB839\uC5B4\uB97C \uC0AC\uC6A9\uD558\uC138\uC694." },
+      { step: 1, title: "Discord 열기", detail: "데스크톱 또는 모바일에서 Discord를 열어주세요." },
+      { step: 2, title: "봇 초대 링크 클릭", detail: "아래 버튼을 클릭하여 MoA 봇을 서버에 초대하세요." },
+      { step: 3, title: "서버 선택 & 권한 승인", detail: "MoA 봇을 초대할 서버를 선택하고 권한을 승인하세요." },
+      { step: 4, title: "채널에서 @MoA 호출", detail: "@MoA 멘션으로 AI를 호출하거나 /moa 명령어를 사용하세요." },
     ],
-    tips: ["/moa help\uB85C \uBAA8\uB4E0 \uBA85\uB839\uC5B4 \uD655\uC778", "DM\uC73C\uB85C \uBCF4\uB0B4\uBA74 \uBE44\uACF5\uAC1C \uB300\uD654 \uAC00\uB2A5", "\uC2A4\uB808\uB4DC\uC5D0\uC11C \uD638\uCD9C\uD558\uBA74 \uC8FC\uC81C\uBCC4 \uB300\uD654 \uAC00\uB2A5"],
-    supportedActions: ["\uD14D\uC2A4\uD2B8 \uB300\uD654", "\uD30C\uC77C \uCCA8\uBD80", "\uC2A4\uB808\uB4DC", "Slash \uBA85\uB839\uC5B4", "\uBC18\uC751", "\uC784\uBCA0\uB4DC"],
+    tips: ["/moa help로 모든 명령어 확인", "DM으로 보내면 비공개 대화 가능", "스레드에서 호출하면 주제별 대화 가능"],
+    supportedActions: ["텍스트 대화", "파일 첨부", "스레드", "Slash 명령어", "반응", "임베드"],
   },
   whatsapp: {
     name: "WhatsApp",
-    emoji: "\uD83D\uDCDE",
+    emoji: "📞",
     color: "#25D366",
     textColor: "#ffffff",
-    tagline: "20\uC5B5 \uC0AC\uC6A9\uC790\uC758 \uBA54\uC2E0\uC800\uC5D0\uC11C AI\uB97C",
-    description: "\uC804 \uC138\uACC4\uC5D0\uC11C \uAC00\uC7A5 \uB9CE\uC774 \uC0AC\uC6A9\uB418\uB294 \uBA54\uC2E0\uC800 WhatsApp\uC5D0\uC11C MoA\uC640 \uB300\uD654\uD558\uC138\uC694.",
-    connectUrl: "https://wa.me/MoA_NUMBER?text=\uC548\uB155\uD558\uC138\uC694",
-    connectLabel: "WhatsApp\uC5D0\uC11C \uB300\uD654 \uC2DC\uC791",
-    features: ["\uD14D\uC2A4\uD2B8/\uC74C\uC131 \uB300\uD654", "\uBBF8\uB514\uC5B4 \uC804\uC1A1", "\uADF8\uB8F9 \uCC44\uD305 AI", "Web \uC790\uB3D9\uD654", "\uC77D\uC74C \uD655\uC778", "\uBE44\uB3D9\uAE30 \uC74C\uC131"],
+    tagline: "20억 사용자의 메신저에서 AI를",
+    description: "전 세계에서 가장 많이 사용되는 메신저 WhatsApp에서 MoA와 대화하세요.",
+    connectUrl: "https://wa.me/MoA_NUMBER?text=안녕하세요",
+    connectLabel: "WhatsApp에서 대화 시작",
+    features: ["텍스트/음성 대화", "미디어 전송", "그룹 채팅 AI", "Web 자동화", "읽음 확인", "비동기 음성"],
     setupGuide: [
-      { step: 1, title: "WhatsApp \uC5F4\uAE30", detail: "WhatsApp \uC571\uC744 \uC5F4\uC5B4\uC8FC\uC138\uC694." },
-      { step: 2, title: "MoA \uBC88\uD638\uB85C \uBA54\uC2DC\uC9C0", detail: "\uC544\uB798 \uBC84\uD2BC\uC744 \uD074\uB9AD\uD558\uC5EC MoA \uBC88\uD638\uB85C \uBA54\uC2DC\uC9C0\uB97C \uBCF4\uB0B4\uC138\uC694." },
-      { step: 3, title: "\uC790\uB3D9 \uC5F0\uACB0 \uC644\uB8CC", detail: "\uCCAB \uBA54\uC2DC\uC9C0\uB97C \uBCF4\uB0B4\uBA74 \uC790\uB3D9\uC73C\uB85C MoA\uC640 \uC5F0\uACB0\uB429\uB2C8\uB2E4." },
+      { step: 1, title: "WhatsApp 열기", detail: "WhatsApp 앱을 열어주세요." },
+      { step: 2, title: "MoA 번호로 메시지", detail: "아래 버튼을 클릭하여 MoA 번호로 메시지를 보내세요." },
+      { step: 3, title: "자동 연결 완료", detail: "첫 메시지를 보내면 자동으로 MoA와 연결됩니다." },
     ],
-    tips: ["\uC74C\uC131 \uBA54\uC2DC\uC9C0\uB97C \uBCF4\uB0B4\uBA74 \uC74C\uC131 AI\uAC00 \uC751\uB2F5", "\uC774\uBBF8\uC9C0\uB97C \uBCF4\uB0B4\uBA74 \uC790\uB3D9 \uBD84\uC11D", "\uADF8\uB8F9\uC5D0\uC11C\uB294 @MoA\uB85C \uD638\uCD9C"],
-    supportedActions: ["\uD14D\uC2A4\uD2B8 \uB300\uD654", "\uC74C\uC131 \uBA54\uC2DC\uC9C0", "\uBBF8\uB514\uC5B4 \uC804\uC1A1", "\uADF8\uB8F9 \uCC44\uD305"],
+    tips: ["음성 메시지를 보내면 음성 AI가 응답", "이미지를 보내면 자동 분석", "그룹에서는 @MoA로 호출"],
+    supportedActions: ["텍스트 대화", "음성 메시지", "미디어 전송", "그룹 채팅"],
   },
   slack: {
     name: "Slack",
-    emoji: "\uD83D\uDCAC",
+    emoji: "💬",
     color: "#4A154B",
     textColor: "#ffffff",
-    tagline: "\uC5C5\uBB34 \uD658\uACBD\uC5D0 AI\uB97C \uD1B5\uD569\uD558\uC138\uC694",
-    description: "Slack \uC6CC\uD06C\uC2A4\uD398\uC774\uC2A4\uC5D0 MoA\uB97C \uC124\uCE58\uD558\uBA74 \uD300 \uC804\uCCB4\uAC00 AI\uB97C \uD65C\uC6A9\uD560 \uC218 \uC788\uC2B5\uB2C8\uB2E4.",
+    tagline: "업무 환경에 AI를 통합하세요",
+    description: "Slack 워크스페이스에 MoA를 설치하면 팀 전체가 AI를 활용할 수 있습니다.",
     connectUrl: "https://slack.com/oauth/v2/authorize?client_id=MOA_SLACK_ID&scope=chat:write,commands",
-    connectLabel: "Slack\uC5D0 MoA \uCD94\uAC00",
-    features: ["Slash \uBA85\uB839\uC5B4", "\uC2A4\uB808\uB4DC \uC9C0\uC6D0", "\uCC44\uB110 \uD1B5\uD569", "DM AI \uB300\uD654", "\uD30C\uC77C \uBD84\uC11D", "Socket Mode"],
+    connectLabel: "Slack에 MoA 추가",
+    features: ["Slash 명령어", "스레드 지원", "채널 통합", "DM AI 대화", "파일 분석", "Socket Mode"],
     setupGuide: [
-      { step: 1, title: "Slack \uC6CC\uD06C\uC2A4\uD398\uC774\uC2A4 \uC5F4\uAE30", detail: "Slack \uC571 \uB610\uB294 \uC6F9\uC744 \uC5F4\uC5B4\uC8FC\uC138\uC694." },
-      { step: 2, title: "MoA \uC571 \uC124\uCE58", detail: "\uC544\uB798 \uBC84\uD2BC\uC73C\uB85C MoA \uC571\uC744 \uC6CC\uD06C\uC2A4\uD398\uC774\uC2A4\uC5D0 \uC124\uCE58\uD558\uC138\uC694." },
-      { step: 3, title: "/moa \uBA85\uB839\uC5B4 \uC0AC\uC6A9", detail: "\uCC44\uB110\uC5D0\uC11C /moa \uBA85\uB839\uC5B4\uB97C \uC785\uB825\uD558\uBA74 \uBC14\uB85C \uC0AC\uC6A9 \uAC00\uB2A5\uD569\uB2C8\uB2E4." },
+      { step: 1, title: "Slack 워크스페이스 열기", detail: "Slack 앱 또는 웹을 열어주세요." },
+      { step: 2, title: "MoA 앱 설치", detail: "아래 버튼으로 MoA 앱을 워크스페이스에 설치하세요." },
+      { step: 3, title: "/moa 명령어 사용", detail: "채널에서 /moa 명령어를 입력하면 바로 사용 가능합니다." },
     ],
-    tips: ["/moa help\uB85C \uBAA8\uB4E0 \uBA85\uB839\uC5B4 \uD655\uC778", "DM\uC73C\uB85C \uBCF4\uB0B4\uBA74 \uBE44\uACF5\uAC1C AI \uB300\uD654", "\uC2A4\uB808\uB4DC\uC5D0\uC11C AI\uB97C \uD638\uCD9C\uD558\uBA74 \uB9E5\uB77D \uC720\uC9C0"],
-    supportedActions: ["\uD14D\uC2A4\uD2B8 \uB300\uD654", "Slash \uBA85\uB839\uC5B4", "\uC2A4\uB808\uB4DC", "\uD30C\uC77C \uBD84\uC11D", "DM"],
+    tips: ["/moa help로 모든 명령어 확인", "DM으로 보내면 비공개 AI 대화", "스레드에서 AI를 호출하면 맥락 유지"],
+    supportedActions: ["텍스트 대화", "Slash 명령어", "스레드", "파일 분석", "DM"],
   },
   signal: {
     name: "Signal",
-    emoji: "\uD83D\uDD12",
+    emoji: "🔒",
     color: "#3A76F0",
     textColor: "#ffffff",
-    tagline: "\uCD5C\uACE0 \uBCF4\uC548 \uBA54\uC2E0\uC800\uC5D0\uC11C AI\uB97C",
-    description: "Signal\uC758 \uC5C5\uACC4 \uCD5C\uACE0 E2E \uC554\uD638\uD654\uC640 \uD568\uAED8 MoA AI\uB97C \uC0AC\uC6A9\uD558\uC138\uC694.",
+    tagline: "최고 보안 메신저에서 AI를",
+    description: "Signal의 업계 최고 E2E 암호화와 함께 MoA AI를 사용하세요.",
     connectUrl: "https://signal.me/#eu/MoA_AI",
-    connectLabel: "Signal\uC5D0\uC11C \uB300\uD654 \uC2DC\uC791",
-    features: ["E2E \uC554\uD638\uD654", "\uD14D\uC2A4\uD2B8/\uC74C\uC131 \uB300\uD654", "\uBBF8\uB514\uC5B4 \uC804\uC1A1", "\uADF8\uB8F9 \uCC44\uD305", "\uBC18\uC751 \uC9C0\uC6D0", "\uBCF4\uC548 \uBA54\uC2DC\uC9C0"],
+    connectLabel: "Signal에서 대화 시작",
+    features: ["E2E 암호화", "텍스트/음성 대화", "미디어 전송", "그룹 채팅", "반응 지원", "보안 메시지"],
     setupGuide: [
-      { step: 1, title: "Signal \uC571 \uC5F4\uAE30", detail: "Signal \uC571\uC744 \uC5F4\uC5B4\uC8FC\uC138\uC694." },
-      { step: 2, title: "MoA AI \uC5F0\uB77D\uCC98 \uCD94\uAC00", detail: "\uC544\uB798 \uBC84\uD2BC\uC73C\uB85C MoA \uC5F0\uB77D\uCC98\uB97C \uCD94\uAC00\uD558\uC138\uC694." },
-      { step: 3, title: "\uBA54\uC2DC\uC9C0 \uC804\uC1A1", detail: "Signal \uBA54\uC2DC\uC9C0\uB97C \uBCF4\uB0B4\uBA74 AI\uAC00 \uC751\uB2F5\uD569\uB2C8\uB2E4." },
+      { step: 1, title: "Signal 앱 열기", detail: "Signal 앱을 열어주세요." },
+      { step: 2, title: "MoA AI 연락처 추가", detail: "아래 버튼으로 MoA 연락처를 추가하세요." },
+      { step: 3, title: "메시지 전송", detail: "Signal 메시지를 보내면 AI가 응답합니다." },
     ],
-    tips: ["\uBAA8\uB4E0 \uB300\uD654\uB294 Signal\uC758 E2E \uC554\uD638\uD654\uB85C \uBCF4\uD638", "\uC74C\uC131 \uBA54\uC2DC\uC9C0\uB85C\uB3C4 AI \uD638\uCD9C \uAC00\uB2A5"],
-    supportedActions: ["\uD14D\uC2A4\uD2B8 \uB300\uD654", "\uC74C\uC131 \uBA54\uC2DC\uC9C0", "\uBBF8\uB514\uC5B4 \uC804\uC1A1", "\uBC18\uC751"],
+    tips: ["모든 대화는 Signal의 E2E 암호화로 보호", "음성 메시지로도 AI 호출 가능"],
+    supportedActions: ["텍스트 대화", "음성 메시지", "미디어 전송", "반응"],
   },
   imessage: {
     name: "iMessage",
-    emoji: "\uD83D\uDCF1",
+    emoji: "📱",
     color: "#34C759",
     textColor: "#ffffff",
-    tagline: "Apple \uC0DD\uD0DC\uACC4\uC758 AI \uD30C\uD2B8\uB108",
-    description: "macOS\uC640 iOS\uC758 \uAE30\uBCF8 \uBA54\uC2DC\uC9C0 \uC571\uC5D0\uC11C MoA AI\uC640 \uB300\uD654\uD558\uC138\uC694. \uBCC4\uB3C4 \uC571 \uC124\uCE58 \uC5C6\uC774 iMessage\uB85C \uBC14\uB85C \uC0AC\uC6A9\uD560 \uC218 \uC788\uC2B5\uB2C8\uB2E4.",
+    tagline: "Apple 생태계의 AI 파트너",
+    description: "macOS와 iOS의 기본 메시지 앱에서 MoA AI와 대화하세요. 별도 앱 설치 없이 iMessage로 바로 사용할 수 있습니다.",
     connectUrl: "imessage://moa@lawith.kr",
-    connectLabel: "iMessage\uB85C \uB300\uD654 \uC2DC\uC791",
-    features: ["Apple \uAE30\uAE30 \uC6D0\uB124\uC774\uD2F0\uBE0C", "iCloud \uB3D9\uAE30", "\uD14D\uC2A4\uD2B8/\uBBF8\uB514\uC5B4", "\uADF8\uB8F9 \uCC44\uD305 \uC9C0\uC6D0", "Siri \uC5F0\uB3D9 \uAC00\uB2A5", "\uBA40\uC158 \uC9C0\uC6D0"],
+    connectLabel: "iMessage로 대화 시작",
+    features: ["Apple 기기 네이티브", "iCloud 동기", "텍스트/미디어", "그룹 채팅 지원", "Siri 연동 가능", "멘션 지원"],
     setupGuide: [
-      { step: 1, title: "\uBA54\uC2DC\uC9C0 \uC571 \uC5F4\uAE30", detail: "Mac \uB610\uB294 iPhone\uC758 \uBA54\uC2DC\uC9C0 \uC571\uC744 \uC5F4\uC5B4\uC8FC\uC138\uC694." },
-      { step: 2, title: "\uC218\uC2E0\uC790\uC5D0 moa@lawith.kr \uC785\uB825", detail: "\uC0C8 \uBA54\uC2DC\uC9C0\uB97C \uC791\uC131\uD558\uACE0 \uC218\uC2E0\uC790\uC5D0 \uC785\uB825\uD558\uC138\uC694." },
-      { step: 3, title: "\uBA54\uC2DC\uC9C0 \uC804\uC1A1", detail: "\uBA54\uC2DC\uC9C0\uB97C \uBCF4\uB0B4\uBA74 MoA AI\uAC00 \uC751\uB2F5\uD569\uB2C8\uB2E4." },
+      { step: 1, title: "메시지 앱 열기", detail: "Mac 또는 iPhone의 메시지 앱을 열어주세요." },
+      { step: 2, title: "수신자에 moa@lawith.kr 입력", detail: "새 메시지를 작성하고 수신자에 입력하세요." },
+      { step: 3, title: "메시지 전송", detail: "메시지를 보내면 MoA AI가 응답합니다." },
     ],
-    tips: ["Mac\uACFC iPhone \uBAA8\uB450 iCloud\uB85C \uB3D9\uAE30", "\uADF8\uB8F9\uCC44\uD305\uC5D0\uC11C\uB294 @MoA\uB85C \uD638\uCD9C", "\uC774\uBBF8\uC9C0\uB97C \uBCF4\uB0B4\uBA74 \uC790\uB3D9 \uBD84\uC11D"],
-    supportedActions: ["\uD14D\uC2A4\uD2B8 \uB300\uD654", "\uBBF8\uB514\uC5B4 \uC804\uC1A1", "\uADF8\uB8F9 \uCC44\uD305", "\uBA40\uC158"],
+    tips: ["Mac과 iPhone 모두 iCloud로 동기", "그룹채팅에서는 @MoA로 호출", "이미지를 보내면 자동 분석"],
+    supportedActions: ["텍스트 대화", "미디어 전송", "그룹 채팅", "멘션"],
   },
   line: {
     name: "LINE",
-    emoji: "\uD83D\uDFE2",
+    emoji: "🟢",
     color: "#06C755",
     textColor: "#ffffff",
-    tagline: "\uC544\uC2DC\uC544 \uCD5C\uB300 \uBA54\uC2E0\uC800\uC5D0\uC11C AI\uB97C",
-    description: "\uC77C\uBCF8, \uD0DC\uAD6D, \uB300\uB9CC \uB4F1 \uC544\uC2DC\uC544 \uCD5C\uB300 \uBA54\uC2E0\uC800 LINE\uC5D0\uC11C MoA AI\uC640 \uB300\uD654\uD558\uC138\uC694.",
+    tagline: "아시아 최대 메신저에서 AI를",
+    description: "일본, 태국, 대만 등 아시아 최대 메신저 LINE에서 MoA AI와 대화하세요.",
     connectUrl: "https://line.me/R/ti/p/@moa-ai",
-    connectLabel: "LINE\uC5D0\uC11C \uB300\uD654 \uC2DC\uC791",
-    features: ["\uACF5\uC2DD \uACC4\uC815 \uD1B5\uD569", "\uD14D\uC2A4\uD2B8/\uBBF8\uB514\uC5B4 \uB300\uD654", "\uADF8\uB8F9 \uCC44\uD305 AI", "\uB9AC\uCE58 \uBA54\uB274 \uC9C0\uC6D0", "\uC2A4\uD0F0\uD504 \uC5F0\uB3D9", "\uB2E4\uAD6D\uC5B4 \uC9C0\uC6D0"],
+    connectLabel: "LINE에서 대화 시작",
+    features: ["공식 계정 통합", "텍스트/미디어 대화", "그룹 채팅 AI", "리치 메뉴 지원", "스탬프 연동", "다국어 지원"],
     setupGuide: [
-      { step: 1, title: "LINE \uC571 \uC5F4\uAE30", detail: "LINE \uC571\uC744 \uC5F4\uC5B4\uC8FC\uC138\uC694." },
-      { step: 2, title: "@moa-ai \uCE5C\uAD6C \uCD94\uAC00", detail: "ID \uAC80\uC0C9\uC5D0\uC11C @moa-ai\uB97C \uCC3E\uC544 \uCE5C\uAD6C \uCD94\uAC00\uD558\uC138\uC694." },
-      { step: 3, title: "\uB300\uD654 \uC2DC\uC791", detail: "\uBA54\uC2DC\uC9C0\uB97C \uBCF4\uB0B4\uBA74 AI\uAC00 \uC751\uB2F5\uD569\uB2C8\uB2E4." },
+      { step: 1, title: "LINE 앱 열기", detail: "LINE 앱을 열어주세요." },
+      { step: 2, title: "@moa-ai 친구 추가", detail: "ID 검색에서 @moa-ai를 찾아 친구 추가하세요." },
+      { step: 3, title: "대화 시작", detail: "메시지를 보내면 AI가 응답합니다." },
     ],
-    tips: ["\uB9AC\uCE58 \uBA54\uB274\uB85C \uBE60\uB978 \uAE30\uB2A5 \uC811\uADFC", "\uC77C\uBCF8\uC5B4/\uD55C\uAD6D\uC5B4/\uC601\uC5B4 \uBAA8\uB450 \uC9C0\uC6D0"],
-    supportedActions: ["\uD14D\uC2A4\uD2B8 \uB300\uD654", "\uBBF8\uB514\uC5B4 \uC804\uC1A1", "\uADF8\uB8F9 \uCC44\uD305", "\uB9AC\uCE58 \uBA54\uB274"],
+    tips: ["리치 메뉴로 빠른 기능 접근", "일본어/한국어/영어 모두 지원"],
+    supportedActions: ["텍스트 대화", "미디어 전송", "그룹 채팅", "리치 메뉴"],
   },
 };
 
@@ -180,21 +180,21 @@ const CHANNEL_DETAILS: Record<string, ChannelDetail> = {
 function getDefaultDetail(channelId: string): ChannelDetail {
   return {
     name: channelId.charAt(0).toUpperCase() + channelId.slice(1),
-    emoji: "\uD83D\uDCAC",
+    emoji: "💬",
     color: "#667eea",
     textColor: "#ffffff",
-    tagline: `${channelId}\uC5D0\uC11C MoA AI\uC640 \uB300\uD654\uD558\uC138\uC694`,
-    description: `${channelId} \uCC44\uB110\uC744 \uD1B5\uD574 MoA AI\uC640 \uC27D\uAC8C \uB300\uD654\uD560 \uC218 \uC788\uC2B5\uB2C8\uB2E4.`,
+    tagline: `${channelId}에서 MoA AI와 대화하세요`,
+    description: `${channelId} 채널을 통해 MoA AI와 쉽게 대화할 수 있습니다.`,
     connectUrl: "#",
-    connectLabel: `${channelId}\uC5D0\uC11C \uB300\uD654 \uC2DC\uC791`,
-    features: ["\uD14D\uC2A4\uD2B8 \uB300\uD654", "\uBBF8\uB514\uC5B4 \uC804\uC1A1", "100+ \uC2A4\uD0AC \uC0AC\uC6A9"],
+    connectLabel: `${channelId}에서 대화 시작`,
+    features: ["텍스트 대화", "미디어 전송", "100+ 스킬 사용"],
     setupGuide: [
-      { step: 1, title: `${channelId} \uC571 \uC5F4\uAE30`, detail: "\uC571\uC744 \uC5F4\uC5B4\uC8FC\uC138\uC694." },
-      { step: 2, title: "MoA \uAC80\uC0C9 \uBC0F \uCD94\uAC00", detail: "MoA AI\uB97C \uAC80\uC0C9\uD558\uC5EC \uCD94\uAC00\uD558\uC138\uC694." },
-      { step: 3, title: "\uB300\uD654 \uC2DC\uC791", detail: "\uBA54\uC2DC\uC9C0\uB97C \uBCF4\uB0B4\uBA74 AI\uAC00 \uC751\uB2F5\uD569\uB2C8\uB2E4." },
+      { step: 1, title: `${channelId} 앱 열기`, detail: "앱을 열어주세요." },
+      { step: 2, title: "MoA 검색 및 추가", detail: "MoA AI를 검색하여 추가하세요." },
+      { step: 3, title: "대화 시작", detail: "메시지를 보내면 AI가 응답합니다." },
     ],
-    tips: ["\uBAA8\uB4E0 \uCC44\uB110\uC5D0\uC11C \uB3D9\uC77C\uD55C AI \uACBD\uD5D8", "\uAE30\uC5B5\uC774 \uCC44\uB110 \uAC04 \uACF5\uC720\uB429\uB2C8\uB2E4"],
-    supportedActions: ["\uD14D\uC2A4\uD2B8 \uB300\uD654", "\uBBF8\uB514\uC5B4 \uC804\uC1A1"],
+    tips: ["모든 채널에서 동일한 AI 경험", "기억이 채널 간 공유됩니다"],
+    supportedActions: ["텍스트 대화", "미디어 전송"],
   };
 }
 
@@ -211,7 +211,7 @@ export default function ChannelDetailPage() {
           {/* Breadcrumb */}
           <div style={{ marginBottom: "32px" }}>
             <Link href="/channels" style={{ color: "var(--text-muted)", fontSize: "0.9rem" }}>
-              &larr; \uBAA8\uB4E0 \uCC44\uB110
+              &larr; 모든 채널
             </Link>
           </div>
 
@@ -245,7 +245,7 @@ export default function ChannelDetailPage() {
           {/* Features */}
           <section style={{ marginBottom: "32px" }}>
             <h2 style={{ fontSize: "1.3rem", fontWeight: 700, marginBottom: "16px" }}>
-              {"\u2728"} \uC9C0\uC6D0 \uAE30\uB2A5
+              {"✨"} 지원 기능
             </h2>
             <div style={{ display: "flex", flexWrap: "wrap", gap: "10px" }}>
               {ch.features.map((feat) => (
@@ -270,7 +270,7 @@ export default function ChannelDetailPage() {
           {/* Setup Guide */}
           <section style={{ marginBottom: "32px" }}>
             <h2 style={{ fontSize: "1.3rem", fontWeight: 700, marginBottom: "16px" }}>
-              {"\uD83D\uDCCB"} \uC124\uC815 \uAC00\uC774\uB4DC
+              {"📋"} 설정 가이드
             </h2>
             <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
               {ch.setupGuide.map((step) => (
@@ -314,13 +314,13 @@ export default function ChannelDetailPage() {
           {/* Tips */}
           <section style={{ marginBottom: "32px" }}>
             <h2 style={{ fontSize: "1.3rem", fontWeight: 700, marginBottom: "16px" }}>
-              {"\uD83D\uDCA1"} \uD301
+              {"💡"} 팁
             </h2>
             <div className="card" style={{ padding: "20px 24px" }}>
               <ul style={{ listStyle: "none", display: "flex", flexDirection: "column", gap: "8px" }}>
                 {ch.tips.map((tip) => (
                   <li key={tip} style={{ color: "var(--text-muted)", fontSize: "0.9rem" }}>
-                    {"\u2713"} {tip}
+                    {"✓"} {tip}
                   </li>
                 ))}
               </ul>
@@ -330,7 +330,7 @@ export default function ChannelDetailPage() {
           {/* Actions supported */}
           <section style={{ marginBottom: "48px" }}>
             <h2 style={{ fontSize: "1.3rem", fontWeight: 700, marginBottom: "16px" }}>
-              {"\u26A1"} \uC9C0\uC6D0 \uC791\uC5C5
+              {"⚡"} 지원 작업
             </h2>
             <div style={{ display: "flex", flexWrap: "wrap", gap: "8px" }}>
               {ch.supportedActions.map((action) => (
@@ -358,10 +358,10 @@ export default function ChannelDetailPage() {
             </a>
             <div style={{ display: "flex", gap: "12px", justifyContent: "center", marginTop: "16px" }}>
               <Link href="/chat" className="btn btn-outline btn-sm">
-                \uC6F9\uC5D0\uC11C \uBC14\uB85C \uCC44\uD305
+                웹에서 바로 채팅
               </Link>
               <Link href="/channels" className="btn btn-outline btn-sm">
-                \uB2E4\uB978 \uCC44\uB110 \uBCF4\uAE30
+                다른 채널 보기
               </Link>
             </div>
           </div>
