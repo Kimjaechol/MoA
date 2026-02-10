@@ -20,6 +20,30 @@ const WHY_MOA = [
     highlight: "터미널 대신 카카오톡",
   },
   {
+    icon: "\uD83D\uDD11",
+    title: "LLM 가입 없이 모든 AI 사용",
+    desc: "API key가 뭔지 몰라도 괜찮습니다. MoA 하나만 가입하면 GPT-4o, Claude, Gemini 등 거의 모든 LLM을 바로 사용할 수 있습니다. 별도 AI 서비스 가입이 필요 없습니다.",
+    highlight: "MoA 가입 = 모든 AI",
+  },
+  {
+    icon: "\uD83D\uDCB0",
+    title: "AI 최저비용 자동 전략",
+    desc: "내장 무료 SLM을 우선 사용하고, 유료 LLM의 무료 한도를 활용한 뒤, 필요할 때만 유료 LLM을 사용합니다. 이미 구독 중인 유료 LLM이 있다면 우선 적용됩니다.",
+    highlight: "무료 SLM 우선 사용",
+  },
+  {
+    icon: "\uD83C\uDD93",
+    title: "내장 SLM으로 완전 무료 사용",
+    desc: "SLM(소형 언어 모델)이 내장되어 있어 LLM에 가입하지 않아도 온전히 무료로 사용할 수 있습니다. 물론 유료 AI를 사용하면 더 뛰어난 결과를 얻을 수 있습니다.",
+    highlight: "내장 SLM = 영구 무료",
+  },
+  {
+    icon: "\uD83C\uDF0D",
+    title: "전 세계 언어 지원",
+    desc: "한국어와 영어는 물론, SLM과 LLM이 지원하는 거의 모든 언어로 사용할 수 있습니다. 추후 더 많은 언어가 추가될 예정입니다.",
+    highlight: "다국어 AI 에이전트",
+  },
+  {
     icon: "\uD83D\uDD12",
     title: "내 기기에 안심하고 설치",
     desc: "SHA-256 무결성 검증과 E2E 암호화로 보호됩니다. 자기학습 엔진은 네트워크 호출 없이 로컬에서만 동작하며, 동적 코드 실행이 없어 안전합니다.",
@@ -72,8 +96,8 @@ const FEATURES = [
   },
   {
     icon: "\uD83E\uDDE9",
-    title: "3단계 스마트 폴백",
-    desc: "유료 스킬 API → 사용자의 유료 LLM → 무료 대안. 항상 최적의 도구가 자동으로 선택됩니다.",
+    title: "AI 최저비용 자동 전략",
+    desc: "무료 SLM → 유료 LLM 무료 한도 → 유료 LLM(구독 우선). 항상 최소 비용으로 최적의 AI가 자동 선택됩니다.",
   },
   {
     icon: "\uD83E\uDDEC",
@@ -178,27 +202,27 @@ const SKILL_CATEGORIES = [
 const FALLBACK_TIERS = [
   {
     tier: "1",
-    icon: "\uD83C\uDFC6",
-    title: "전용 유료 API",
-    desc: "Brave Search, Perplexity, FAL AI 등 작업에 최적화된 전용 API를 우선 사용합니다.",
-    color: "#667eea",
-    example: "웹 검색 → Brave Search API (가장 정확)",
+    icon: "\uD83C\uDD93",
+    title: "무료 내장 SLM",
+    desc: "내장된 소형 언어 모델(SLM)이 기본 요청을 무료로 처리합니다. LLM 가입 없이도 바로 사용 가능합니다.",
+    color: "#48bb78",
+    example: "일반 대화/요약 → 내장 SLM (완전 무료)",
   },
   {
     tier: "2",
-    icon: "\uD83E\uDDE0",
-    title: "사용자의 유료 LLM",
-    desc: "전용 API가 없으면 이미 등록된 GPT-4, Claude, Gemini 등 유료 LLM이 처리합니다.",
-    color: "#48bb78",
-    example: "이미지 분석 → OpenAI GPT-4 Vision",
+    icon: "\uD83C\uDFC6",
+    title: "유료 LLM 무료 한도",
+    desc: "더 높은 품질이 필요하면 유료 LLM의 무료 사용 한도를 자동으로 활용합니다. 추가 비용 없이 더 똑똑한 AI를 사용하세요.",
+    color: "#667eea",
+    example: "복잡한 분석 → GPT-4o 무료 한도 활용",
   },
   {
     tier: "3",
-    icon: "\uD83C\uDD93",
-    title: "무료 대안",
-    desc: "유료 도구가 없어도 걱정 마세요. DuckDuckGo, 내장 요약 등 무료 대안이 준비되어 있습니다.",
+    icon: "\uD83E\uDDE0",
+    title: "유료 LLM (구독 우선)",
+    desc: "최고 품질이 필요할 때 유료 LLM을 사용합니다. 이미 구독 중인 AI 서비스가 있다면 해당 LLM이 우선 적용되어 비용을 절약합니다.",
     color: "#ecc94b",
-    example: "웹 검색 → DuckDuckGo (무료)",
+    example: "고급 코딩 → 사용자의 Claude Pro (우선 적용)",
   },
 ];
 
@@ -295,9 +319,10 @@ const PRICING = [
     features: [
       "기기 1대 연결",
       "AI 대화 일 50회",
+      "내장 SLM 무제한 사용",
       "기본 스킬 (날씨, 캘린더 등)",
       "카카오톡 연동",
-      "무료 폴백 도구",
+      "LLM 가입 불필요",
     ],
   },
   {
@@ -309,11 +334,12 @@ const PRICING = [
     features: [
       "기기 3대 연결",
       "AI 대화 무제한",
+      "모든 LLM 사용 (가입 불필요)",
       "44+ 모든 스킬 사용",
       "파일 전송 무제한",
       "음성 AI (비동기)",
       "자기 학습 엔진",
-      "3단계 스마트 폴백",
+      "AI 최저비용 자동 전략",
       "우선 지원",
     ],
   },
@@ -391,8 +417,8 @@ export default function Home() {
             }}
           >
             MoA는 카카오톡 한 줄로 AI를 제어하는 차세대 에이전트입니다.
-            44개 이상의 전문 스킬, 자기 학습 엔진, 3단계 스마트 폴백으로
-            항상 최적의 결과를 제공합니다.
+            별도 LLM 가입 없이 모든 AI를 사용하고, 내장 SLM으로 완전 무료 시작.
+            44개 이상의 전문 스킬과 AI 최저비용 전략으로 항상 최적의 결과를 제공합니다.
           </p>
           <p
             style={{
@@ -444,10 +470,10 @@ export default function Home() {
             <span className="section-badge">왜 MoA인가</span>
             <h2>다른 AI 도구와는 차원이 다릅니다</h2>
             <p>
-              CLI 기반 AI 도구들과 달리, MoA는 누구나 안전하게 사용할 수 있도록 설계되었습니다
+              CLI 기반 AI 도구들과 달리, MoA는 누구나 안전하고 저렴하게 사용할 수 있도록 설계되었습니다
             </p>
           </div>
-          <div className="grid-2">
+          <div className="grid-4">
             {WHY_MOA.map((item) => (
               <div className="card why-card" key={item.title}>
                 <div style={{ fontSize: "2.5rem", marginBottom: "16px" }}>
@@ -528,9 +554,9 @@ export default function Home() {
       <section id="fallback" style={{ background: "var(--bg-card)" }}>
         <div className="container">
           <div className="section-header">
-            <span className="section-badge">스마트 폴백</span>
-            <h2>항상 최적의 도구를 자동 선택</h2>
-            <p>유료 API가 없어도 걱정 마세요. 3단계로 최선의 결과를 보장합니다</p>
+            <span className="section-badge">AI 최저비용 전략</span>
+            <h2>최소 비용으로 최고의 AI를</h2>
+            <p>무료 SLM부터 유료 LLM까지, 항상 가장 경제적인 AI를 자동 선택합니다</p>
           </div>
           <div className="grid-3">
             {FALLBACK_TIERS.map((tier) => (
@@ -556,8 +582,9 @@ export default function Home() {
           </div>
           <div style={{ textAlign: "center", marginTop: "40px" }}>
             <p style={{ color: "var(--text-muted)", fontSize: "0.95rem", maxWidth: "600px", margin: "0 auto" }}>
-              OpenAI, Anthropic, Gemini, xAI, DeepSeek, Mistral, Groq 등
-              이미 보유한 유료 LLM 구독도 자동으로 활용됩니다.
+              GPT-4o, Claude, Gemini, DeepSeek, Mistral, Groq 등
+              이미 구독 중인 유료 LLM이 있다면 자동으로 우선 적용됩니다.
+              API key 같은 어려운 개념을 몰라도 MoA가 알아서 처리합니다.
             </p>
           </div>
         </div>
