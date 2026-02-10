@@ -181,3 +181,50 @@ CREATE POLICY "Users read own settings" ON moa_user_settings
 CREATE INDEX IF NOT EXISTS idx_user_api_keys_user ON moa_user_api_keys(user_id);
 CREATE INDEX IF NOT EXISTS idx_user_api_keys_provider ON moa_user_api_keys(user_id, provider);
 CREATE INDEX IF NOT EXISTS idx_user_settings_user ON moa_user_settings(user_id);
+
+-- ============================================
+-- 10. Chat Messages (웹 채팅 메시지)
+-- Stores conversation history for the built-in web chat.
+-- ============================================
+
+CREATE TABLE IF NOT EXISTS moa_chat_messages (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id TEXT NOT NULL,
+  session_id TEXT NOT NULL,
+  role TEXT NOT NULL CHECK (role IN ('user', 'assistant', 'system')),
+  content TEXT NOT NULL,
+  channel TEXT NOT NULL DEFAULT 'web',
+  model_used TEXT,
+  token_count INTEGER,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+ALTER TABLE moa_chat_messages ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "Users read own messages" ON moa_chat_messages
+  FOR SELECT USING (true);
+
+-- 11. Channel Connections (채널 연결 상태)
+CREATE TABLE IF NOT EXISTS moa_channel_connections (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id TEXT NOT NULL,
+  channel TEXT NOT NULL,
+  channel_user_id TEXT,
+  display_name TEXT,
+  is_active BOOLEAN NOT NULL DEFAULT true,
+  connected_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  last_message_at TIMESTAMPTZ,
+  UNIQUE(user_id, channel)
+);
+
+ALTER TABLE moa_channel_connections ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "Users read own connections" ON moa_channel_connections
+  FOR SELECT USING (true);
+
+-- Chat & Channel Indexes
+CREATE INDEX IF NOT EXISTS idx_chat_user ON moa_chat_messages(user_id);
+CREATE INDEX IF NOT EXISTS idx_chat_session ON moa_chat_messages(session_id);
+CREATE INDEX IF NOT EXISTS idx_chat_created ON moa_chat_messages(created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_channel_conn_user ON moa_channel_connections(user_id);
+CREATE INDEX IF NOT EXISTS idx_channel_conn_channel ON moa_channel_connections(user_id, channel);

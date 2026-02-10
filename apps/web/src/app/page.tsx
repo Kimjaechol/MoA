@@ -1,5 +1,6 @@
 import Nav from "../components/Nav";
 import DownloadSection from "../components/DownloadSection";
+import ChatWidget from "../components/ChatWidget";
 
 /* ============================================
    Data — Homepage content
@@ -274,21 +275,21 @@ const USE_CASES = [
 ];
 
 const CHANNELS = [
-  { name: "KakaoTalk", emoji: "\uD83D\uDFE1" },
-  { name: "Telegram", emoji: "\u2708\uFE0F" },
-  { name: "Discord", emoji: "\uD83C\uDFAE" },
-  { name: "Slack", emoji: "\uD83D\uDCAC" },
-  { name: "Signal", emoji: "\uD83D\uDD12" },
-  { name: "iMessage", emoji: "\uD83D\uDCF1" },
-  { name: "LINE", emoji: "\uD83D\uDFE2" },
-  { name: "WhatsApp", emoji: "\uD83D\uDCDE" },
-  { name: "Matrix", emoji: "\uD83D\uDD35" },
-  { name: "MS Teams", emoji: "\uD83C\uDFE2" },
-  { name: "Google Chat", emoji: "\uD83D\uDCAC" },
-  { name: "Mattermost", emoji: "\uD83D\uDD37" },
-  { name: "Twitch", emoji: "\uD83D\uDFE3" },
-  { name: "Nostr", emoji: "\uD83E\uDD18" },
-  { name: "Zalo", emoji: "\uD83D\uDFE6" },
+  { name: "KakaoTalk", emoji: "\uD83D\uDFE1", id: "kakaotalk", connectUrl: "https://pf.kakao.com/moa-ai" },
+  { name: "Telegram", emoji: "\u2708\uFE0F", id: "telegram", connectUrl: "https://t.me/MoA_AI_Bot" },
+  { name: "Discord", emoji: "\uD83C\uDFAE", id: "discord", connectUrl: "https://discord.com/oauth2/authorize?client_id=MOA_BOT_ID&permissions=274878023680&scope=bot" },
+  { name: "Slack", emoji: "\uD83D\uDCAC", id: "slack", connectUrl: "https://slack.com/oauth/v2/authorize?client_id=MOA_SLACK_ID" },
+  { name: "Signal", emoji: "\uD83D\uDD12", id: "signal", connectUrl: "https://signal.me/#eu/MoA_AI" },
+  { name: "iMessage", emoji: "\uD83D\uDCF1", id: "imessage", connectUrl: "imessage://moa@lawith.kr" },
+  { name: "LINE", emoji: "\uD83D\uDFE2", id: "line", connectUrl: "https://line.me/R/ti/p/@moa-ai" },
+  { name: "WhatsApp", emoji: "\uD83D\uDCDE", id: "whatsapp", connectUrl: "https://wa.me/MoA_NUMBER" },
+  { name: "Matrix", emoji: "\uD83D\uDD35", id: "matrix", connectUrl: "https://matrix.to/#/@moa-ai:matrix.org" },
+  { name: "MS Teams", emoji: "\uD83C\uDFE2", id: "msteams", connectUrl: "https://teams.microsoft.com/l/app/MOA_TEAMS_ID" },
+  { name: "Google Chat", emoji: "\uD83D\uDCAC", id: "googlechat", connectUrl: "https://chat.google.com" },
+  { name: "Mattermost", emoji: "\uD83D\uDD37", id: "mattermost", connectUrl: "#" },
+  { name: "Twitch", emoji: "\uD83D\uDFE3", id: "twitch", connectUrl: "#" },
+  { name: "Nostr", emoji: "\uD83E\uDD18", id: "nostr", connectUrl: "#" },
+  { name: "Zalo", emoji: "\uD83D\uDFE6", id: "zalo", connectUrl: "#" },
 ];
 
 const VOICE_MODES = [
@@ -816,24 +817,36 @@ export default function Home() {
           <div className="section-header">
             <span className="section-badge">채널</span>
             <h2>15개 채널, 하나의 AI</h2>
-            <p>어디서든 익숙한 메신저로 AI와 대화하세요</p>
+            <p>클릭 한 번으로 익숙한 메신저에서 바로 AI와 대화하세요</p>
           </div>
+
+          {/* Web Chat CTA */}
+          <div style={{ textAlign: "center", marginBottom: "32px" }}>
+            <a href="/chat" className="btn btn-primary btn-lg">
+              {"\uD83D\uDCBB"} 웹에서 바로 채팅 시작
+            </a>
+          </div>
+
           <div
             style={{
               display: "grid",
-              gridTemplateColumns: "repeat(auto-fill, minmax(140px, 1fr))",
+              gridTemplateColumns: "repeat(auto-fill, minmax(150px, 1fr))",
               gap: "16px",
               maxWidth: "900px",
               margin: "0 auto",
             }}
           >
             {CHANNELS.map((ch) => (
-              <div
-                className="card"
+              <a
+                href={`/channels/${ch.id}`}
+                className="card channel-home-card"
                 key={ch.name}
                 style={{
                   textAlign: "center",
                   padding: "20px 12px",
+                  textDecoration: "none",
+                  display: "block",
+                  cursor: "pointer",
                 }}
               >
                 <div style={{ fontSize: "2rem", marginBottom: "8px" }}>
@@ -844,12 +857,28 @@ export default function Home() {
                     fontSize: "0.85rem",
                     fontWeight: 600,
                     color: "var(--text-muted)",
+                    display: "block",
+                    marginBottom: "8px",
                   }}
                 >
                   {ch.name}
                 </span>
-              </div>
+                <span
+                  style={{
+                    fontSize: "0.7rem",
+                    color: "var(--primary)",
+                    fontWeight: 500,
+                  }}
+                >
+                  대화 시작 &rarr;
+                </span>
+              </a>
             ))}
+          </div>
+          <div style={{ textAlign: "center", marginTop: "32px" }}>
+            <a href="/channels" className="btn btn-outline">
+              모든 채널 상세보기 &amp; 연결하기
+            </a>
           </div>
         </div>
       </section>
@@ -1055,6 +1084,9 @@ export default function Home() {
           </p>
         </div>
       </footer>
+
+      {/* == Floating Chat Widget == */}
+      <ChatWidget />
     </>
   );
 }
