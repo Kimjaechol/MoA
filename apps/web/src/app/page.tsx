@@ -96,8 +96,8 @@ const FEATURES = [
   },
   {
     icon: "\uD83E\uDDE9",
-    title: "AI 최저비용 자동 전략",
-    desc: "무료 SLM → 유료 LLM 무료 한도 → 유료 LLM(구독 우선). 항상 최소 비용으로 최적의 AI가 자동 선택됩니다.",
+    title: "AI 모델 전략 선택",
+    desc: "가성비 전략 또는 최대성능 전략 중 선택. 회원가입 시 설정하고 앱에서 언제든 변경할 수 있습니다.",
   },
   {
     icon: "\uD83E\uDDEC",
@@ -199,30 +199,32 @@ const SKILL_CATEGORIES = [
   },
 ];
 
-const FALLBACK_TIERS = [
+const MODEL_STRATEGIES = [
   {
-    tier: "1",
-    icon: "\uD83C\uDD93",
-    title: "무료 내장 SLM",
-    desc: "내장된 소형 언어 모델(SLM)이 기본 요청을 무료로 처리합니다. LLM 가입 없이도 바로 사용 가능합니다.",
+    id: "cost-efficient",
+    icon: "\uD83D\uDCB0",
+    title: "최저비용 (가성비 전략)",
     color: "#48bb78",
-    example: "일반 대화/요약 → 내장 SLM (완전 무료)",
+    desc: "비용을 최소화하면서 최적의 결과를 제공합니다. 회원가입 시 기본 설정되며, 앱에서 언제든지 변경 가능합니다.",
+    tiers: [
+      { step: "1", label: "무료 내장 SLM", detail: "기본 대화/요약을 무료로 처리", tag: "무료" },
+      { step: "2", label: "유료 LLM 무료 한도", detail: "GPT, Gemini 등의 무료 범위 활용", tag: "무료" },
+      { step: "3", label: "유료 LLM 가성비 버전", detail: "DeepSeek, Sonnet 등 가성비 모델", tag: "유료" },
+      { step: "4", label: "유료 LLM 최고 버전", detail: "Opus, GPT-5 등 프리미엄 모델", tag: "유료" },
+    ],
+    note: "이미 구독 중인 유료 LLM이 있다면 해당 모델이 우선 적용되어 비용을 절약합니다.",
   },
   {
-    tier: "2",
-    icon: "\uD83C\uDFC6",
-    title: "유료 LLM 무료 한도",
-    desc: "더 높은 품질이 필요하면 유료 LLM의 무료 사용 한도를 자동으로 활용합니다. 추가 비용 없이 더 똑똑한 AI를 사용하세요.",
-    color: "#667eea",
-    example: "복잡한 분석 → GPT-4o 무료 한도 활용",
-  },
-  {
-    tier: "3",
+    id: "max-performance",
     icon: "\uD83E\uDDE0",
-    title: "유료 LLM (구독 우선)",
-    desc: "최고 품질이 필요할 때 유료 LLM을 사용합니다. 이미 구독 중인 AI 서비스가 있다면 해당 LLM이 우선 적용되어 비용을 절약합니다.",
-    color: "#ecc94b",
-    example: "고급 코딩 → 사용자의 Claude Pro (우선 적용)",
+    title: "최고지능 (최대성능 전략)",
+    color: "#667eea",
+    desc: "현 시점 최고 성능의 AI를 항상 사용합니다. 복잡한 요청은 여러 AI가 동시에 처리하여 최상의 결과를 선택합니다.",
+    tiers: [
+      { step: "1", label: "최고 성능 단일 모델", detail: "Opus, GPT-5, Gemini Pro 등 최신 모델", tag: "프리미엄" },
+      { step: "2", label: "병렬 멀티 모델", detail: "5개 이상 최고급 AI가 동시 처리 후 최적 결과 선택", tag: "프리미엄" },
+    ],
+    note: "1개 모델로 처리가 어려운 복잡한 요청은 자동으로 여러 최고급 모델을 병렬 실행합니다.",
   },
 ];
 
@@ -339,7 +341,7 @@ const PRICING = [
       "파일 전송 무제한",
       "음성 AI (비동기)",
       "자기 학습 엔진",
-      "AI 최저비용 자동 전략",
+      "AI 모델 전략 선택 (가성비/최대성능)",
       "우선 지원",
     ],
   },
@@ -550,41 +552,92 @@ export default function Home() {
         </div>
       </section>
 
-      {/* == 3-Tier Smart Fallback == */}
-      <section id="fallback" style={{ background: "var(--bg-card)" }}>
+      {/* == Model Strategy Selection == */}
+      <section id="model-strategy" style={{ background: "var(--bg-card)" }}>
         <div className="container">
           <div className="section-header">
-            <span className="section-badge">AI 최저비용 전략</span>
-            <h2>최소 비용으로 최고의 AI를</h2>
-            <p>무료 SLM부터 유료 LLM까지, 항상 가장 경제적인 AI를 자동 선택합니다</p>
+            <span className="section-badge">AI 모델 전략</span>
+            <h2>나에게 맞는 AI 전략을 선택하세요</h2>
+            <p>
+              회원가입 시 선택하고, MoA 앱에서 언제든지 변경할 수 있습니다
+            </p>
           </div>
-          <div className="grid-3">
-            {FALLBACK_TIERS.map((tier) => (
-              <div className="card fallback-card" key={tier.tier}>
-                <div className="fallback-tier-badge" style={{ background: `${tier.color}20`, color: tier.color, border: `1px solid ${tier.color}40` }}>
-                  Tier {tier.tier}
+          <div className="grid-2">
+            {MODEL_STRATEGIES.map((strat) => (
+              <div
+                className="card"
+                key={strat.id}
+                style={{
+                  border: `2px solid ${strat.color}40`,
+                  position: "relative",
+                  overflow: "hidden",
+                }}
+              >
+                <div
+                  style={{
+                    position: "absolute",
+                    top: 0,
+                    left: 0,
+                    right: 0,
+                    height: "4px",
+                    background: strat.color,
+                  }}
+                />
+                <div style={{ display: "flex", alignItems: "center", gap: "12px", marginBottom: "16px", marginTop: "8px" }}>
+                  <span style={{ fontSize: "2.5rem" }}>{strat.icon}</span>
+                  <h3 style={{ fontSize: "1.2rem" }}>{strat.title}</h3>
                 </div>
-                <div style={{ fontSize: "2.5rem", margin: "16px 0", textAlign: "center" }}>
-                  {tier.icon}
-                </div>
-                <h3 style={{ fontSize: "1.15rem", marginBottom: "8px", textAlign: "center" }}>
-                  {tier.title}
-                </h3>
-                <p style={{ color: "var(--text-muted)", fontSize: "0.9rem", textAlign: "center", marginBottom: "16px" }}>
-                  {tier.desc}
+                <p style={{ color: "var(--text-muted)", fontSize: "0.9rem", marginBottom: "20px", lineHeight: 1.6 }}>
+                  {strat.desc}
                 </p>
-                <div className="fallback-example" style={{ borderColor: `${tier.color}30` }}>
-                  <span style={{ fontSize: "0.8rem", color: "var(--text-muted)" }}>예시:</span>
-                  <span style={{ fontSize: "0.85rem", color: tier.color }}>{tier.example}</span>
+                <div style={{ display: "flex", flexDirection: "column", gap: "10px", marginBottom: "16px" }}>
+                  {strat.tiers.map((tier) => (
+                    <div
+                      key={tier.step}
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        gap: "12px",
+                        padding: "10px 14px",
+                        background: "rgba(0,0,0,0.15)",
+                        borderRadius: "var(--radius)",
+                        borderLeft: `3px solid ${strat.color}`,
+                      }}
+                    >
+                      <span
+                        style={{
+                          fontSize: "0.75rem",
+                          fontWeight: 700,
+                          color: strat.color,
+                          background: `${strat.color}20`,
+                          padding: "2px 8px",
+                          borderRadius: "10px",
+                          whiteSpace: "nowrap",
+                        }}
+                      >
+                        {tier.tag}
+                      </span>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ fontWeight: 600, fontSize: "0.9rem", color: "var(--text-heading)" }}>
+                          {tier.step}. {tier.label}
+                        </div>
+                        <div style={{ fontSize: "0.8rem", color: "var(--text-muted)" }}>
+                          {tier.detail}
+                        </div>
+                      </div>
+                    </div>
+                  ))}
                 </div>
+                <p style={{ fontSize: "0.8rem", color: strat.color, fontStyle: "italic", lineHeight: 1.5 }}>
+                  {strat.note}
+                </p>
               </div>
             ))}
           </div>
           <div style={{ textAlign: "center", marginTop: "40px" }}>
-            <p style={{ color: "var(--text-muted)", fontSize: "0.95rem", maxWidth: "600px", margin: "0 auto" }}>
-              GPT-4o, Claude, Gemini, DeepSeek, Mistral, Groq 등
-              이미 구독 중인 유료 LLM이 있다면 자동으로 우선 적용됩니다.
-              API key 같은 어려운 개념을 몰라도 MoA가 알아서 처리합니다.
+            <p style={{ color: "var(--text-muted)", fontSize: "0.95rem", maxWidth: "700px", margin: "0 auto" }}>
+              GPT-4o, Claude, Gemini, DeepSeek, Mistral, Groq 등 모든 주요 AI를 지원합니다.
+              API key를 몰라도 MoA가 알아서 처리하며, 이미 구독 중인 AI가 있다면 자동으로 우선 적용됩니다.
             </p>
           </div>
         </div>
