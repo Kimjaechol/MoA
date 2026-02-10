@@ -6,7 +6,7 @@ import DownloadSection from "../components/DownloadSection";
    ============================================ */
 
 const STATS = [
-  { value: "44+", label: "AI 스킬" },
+  { value: "100+", label: "AI 스킬" },
   { value: "15", label: "메신저 채널" },
   { value: "7", label: "LLM 프로바이더" },
   { value: "E2E", label: "암호화 보안" },
@@ -51,7 +51,7 @@ const WHY_MOA = [
   },
   {
     icon: "\uD83C\uDFAF",
-    title: "44+ 전문 스킬로 정확한 결과",
+    title: "100+ 전문 스킬로 정확한 결과",
     desc: "범용 AI가 아닌 작업별 전문 스킬이 최적의 결과를 제공합니다. 웹 검색, 이미지 생성, 문서 작성, 데이터 분석까지 전문 도구가 자동으로 선택됩니다.",
     highlight: "범용이 아닌 전문 스킬",
   },
@@ -335,7 +335,7 @@ const PRICING = [
       "기기 3대 연결",
       "AI 대화 무제한",
       "모든 LLM 사용 (가입 불필요)",
-      "44+ 모든 스킬 사용",
+      "100+ 모든 스킬 사용",
       "파일 전송 무제한",
       "음성 AI (비동기)",
       "자기 학습 엔진",
@@ -387,7 +387,7 @@ export default function Home() {
       >
         <div className="container animate-in">
           <span className="section-badge" style={{ marginBottom: "24px" }}>
-            Next-Gen AI Agent &middot; 44+ Skills
+            Next-Gen AI Agent &middot; 100+ Skills
           </span>
           <h1
             style={{
@@ -418,7 +418,7 @@ export default function Home() {
           >
             MoA는 카카오톡 한 줄로 AI를 제어하는 차세대 에이전트입니다.
             별도 LLM 가입 없이 모든 AI를 사용하고, 내장 SLM으로 완전 무료 시작.
-            44개 이상의 전문 스킬과 AI 최저비용 전략으로 항상 최적의 결과를 제공합니다.
+            100개 이상의 전문 스킬과 AI 최저비용 전략으로 항상 최적의 결과를 제공합니다.
           </p>
           <p
             style={{
@@ -522,9 +522,9 @@ export default function Home() {
       <section id="skills">
         <div className="container">
           <div className="section-header">
-            <span className="section-badge">44+ 스킬</span>
+            <span className="section-badge">100+ 스킬</span>
             <h2>전문 AI 스킬 생태계</h2>
-            <p>6개 카테고리의 44개 이상의 전문 스킬이 최적의 결과를 제공합니다</p>
+            <p>6개 카테고리의 100개 이상의 전문 스킬이 최적의 결과를 제공합니다</p>
           </div>
           <div className="grid-3">
             {SKILL_CATEGORIES.map((cat) => (
