@@ -545,6 +545,16 @@ function generateWelcomePage(): string {
         4. \uAD6C\uBB38\uBC88\uD638 \uC124\uC815 \uAD8C\uC7A5 \u2014 \uAE30\uAE30 \uC81C\uC5B4 \uC2DC \uBCF8\uC778 \uC7AC\uD655\uC778\uC73C\uB85C \uBCF4\uC548\uC774 \uAC15\uD654\uB429\uB2C8\uB2E4.<br>
         5. <a href="/backup" style="color:#667eea; font-weight:600;">\uBC31\uC5C5 \uC124\uC815</a> \u2014 AI \uAE30\uC5B5\uC744 \uC554\uD638\uD654 \uBC31\uC5C5\uD558\uACE0 12\uB2E8\uC5B4 \uBCF5\uAD6C\uD0A4\uB97C \uBC1C\uAE09\uBC1B\uC73C\uC138\uC694.
       </div>
+      <div style="margin-top:16px; display:flex; gap:10px;">
+        <a href="https://pf.kakao.com/moa-ai" target="_blank" rel="noopener noreferrer"
+           style="flex:1; display:block; text-align:center; padding:12px; background:#FEE500; color:#3C1E1E; border-radius:10px; font-weight:700; text-decoration:none; font-size:14px;">
+          \uCE74\uCE74\uC624\uD1A1\uC73C\uB85C \uC774\uB3D9
+        </a>
+        <button onclick="resetWelcome()"
+                style="flex:1; padding:12px; background:#f1f5f9; color:#475569; border:none; border-radius:10px; font-weight:600; cursor:pointer; font-size:14px;">
+          \uC0C8\uB85C \uC2DC\uC791\uD558\uAE30
+        </button>
+      </div>
     </div>
 
     <div class="footer">
@@ -576,9 +586,24 @@ function generateWelcomePage(): string {
     document.getElementById('signup-device').value = baseDeviceName;
     document.getElementById('login-username').focus();
 
-    // ── State ──
+    // ── State (with persistence to survive page refresh) ──
     var authResult = null;
     var loginCredentials = null; // { username, password } saved after step 1
+
+    // Restore previous auth state from sessionStorage (prevents login loop)
+    try {
+      var savedAuth = sessionStorage.getItem('moa_auth_result');
+      var savedCreds = sessionStorage.getItem('moa_login_creds');
+      if (savedAuth) authResult = JSON.parse(savedAuth);
+      if (savedCreds) loginCredentials = JSON.parse(savedCreds);
+    } catch(e) {}
+
+    function saveAuthState() {
+      try {
+        if (authResult) sessionStorage.setItem('moa_auth_result', JSON.stringify(authResult));
+        if (loginCredentials) sessionStorage.setItem('moa_login_creds', JSON.stringify(loginCredentials));
+      } catch(e) {}
+    }
 
     // ── Step navigation ──
     function showStep(stepId) {
@@ -627,6 +652,7 @@ function generateWelcomePage(): string {
       .then(function(data) {
         if (data.success) {
           loginCredentials = { username: username, password: password };
+          saveAuthState();
           // Show device registration step with de-duplicated name
           var existing = data.existingDevices || [];
           document.getElementById('device-welcome-user').textContent = username;
@@ -688,6 +714,7 @@ function generateWelcomePage(): string {
             username: loginCredentials.username,
             registeredAt: new Date().toISOString()
           };
+          saveAuthState();
           document.getElementById('success-title').textContent =
             data.isNewDevice !== false ? '\\uAE30\\uAE30 \\uB4F1\\uB85D \\uC644\\uB8CC!' : '\\uB85C\\uADF8\\uC778 \\uC131\\uACF5!';
           document.getElementById('success-detail').textContent =
@@ -755,6 +782,8 @@ function generateWelcomePage(): string {
             username: username,
             registeredAt: new Date().toISOString()
           };
+          loginCredentials = { username: username, password: password };
+          saveAuthState();
           document.getElementById('success-title').textContent = '\\uD68C\\uC6D0\\uAC00\\uC785 \\uC644\\uB8CC!';
           document.getElementById('success-detail').textContent =
             '\\uACC4\\uC815\\uC774 \\uC0DD\\uC131\\uB418\\uACE0 \\uAE30\\uAE30\\uAC00 \\uB4F1\\uB85D\\uB418\\uC5C8\\uC2B5\\uB2C8\\uB2E4.';
@@ -786,6 +815,23 @@ function generateWelcomePage(): string {
     document.getElementById('device-name').addEventListener('keydown', function(e) {
       if (e.key === 'Enter') handleDeviceRegister();
     });
+
+    // ── Auto-restore on page refresh (prevents login loop) ──
+    if (authResult && authResult.deviceToken) {
+      // Already registered — skip straight to success/complete view
+      document.getElementById('info-device').textContent = authResult.deviceName || '';
+      document.getElementById('info-platform').textContent = authResult.platform || detectedPlatform;
+      document.getElementById('info-status').textContent = '\\uB4F1\\uB85D \\uC644\\uB8CC';
+      document.getElementById('success-title').textContent = '\\uC124\\uC815 \\uC644\\uB8CC!';
+      document.getElementById('success-detail').textContent =
+        '\\uC774\\uBBF8 \\uAE30\\uAE30\\uAC00 \\uB4F1\\uB85D\\uB418\\uC5C8\\uC2B5\\uB2C8\\uB2E4. \\uC544\\uB798 \\uB2E8\\uACC4\\uB97C \\uB530\\uB77C\\uC8FC\\uC138\\uC694.';
+      showStep('step-success');
+      // Show helpful status
+      var actStatus = document.getElementById('activate-status');
+      if (actStatus) {
+        actStatus.textContent = '\\uC124\\uC815 \\uD30C\\uC77C\\uC774 \\uC774\\uBBF8 \\uB2E4\\uC6B4\\uB85C\\uB4DC\\uB418\\uC5C8\\uC2B5\\uB2C8\\uB2E4. \\uD30C\\uC77C\\uC744 \\uC2E4\\uD589\\uD588\\uB2E4\\uBA74 \\uCE74\\uCE74\\uC624\\uD1A1\\uC73C\\uB85C \\uC774\\uB3D9\\uD558\\uC138\\uC694.';
+      }
+    }
 
     // ── Activation file download ──
     function downloadActivation() {
@@ -838,6 +884,17 @@ function generateWelcomePage(): string {
       if (actStatus) {
         actStatus.textContent = '\\uB2E4\\uC6B4\\uB85C\\uB4DC\\uB41C ' + filename + ' \\uD30C\\uC77C\\uC744 \\uB354\\uBE14\\uD074\\uB9AD\\uD558\\uBA74 \\uC124\\uC815\\uC774 \\uC644\\uB8CC\\uB429\\uB2C8\\uB2E4!';
       }
+    }
+
+    // ── Reset (clear saved state and start fresh) ──
+    function resetWelcome() {
+      try {
+        sessionStorage.removeItem('moa_auth_result');
+        sessionStorage.removeItem('moa_login_creds');
+      } catch(e) {}
+      authResult = null;
+      loginCredentials = null;
+      showStep('step-login');
     }
   </script>
 </body>

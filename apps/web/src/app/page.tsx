@@ -1,6 +1,6 @@
 import Nav from "../components/Nav";
 import DownloadSection from "../components/DownloadSection";
-import ChatWidget from "../components/ChatWidget";
+import WebChatPanel from "../components/WebChatPanel";
 
 /* ============================================
    Data — Homepage content
@@ -443,6 +443,13 @@ export default function Home() {
               왜 MoA인가?
             </a>
           </div>
+        </div>
+      </section>
+
+      {/* == Web Chat (로그인 후 임베디드 채팅) == */}
+      <section id="web-chat" style={{ padding: "0 0 40px" }}>
+        <div className="container" style={{ maxWidth: "800px" }}>
+          <WebChatPanel />
         </div>
       </section>
 
@@ -1085,8 +1092,6 @@ export default function Home() {
         </div>
       </footer>
 
-      {/* == Floating Chat Widget == */}
-      <ChatWidget />
     </>
   );
 }

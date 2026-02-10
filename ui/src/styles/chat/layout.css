@@ -100,17 +100,17 @@
   stroke-linejoin: round;
 }
 
-/* Chat compose - sticky at bottom */
+/* Chat compose - sticky at bottom (KakaoTalk-style) */
 .chat-compose {
   position: sticky;
   bottom: 0;
   flex-shrink: 0;
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 8px;
   margin-top: auto; /* Push to bottom of flex container */
-  padding: 12px 4px 4px;
-  background: linear-gradient(to bottom, transparent, var(--bg) 20%);
+  padding: 10px 8px 8px;
+  background: linear-gradient(to bottom, transparent, var(--bg) 15%);
   z-index: 10;
 }
 
@@ -251,8 +251,8 @@
   height: 40px;
   min-height: 40px;
   max-height: 150px;
-  padding: 9px 12px;
-  border-radius: 8px;
+  padding: 9px 14px;
+  border-radius: 20px;
   overflow-y: auto;
   resize: none;
   white-space: pre-wrap;
@@ -282,6 +282,7 @@
   line-height: 1;
   white-space: nowrap;
   box-sizing: border-box;
+  border-radius: 20px;
 }
 
 /* Chat controls - moved to content-header area, left aligned */
