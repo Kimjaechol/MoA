@@ -11,6 +11,53 @@ export interface SkillApiKeyConfig {
   validatePattern?: RegExp;
 }
 
+/**
+ * Known LLM providers that a user may have configured.
+ * These are checked as a middle-tier fallback: when the dedicated skill
+ * API key is missing but the user has a paid LLM that can perform the task.
+ */
+export interface LlmProviderConfig {
+  /** Provider identifier */
+  id: string;
+  /** Human-readable provider name */
+  name: string;
+  /** Environment variable that holds the API key */
+  envVar: string;
+  /** Capabilities this provider supports */
+  capabilities: LlmCapability[];
+  /** Optional regex to validate key format */
+  validatePattern?: RegExp;
+}
+
+/** Capabilities that an LLM provider may support. */
+export type LlmCapability =
+  | "text-generation"
+  | "summarization"
+  | "web-search"
+  | "image-generation"
+  | "image-analysis"
+  | "audio-transcription"
+  | "code-generation"
+  | "translation"
+  | "long-context"
+  | "video-generation"
+  | "embedding";
+
+/** The three tiers of fallback resolution, in priority order. */
+export type FallbackTier = "skill-api" | "user-llm" | "free-fallback";
+
+/** Result of resolving the best available strategy for a skill. */
+export interface FallbackResolution {
+  /** Which tier was resolved */
+  tier: FallbackTier;
+  /** Description of the resolved strategy */
+  strategy: string;
+  /** Provider or tool name */
+  provider: string;
+  /** The env var that is being used (if any) */
+  envVar?: string;
+}
+
 export interface MoaSkillDefinition {
   id: string;
   name: string;

@@ -17,6 +17,76 @@ metadata:
 
 ---
 
+## 🔄 MoA 3-Tier 폴백 전략
+
+MoA는 작업 수행 시 **3단계 우선순위**로 최적의 도구를 자동 선택합니다:
+
+```
+┌──────────────────────────────────────────────────────────────┐
+│  MoA 3-Tier Fallback Resolution                              │
+│                                                              │
+│  1️⃣ 전용 스킬 API (최우선)                                    │
+│     해당 작업에 특화된 전용 API key가 있으면 사용               │
+│     예: 웹 검색 → BRAVE_SEARCH_API_KEY                        │
+│                                                              │
+│         ↓ 전용 API key 없으면                                 │
+│                                                              │
+│  2️⃣ 이용자의 유료 LLM (차선)                                  │
+│     이용자가 이미 구독 중인 유료 LLM이 해당 작업을 수행할       │
+│     수 있고, 무료 도구보다 뛰어나면 유료 LLM을 사용             │
+│     예: 웹 검색 → OpenAI GPT-5 (web-search 지원)              │
+│     예: 이미지 생성 → OpenAI DALL-E (OPENAI_API_KEY)          │
+│     예: 요약 → Claude (ANTHROPIC_API_KEY)                     │
+│                                                              │
+│         ↓ 유료 LLM도 없거나 해당 작업 지원 안 하면             │
+│                                                              │
+│  3️⃣ 무료 폴백 도구 (최후)                                     │
+│     무료 오픈소스 도구로 처리 (품질은 낮지만 항상 동작)          │
+│     예: 웹 검색 → DuckDuckGo (무료)                            │
+│     예: 이미지 → Ollama 로컬 모델                              │
+│     예: 요약 → --extract-only 텍스트 추출                      │
+│                                                              │
+│  ⚠️ 어떤 경우에도 "할 수 없다"고 거절하지 않습니다.             │
+└──────────────────────────────────────────────────────────────┘
+```
+
+### 자동 감지되는 유료 LLM 목록
+
+MoA는 이용자가 이미 설정한 유료 LLM을 자동으로 감지합니다:
+
+| LLM 제공자 | 환경변수 | 대체 가능 작업 |
+|-----------|---------|---------------|
+| **OpenAI** (GPT-5/DALL-E/Whisper/Sora) | `OPENAI_API_KEY` | 텍스트, 요약, 검색, 이미지, 음성, 코드, 번역, 비디오 |
+| **Anthropic** (Claude) | `ANTHROPIC_API_KEY` | 텍스트, 요약, 코드, 번역, 이미지 분석 |
+| **Google Gemini** | `GEMINI_API_KEY` | 텍스트, 요약, 이미지, 음성, 코드, 번역, 비디오, 임베딩 |
+| **xAI** (Grok) | `XAI_API_KEY` | 텍스트, 요약, 검색, 코드, 번역, 이미지 |
+| **DeepSeek** | `DEEPSEEK_API_KEY` | 텍스트, 요약, 코드, 번역 |
+| **Mistral AI** | `MISTRAL_API_KEY` | 텍스트, 요약, 코드, 번역, 임베딩 |
+| **Groq** (고속 추론) | `GROQ_API_KEY` | 텍스트, 요약, 코드, 번역, 음성 변환 |
+
+### 실제 예시
+
+**예시 1: 웹 검색 요청**
+- `BRAVE_SEARCH_API_KEY` 있음 → **Brave Search API** 사용 (최상의 프라이버시 검색)
+- 없지만 `OPENAI_API_KEY` 있음 → **GPT-5 web-search** 사용 (AI 기반 검색)
+- 둘 다 없음 → **DuckDuckGo** 무료 검색 사용
+
+**예시 2: 이미지 생성 요청**
+- `FAL_KEY` 있음 → **fal.ai FLUX** 사용 (최고 품질)
+- 없지만 `GEMINI_API_KEY` 있음 → **Gemini Image** 사용 (매우 좋은 품질)
+- 없지만 `OPENAI_API_KEY` 있음 → **DALL-E** 사용 (좋은 품질)
+- 모두 없음 → **Ollama 로컬** Stable Diffusion 사용 (기본 품질, 느림)
+
+**예시 3: 문서 요약 요청**
+- `PERPLEXITY_API_KEY` 있음 → **Perplexity** 사용 (소스 인용 포함)
+- 없지만 `ANTHROPIC_API_KEY` 있음 → **Claude** 사용 (정밀 요약)
+- 없지만 `GEMINI_API_KEY` 있음 → **Gemini** 사용 (1M 토큰 컨텍스트)
+- 모두 없음 → **텍스트 추출 모드** 사용
+
+> **핵심**: 이용자가 이미 구독하고 있는 유료 LLM이 있다면, 무료 도구로 넘어가기 전에 해당 LLM을 우선 활용합니다. 이렇게 하면 이용자가 이미 지불하고 있는 서비스의 가치를 최대한 활용할 수 있습니다.
+
+---
+
 ## 📊 한눈에 보는 API Key 효과 비교
 
 | 기능 | API key 없음 (무료) | API key 있음 (유료) | 성능 차이 |
