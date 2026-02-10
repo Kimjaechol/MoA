@@ -2,99 +2,253 @@ import Nav from "../components/Nav";
 import DownloadSection from "../components/DownloadSection";
 
 /* ============================================
-   Data
+   Data — Homepage content
    ============================================ */
+
+const STATS = [
+  { value: "44+", label: "AI 스킬" },
+  { value: "15", label: "메신저 채널" },
+  { value: "7", label: "LLM 프로바이더" },
+  { value: "E2E", label: "암호화 보안" },
+];
+
+const WHY_MOA = [
+  {
+    icon: "\uD83D\uDCAC",
+    title: "카카오톡으로 AI를 부르세요",
+    desc: "복잡한 터미널이나 CLI가 필요 없습니다. 매일 사용하는 카카오톡에서 메시지를 보내듯 AI에게 지시하세요. 누구나 쉽게, 바로 사용할 수 있습니다.",
+    highlight: "터미널 대신 카카오톡",
+  },
+  {
+    icon: "\uD83D\uDD12",
+    title: "내 기기에 안심하고 설치",
+    desc: "SHA-256 무결성 검증과 E2E 암호화로 보호됩니다. 자기학습 엔진은 네트워크 호출 없이 로컬에서만 동작하며, 동적 코드 실행이 없어 안전합니다.",
+    highlight: "SHA-256 + E2E 암호화",
+  },
+  {
+    icon: "\uD83C\uDFAF",
+    title: "44+ 전문 스킬로 정확한 결과",
+    desc: "범용 AI가 아닌 작업별 전문 스킬이 최적의 결과를 제공합니다. 웹 검색, 이미지 생성, 문서 작성, 데이터 분석까지 전문 도구가 자동으로 선택됩니다.",
+    highlight: "범용이 아닌 전문 스킬",
+  },
+  {
+    icon: "\uD83E\uDDE0",
+    title: "쓸수록 똑똑해지는 자기 학습",
+    desc: "사용자의 피드백을 기억하고 학습합니다. 교정 패턴, 선호 스타일, 자주 쓰는 명령을 자동으로 파악하여 점점 더 정확한 응답을 제공합니다.",
+    highlight: "피드백 학습 엔진",
+  },
+];
 
 const FEATURES = [
   {
     icon: "\uD83E\uDDE0",
-    title: "\uC30D\uB465\uC774 AI",
-    desc: "\uBAA8\uB4E0 \uAE30\uAE30\uC5D0\uC11C \uB3D9\uC77C\uD55C AI \uAE30\uC5B5\uACFC \uB9E5\uB77D\uC744 \uACF5\uC720\uD569\uB2C8\uB2E4. \uB178\uD2B8\uBD81\uC5D0\uC11C \uC2DC\uC791\uD55C \uB300\uD654\uB97C \uD734\uB300\uD3F0\uC5D0\uC11C \uC774\uC5B4\uAC00\uC138\uC694.",
+    title: "쌍둥이 AI 메모리",
+    desc: "모든 기기에서 동일한 AI 기억과 맥락을 공유합니다. 노트북에서 시작한 대화를 휴대폰에서 이어가세요.",
   },
   {
     icon: "\uD83D\uDCAC",
-    title: "\uCE74\uCE74\uC624\uD1A1 \uC6D0\uACA9\uC81C\uC5B4",
-    desc: "\uCE74\uCE74\uC624\uD1A1\uC73C\uB85C \uC9D1/\uC0AC\uBB34\uC2E4 PC\uC5D0 \uBA85\uB839\uC744 \uB0B4\uB9AC\uC138\uC694. \uD30C\uC77C \uC804\uC1A1, \uC571 \uC2E4\uD589, \uC2A4\uD06C\uB9B0\uC0F7 \uBAA8\uB450 \uAC00\uB2A5\uD569\uB2C8\uB2E4.",
+    title: "카카오톡 원격제어",
+    desc: "카카오톡으로 집/사무실 PC에 명령을 내리세요. 파일 전송, 앱 실행, 스크린샷 모두 가능합니다.",
   },
   {
     icon: "\uD83E\uDD16",
-    title: "AI \uB300\uD654",
-    desc: "GPT-4o, Claude, Gemini \uB4F1 \uCD5C\uC2E0 AI \uBAA8\uB378\uACFC \uC790\uC5F0\uC2A4\uB7EC\uC6B4 \uB300\uD654. \uCF54\uB4DC \uC791\uC131, \uBC88\uC5ED, \uC694\uC57D\uC744 \uD55C\uBC88\uC5D0.",
+    title: "멀티 AI 대화",
+    desc: "GPT-4o, Claude, Gemini 등 7개 LLM 프로바이더를 자유롭게 전환. 작업에 가장 적합한 AI가 자동 선택됩니다.",
   },
   {
     icon: "\uD83D\uDCC1",
-    title: "\uD30C\uC77C \uAD00\uB9AC",
-    desc: "\uAE30\uAE30 \uAC04 \uD30C\uC77C\uC744 \uC790\uC720\uB86D\uAC8C \uC804\uC1A1\uD558\uACE0 \uAD00\uB9AC\uD558\uC138\uC694. \uCE74\uCE74\uC624\uD1A1\uC73C\uB85C \uD30C\uC77C\uC744 \uBCF4\uB0B4\uBA74 PC\uC5D0 \uC800\uC7A5\uB429\uB2C8\uB2E4.",
+    title: "파일 관리",
+    desc: "기기 간 파일을 자유롭게 전송하고 관리하세요. 카카오톡으로 파일을 보내면 PC에 저장됩니다.",
   },
   {
     icon: "\uD83C\uDF99\uFE0F",
-    title: "\uC74C\uC131 AI",
-    desc: "\uC74C\uC131\uC73C\uB85C AI\uC640 \uB300\uD654\uD558\uC138\uC694. \uBE44\uB3D9\uAE30 \uC74C\uC131, \uC2E4\uC2DC\uAC04 \uC74C\uC131, \uB2E4\uAD6D\uC5B4 \uD1B5\uC5ED\uC744 \uC9C0\uC6D0\uD569\uB2C8\uB2E4.",
+    title: "음성 AI",
+    desc: "음성으로 AI와 대화하세요. 비동기 음성, 실시간 음성, 다국어 통역을 지원합니다.",
   },
   {
     icon: "\uD83D\uDD12",
-    title: "E2E \uC554\uD638\uD654 \uBCF4\uC548",
-    desc: "\uBAA8\uB4E0 \uD1B5\uC2E0\uC740 \uC885\uB2E8 \uAC04 \uC554\uD638\uD654\uB85C \uBCF4\uD638\uB429\uB2C8\uB2E4. \uC5EC\uB7EC\uBD84\uC758 \uB370\uC774\uD130\uB294 \uC548\uC804\uD569\uB2C8\uB2E4.",
+    title: "E2E 암호화 보안",
+    desc: "모든 통신은 종단 간 암호화로 보호됩니다. SHA-256 무결성 검증으로 코드 변조를 실시간 탐지합니다.",
+  },
+  {
+    icon: "\uD83E\uDDE9",
+    title: "3단계 스마트 폴백",
+    desc: "유료 스킬 API → 사용자의 유료 LLM → 무료 대안. 항상 최적의 도구가 자동으로 선택됩니다.",
+  },
+  {
+    icon: "\uD83E\uDDEC",
+    title: "자기 학습 엔진",
+    desc: "피드백 수집, 컨텍스트 최적화, 무결성 검증. AI가 사용자에 맞게 진화하면서도 안전성을 유지합니다.",
+  },
+];
+
+const SKILL_CATEGORIES = [
+  {
+    icon: "\uD83D\uDD0D",
+    name: "검색 & 정보",
+    color: "#667eea",
+    skills: [
+      "Brave Search",
+      "Perplexity AI",
+      "Google Search",
+      "Serper API",
+      "뉴스 수집기",
+      "날씨",
+      "미세먼지",
+      "공휴일",
+    ],
+  },
+  {
+    icon: "\uD83D\uDCCB",
+    name: "생산성 & 업무",
+    color: "#48bb78",
+    skills: [
+      "Notion",
+      "Airtable",
+      "Slack API",
+      "GitHub",
+      "Google 캘린더",
+      "카카오 캘린더",
+      "Parallel AI",
+      "요약",
+    ],
+  },
+  {
+    icon: "\uD83C\uDFA8",
+    name: "미디어 생성",
+    color: "#f093fb",
+    skills: [
+      "FAL AI 이미지",
+      "Gamma 프레젠테이션",
+      "AudioPod 팟캐스트",
+      "Kokoro TTS",
+      "Imagen 3 포트레이트",
+      "Sora 2 영상",
+      "FFmpeg 편집",
+      "텍스트-이미지",
+    ],
+  },
+  {
+    icon: "\uD83E\uDD16",
+    name: "AI & 머신러닝",
+    color: "#ecc94b",
+    skills: [
+      "Gemini",
+      "HuggingFace 학습",
+      "Replicate API",
+      "ChromaDB 메모리",
+      "HF TrackIO",
+      "Nano Banana Pro",
+      "임베딩",
+      "장문 분석",
+    ],
+  },
+  {
+    icon: "\uD83D\uDEE1\uFE0F",
+    name: "보안 & 시스템",
+    color: "#fc8181",
+    skills: [
+      "보안 점검",
+      "홈 어시스턴트",
+      "시스템 모니터링",
+      "스포츠 일정",
+      "내비게이션",
+      "GOG 게임",
+      "ClawHub",
+      "McPorter",
+    ],
+  },
+  {
+    icon: "\uD83E\uDDEC",
+    name: "자기 학습",
+    color: "#9f7aea",
+    skills: [
+      "피드백 학습",
+      "컨텍스트 최적화",
+      "무결성 검증",
+      "3단계 폴백",
+      "교정 패턴 인식",
+      "에러 복구 학습",
+      "토큰 최적화",
+      "핵심 구문 추출",
+    ],
+  },
+];
+
+const FALLBACK_TIERS = [
+  {
+    tier: "1",
+    icon: "\uD83C\uDFC6",
+    title: "전용 유료 API",
+    desc: "Brave Search, Perplexity, FAL AI 등 작업에 최적화된 전용 API를 우선 사용합니다.",
+    color: "#667eea",
+    example: "웹 검색 → Brave Search API (가장 정확)",
+  },
+  {
+    tier: "2",
+    icon: "\uD83E\uDDE0",
+    title: "사용자의 유료 LLM",
+    desc: "전용 API가 없으면 이미 등록된 GPT-4, Claude, Gemini 등 유료 LLM이 처리합니다.",
+    color: "#48bb78",
+    example: "이미지 분석 → OpenAI GPT-4 Vision",
+  },
+  {
+    tier: "3",
+    icon: "\uD83C\uDD93",
+    title: "무료 대안",
+    desc: "유료 도구가 없어도 걱정 마세요. DuckDuckGo, 내장 요약 등 무료 대안이 준비되어 있습니다.",
+    color: "#ecc94b",
+    example: "웹 검색 → DuckDuckGo (무료)",
   },
 ];
 
 const STEPS = [
   {
     num: "\u2460",
-    title: "MoA \uC124\uCE58",
-    desc: "Windows, macOS, Linux, Android, iOS\uC5D0\uC11C MoA\uB97C \uC124\uCE58\uD558\uC138\uC694.",
+    title: "MoA 설치",
+    desc: "Windows, macOS, Linux, Android, iOS에서 1분 안에 설치 완료.",
   },
   {
     num: "\u2461",
-    title: "\uAE30\uAE30 \uB4F1\uB85D",
-    desc: "6\uC790\uB9AC \uCF54\uB4DC\uB85C \uAE30\uAE30\uB97C \uAC04\uD3B8\uD558\uAC8C \uC5F0\uACB0\uD558\uC138\uC694.",
+    title: "기기 등록",
+    desc: "6자리 코드로 기기를 간편하게 연결. 여러 기기를 하나로 묶으세요.",
   },
   {
     num: "\u2462",
-    title: "\uCE74\uCE74\uC624\uD1A1\uC5D0\uC11C \uBA85\uB839",
-    desc: "\uCE74\uCE74\uC624\uD1A1 \uCC44\uD305\uBC29\uC5D0\uC11C AI\uC5D0\uAC8C \uBA85\uB839\uC744 \uB0B4\uB9AC\uBA74 \uB05D!",
+    title: "카카오톡에서 시작",
+    desc: "카카오톡에서 AI에게 메시지를 보내면 끝! 바로 사용할 수 있습니다.",
   },
 ];
 
 const USE_CASES = [
   {
     icon: "\uD83D\uDC54",
-    role: "\uC9C1\uC7A5\uC778",
-    title: "\uD1F4\uADFC \uD6C4 \uD30C\uC77C \uD655\uC778",
-    desc: "\uD68C\uC0AC PC\uC5D0 \uB450\uACE0 \uC628 \uD30C\uC77C\uC744 \uCE74\uCE74\uC624\uD1A1\uC73C\uB85C \uBC14\uB85C \uBC1B\uC544\uBCF4\uC138\uC694. \uAE09\uD55C \uBB38\uC11C\uB3C4 \uC9D1\uC5D0\uC11C \uD655\uC778 \uAC00\uB2A5.",
+    role: "직장인",
+    title: "퇴근 후 원격 업무",
+    desc: "카카오톡으로 회사 PC의 파일을 받아보고, 이메일을 요약하고, 보고서 초안을 AI가 작성해줍니다. 급한 업무도 집에서 해결.",
   },
   {
     icon: "\uD83D\uDCBB",
-    role: "\uAC1C\uBC1C\uC790",
-    title: "\uC6D0\uACA9 \uBE4C\uB4DC/\uBC30\uD3EC",
-    desc: "\uC678\uBD80\uC5D0\uC11C \uCE74\uCE74\uC624\uD1A1\uC73C\uB85C \uC11C\uBC84 \uC0C1\uD0DC \uD655\uC778, \uBE4C\uB4DC \uC2E4\uD589, \uB85C\uADF8 \uC870\uD68C\uB97C \uD55C\uBC88\uC5D0.",
+    role: "개발자",
+    title: "코드 리뷰 & 배포",
+    desc: "GitHub 스킬로 PR 확인, 코드 분석, 빌드 실행까지. HuggingFace로 ML 모델 학습 상태도 실시간 모니터링.",
   },
   {
     icon: "\uD83C\uDF93",
-    role: "\uB300\uD559\uC0DD",
-    title: "\uAE30\uAE30 \uAC04 \uB3D9\uAE30\uD654",
-    desc: "\uB178\uD2B8\uBD81, \uD0DC\uBE14\uB9BF, \uD734\uB300\uD3F0 \uAC04 \uD544\uAE30\uC640 \uC790\uB8CC\uB97C \uC790\uC720\uB86D\uAC8C \uC774\uB3D9\uD558\uC138\uC694.",
+    role: "학생",
+    title: "학습 도우미",
+    desc: "Perplexity로 논문 검색, Gamma로 발표 자료 제작, 음성 AI로 외국어 학습. 모든 기기에서 이어서 공부.",
   },
   {
     icon: "\uD83C\uDFA8",
-    role: "\uD504\uB9AC\uB79C\uC11C",
-    title: "\uC791\uC5C5 \uC694\uC57D \uBC0F \uAD00\uB9AC",
-    desc: "\uC5EC\uB7EC \uD074\uB77C\uC774\uC5B8\uD2B8 \uC791\uC5C5\uC744 AI\uAC00 \uC790\uB3D9\uC73C\uB85C \uC694\uC57D\uD558\uACE0 \uC77C\uC815\uC744 \uAD00\uB9AC\uD574\uC90D\uB2C8\uB2E4.",
+    role: "크리에이터",
+    title: "콘텐츠 제작",
+    desc: "FAL AI로 이미지 생성, AudioPod로 팟캐스트 제작, Kokoro TTS로 나레이션. AI가 창작 파트너가 됩니다.",
   },
 ];
 
-const SKILLS = [
-  { icon: "\u26C5", name: "\uB0A0\uC528" },
-  { icon: "\uD83D\uDCC5", name: "\uAD6C\uAE00 \uCE98\uB9B0\uB354" },
-  { icon: "\uD83D\uDCC6", name: "\uCE74\uCE74\uC624 \uCE98\uB9B0\uB354" },
-  { icon: "\u26BD", name: "\uC2A4\uD3EC\uCE20 \uC77C\uC815" },
-  { icon: "\uD83C\uDF89", name: "\uACF5\uD734\uC77C" },
-  { icon: "\uD83C\uDF2B\uFE0F", name: "\uBBF8\uC138\uBA3C\uC9C0" },
-  { icon: "\uD83D\uDDFA\uFE0F", name: "\uB0B4\uBE44\uAC8C\uC774\uC158" },
-  { icon: "\uD83C\uDFA8", name: "\uCC3D\uC791 \uB3C4\uAD6C" },
-];
-
 const CHANNELS = [
+  { name: "KakaoTalk", emoji: "\uD83D\uDFE1" },
   { name: "Telegram", emoji: "\u2708\uFE0F" },
   { name: "Discord", emoji: "\uD83C\uDFAE" },
   { name: "Slack", emoji: "\uD83D\uDCAC" },
@@ -109,27 +263,26 @@ const CHANNELS = [
   { name: "Twitch", emoji: "\uD83D\uDFE3" },
   { name: "Nostr", emoji: "\uD83E\uDD18" },
   { name: "Zalo", emoji: "\uD83D\uDFE6" },
-  { name: "KakaoTalk", emoji: "\uD83D\uDFE1" },
 ];
 
 const VOICE_MODES = [
   {
     icon: "\uD83C\uDF99\uFE0F",
-    title: "\uBE44\uB3D9\uAE30 \uC74C\uC131",
-    latency: "2\u20134\uCD08",
-    desc: "\uC74C\uC131 \uBA54\uC2DC\uC9C0\uB97C \uBCF4\uB0B4\uBA74 AI\uAC00 \uC74C\uC131\uC73C\uB85C \uB2F5\uBCC0\uD569\uB2C8\uB2E4. \uCE74\uCE74\uC624\uD1A1, \uD154\uB808\uADF8\uB7A8 \uB4F1\uC5D0\uC11C \uC0AC\uC6A9 \uAC00\uB2A5.",
+    title: "비동기 음성",
+    latency: "2\u20134초",
+    desc: "음성 메시지를 보내면 AI가 음성으로 답변합니다. 카카오톡, 텔레그램 등에서 사용 가능.",
   },
   {
     icon: "\uD83D\uDD0A",
-    title: "\uC2E4\uC2DC\uAC04 \uC74C\uC131",
+    title: "실시간 음성",
     latency: "200\u2013500ms",
-    desc: "\uC804\uD654 \uD1B5\uD654\uCC98\uB7FC \uC2E4\uC2DC\uAC04\uC73C\uB85C AI\uC640 \uB300\uD654\uD558\uC138\uC694. \uCD08\uC800\uC9C0\uC5F0 \uC74C\uC131 \uC751\uB2F5.",
+    desc: "전화 통화처럼 실시간으로 AI와 대화하세요. 초저지연 음성 응답.",
   },
   {
     icon: "\uD83C\uDF0D",
-    title: "\uD1B5\uC5ED",
-    latency: "\uB2E4\uAD6D\uC5B4",
-    desc: "\uC2E4\uC2DC\uAC04 \uB2E4\uAD6D\uC5B4 \uD1B5\uC5ED\uC744 \uC9C0\uC6D0\uD569\uB2C8\uB2E4. \uC5B8\uC5B4 \uC7A5\uBCBD \uC5C6\uC774 \uC18C\uD1B5\uD558\uC138\uC694.",
+    title: "다국어 통역",
+    latency: "실시간",
+    desc: "실시간 다국어 통역을 지원합니다. 언어 장벽 없이 소통하세요.",
   },
 ];
 
@@ -137,43 +290,48 @@ const PRICING = [
   {
     name: "Free",
     price: "0",
-    period: "\uBCA0\uD0C0 \uAE30\uAC04 30\uC77C",
-    badge: "\uBCA0\uD0C0",
+    period: "베타 기간 30일",
+    badge: "베타",
     features: [
-      "\uAE30\uAE30 1\uB300 \uC5F0\uACB0",
-      "AI \uB300\uD654 \uC77C 50\uD68C",
-      "\uAE30\uBCF8 \uC2A4\uD0AC",
-      "\uCE74\uCE74\uC624\uD1A1 \uC5F0\uB3D9",
+      "기기 1대 연결",
+      "AI 대화 일 50회",
+      "기본 스킬 (날씨, 캘린더 등)",
+      "카카오톡 연동",
+      "무료 폴백 도구",
     ],
   },
   {
     name: "Basic",
     price: "9,900",
-    period: "\uC6D0/\uC6D4",
-    badge: "\uC778\uAE30",
+    period: "원/월",
+    badge: "인기",
     highlight: true,
     features: [
-      "\uAE30\uAE30 3\uB300 \uC5F0\uACB0",
-      "AI \uB300\uD654 \uBB34\uC81C\uD55C",
-      "\uBAA8\uB4E0 \uC2A4\uD0AC \uC0AC\uC6A9",
-      "\uD30C\uC77C \uC804\uC1A1 \uBB34\uC81C\uD55C",
-      "\uC74C\uC131 AI",
-      "\uC6B0\uC120 \uC9C0\uC6D0",
+      "기기 3대 연결",
+      "AI 대화 무제한",
+      "44+ 모든 스킬 사용",
+      "파일 전송 무제한",
+      "음성 AI (비동기)",
+      "자기 학습 엔진",
+      "3단계 스마트 폴백",
+      "우선 지원",
     ],
   },
   {
     name: "Pro",
     price: "29,900",
-    period: "\uC6D0/\uC6D4",
+    period: "원/월",
     badge: null,
     features: [
-      "\uAE30\uAE30 \uBB34\uC81C\uD55C \uC5F0\uACB0",
-      "AI \uB300\uD654 \uBB34\uC81C\uD55C",
-      "\uBAA8\uB4E0 \uC2A4\uD0AC + API",
-      "\uD30C\uC77C \uC804\uC1A1 \uBB34\uC81C\uD55C",
-      "\uC2E4\uC2DC\uAC04 \uC74C\uC131 + \uD1B5\uC5ED",
-      "\uC804\uB2F4 \uB9E4\uB2C8\uC800",
-      "\uCEE4\uC2A4\uD140 \uC2A4\uD0AC \uAC1C\uBC1C",
+      "기기 무제한 연결",
+      "AI 대화 무제한",
+      "모든 스킬 + 커스텀 API",
+      "파일 전송 무제한",
+      "실시간 음성 + 통역",
+      "자기 학습 엔진 (고급)",
+      "3단계 스마트 폴백",
+      "전담 매니저",
+      "커스텀 스킬 개발",
     ],
   },
 ];
@@ -187,7 +345,7 @@ export default function Home() {
     <>
       <Nav />
 
-      {/* ── Hero ── */}
+      {/* == Hero == */}
       <section
         id="hero"
         style={{
@@ -203,7 +361,7 @@ export default function Home() {
       >
         <div className="container animate-in">
           <span className="section-badge" style={{ marginBottom: "24px" }}>
-            Next-Gen AI Agent
+            Next-Gen AI Agent &middot; 44+ Skills
           </span>
           <h1
             style={{
@@ -213,7 +371,7 @@ export default function Home() {
               lineHeight: 1.2,
             }}
           >
-            {"\uBAA8\uB4E0 \uAE30\uAE30\uB97C "}
+            {"카카오톡으로 "}
             <span
               style={{
                 background: "var(--gradient)",
@@ -221,49 +379,111 @@ export default function Home() {
                 WebkitTextFillColor: "transparent",
               }}
             >
-              {"\uD558\uB098\uC758 AI"}
+              AI를 부르세요
             </span>
-            {"\uB85C \uC5F0\uACB0\uD558\uC138\uC694"}
           </h1>
           <p
             style={{
               fontSize: "clamp(1rem, 2vw, 1.25rem)",
               color: "var(--text-muted)",
-              maxWidth: "640px",
-              margin: "0 auto 40px",
+              maxWidth: "700px",
+              margin: "0 auto 20px",
             }}
           >
-            MoA\uB294 \uB178\uD2B8\uBD81, \uD0DC\uBE14\uB9BF, \uB370\uC2A4\uD06C\uD1B1\uC744 \uD558\uB098\uC758 AI\uB85C \uC5F0\uACB0\uD558\uB294 \uCC28\uC138\uB300 AI \uC5D0\uC774\uC804\uD2B8\uC785\uB2C8\uB2E4. \uCE74\uCE74\uC624\uD1A1\uC5D0\uC11C \uC6D0\uACA9 \uC81C\uC5B4, AI \uB300\uD654, \uD30C\uC77C \uAD00\uB9AC\uB97C \uD55C\uBC88\uC5D0.
+            MoA는 카카오톡 한 줄로 AI를 제어하는 차세대 에이전트입니다.
+            44개 이상의 전문 스킬, 자기 학습 엔진, 3단계 스마트 폴백으로
+            항상 최적의 결과를 제공합니다.
+          </p>
+          <p
+            style={{
+              fontSize: "0.95rem",
+              color: "var(--text-muted)",
+              maxWidth: "600px",
+              margin: "0 auto 40px",
+              opacity: 0.8,
+            }}
+          >
+            터미널이 아닌 카카오톡에서. 복잡한 설정 없이. 누구나 바로 시작할 수 있습니다.
           </p>
           <div style={{ display: "flex", gap: "16px", justifyContent: "center", flexWrap: "wrap" }}>
             <a href="#download" className="btn btn-primary btn-lg">
-              {"\uC9C0\uAE08 \uB2E4\uC6B4\uB85C\uB4DC"}
+              무료로 시작하기
             </a>
-            <a href="#features" className="btn btn-outline btn-lg">
-              {"\uC790\uC138\uD788 \uC54C\uC544\uBCF4\uAE30"}
+            <a href="#why-moa" className="btn btn-outline btn-lg">
+              왜 MoA인가?
             </a>
           </div>
         </div>
       </section>
 
-      {/* ── Features ── */}
-      <section id="features">
+      {/* == Stats Bar == */}
+      <section
+        style={{
+          padding: "40px 0",
+          background: "var(--bg-card)",
+          borderTop: "1px solid var(--border)",
+          borderBottom: "1px solid var(--border)",
+        }}
+      >
+        <div className="container">
+          <div className="stats-bar">
+            {STATS.map((s) => (
+              <div key={s.label} className="stat-item">
+                <span className="stat-value">{s.value}</span>
+                <span className="stat-label">{s.label}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* == Why MoA == */}
+      <section id="why-moa">
         <div className="container">
           <div className="section-header">
-            <span className="section-badge">{"\uAE30\uB2A5"}</span>
-            <h2>{"\uD558\uB098\uC758 AI\uB85C \uBAA8\uB4E0 \uAC83\uC744"}</h2>
-            <p>MoA\uAC00 \uC81C\uACF5\uD558\uB294 \uD575\uC2EC \uAE30\uB2A5\uB4E4\uC744 \uC0B4\uD3B4\uBCF4\uC138\uC694</p>
+            <span className="section-badge">왜 MoA인가</span>
+            <h2>다른 AI 도구와는 차원이 다릅니다</h2>
+            <p>
+              CLI 기반 AI 도구들과 달리, MoA는 누구나 안전하게 사용할 수 있도록 설계되었습니다
+            </p>
           </div>
-          <div className="grid-3">
+          <div className="grid-2">
+            {WHY_MOA.map((item) => (
+              <div className="card why-card" key={item.title}>
+                <div style={{ fontSize: "2.5rem", marginBottom: "16px" }}>
+                  {item.icon}
+                </div>
+                <h3 style={{ fontSize: "1.25rem", marginBottom: "8px" }}>
+                  {item.title}
+                </h3>
+                <p style={{ color: "var(--text-muted)", fontSize: "0.95rem", marginBottom: "12px" }}>
+                  {item.desc}
+                </p>
+                <span className="tag">{item.highlight}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* == Features == */}
+      <section id="features" style={{ background: "var(--bg-card)" }}>
+        <div className="container">
+          <div className="section-header">
+            <span className="section-badge">핵심 기능</span>
+            <h2>하나의 AI로 모든 것을</h2>
+            <p>MoA가 제공하는 8가지 핵심 기능을 살펴보세요</p>
+          </div>
+          <div className="grid-4">
             {FEATURES.map((f) => (
               <div className="card" key={f.title}>
                 <div style={{ fontSize: "2.5rem", marginBottom: "16px" }}>
                   {f.icon}
                 </div>
-                <h3 style={{ fontSize: "1.25rem", marginBottom: "8px" }}>
+                <h3 style={{ fontSize: "1.1rem", marginBottom: "8px" }}>
                   {f.title}
                 </h3>
-                <p style={{ color: "var(--text-muted)", fontSize: "0.95rem" }}>
+                <p style={{ color: "var(--text-muted)", fontSize: "0.9rem" }}>
                   {f.desc}
                 </p>
               </div>
@@ -272,16 +492,133 @@ export default function Home() {
         </div>
       </section>
 
-      {/* ── How It Works ── */}
+      {/* == Skills Showcase == */}
+      <section id="skills">
+        <div className="container">
+          <div className="section-header">
+            <span className="section-badge">44+ 스킬</span>
+            <h2>전문 AI 스킬 생태계</h2>
+            <p>6개 카테고리의 44개 이상의 전문 스킬이 최적의 결과를 제공합니다</p>
+          </div>
+          <div className="grid-3">
+            {SKILL_CATEGORIES.map((cat) => (
+              <div className="card skill-category-card" key={cat.name}>
+                <div style={{ display: "flex", alignItems: "center", gap: "12px", marginBottom: "20px" }}>
+                  <span style={{ fontSize: "2rem" }}>{cat.icon}</span>
+                  <h3 style={{ fontSize: "1.15rem" }}>{cat.name}</h3>
+                </div>
+                <div className="skill-tags">
+                  {cat.skills.map((skill) => (
+                    <span
+                      key={skill}
+                      className="skill-tag"
+                      style={{ borderColor: `${cat.color}40`, color: cat.color }}
+                    >
+                      {skill}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* == 3-Tier Smart Fallback == */}
+      <section id="fallback" style={{ background: "var(--bg-card)" }}>
+        <div className="container">
+          <div className="section-header">
+            <span className="section-badge">스마트 폴백</span>
+            <h2>항상 최적의 도구를 자동 선택</h2>
+            <p>유료 API가 없어도 걱정 마세요. 3단계로 최선의 결과를 보장합니다</p>
+          </div>
+          <div className="grid-3">
+            {FALLBACK_TIERS.map((tier) => (
+              <div className="card fallback-card" key={tier.tier}>
+                <div className="fallback-tier-badge" style={{ background: `${tier.color}20`, color: tier.color, border: `1px solid ${tier.color}40` }}>
+                  Tier {tier.tier}
+                </div>
+                <div style={{ fontSize: "2.5rem", margin: "16px 0", textAlign: "center" }}>
+                  {tier.icon}
+                </div>
+                <h3 style={{ fontSize: "1.15rem", marginBottom: "8px", textAlign: "center" }}>
+                  {tier.title}
+                </h3>
+                <p style={{ color: "var(--text-muted)", fontSize: "0.9rem", textAlign: "center", marginBottom: "16px" }}>
+                  {tier.desc}
+                </p>
+                <div className="fallback-example" style={{ borderColor: `${tier.color}30` }}>
+                  <span style={{ fontSize: "0.8rem", color: "var(--text-muted)" }}>예시:</span>
+                  <span style={{ fontSize: "0.85rem", color: tier.color }}>{tier.example}</span>
+                </div>
+              </div>
+            ))}
+          </div>
+          <div style={{ textAlign: "center", marginTop: "40px" }}>
+            <p style={{ color: "var(--text-muted)", fontSize: "0.95rem", maxWidth: "600px", margin: "0 auto" }}>
+              OpenAI, Anthropic, Gemini, xAI, DeepSeek, Mistral, Groq 등
+              이미 보유한 유료 LLM 구독도 자동으로 활용됩니다.
+            </p>
+          </div>
+        </div>
+      </section>
+
+      {/* == Self-Learning Engine == */}
+      <section id="self-learning">
+        <div className="container">
+          <div className="section-header">
+            <span className="section-badge">자기 학습</span>
+            <h2>쓸수록 똑똑해지는 AI</h2>
+            <p>MoA의 자기 학습 엔진이 사용자에 맞게 진화합니다</p>
+          </div>
+          <div className="grid-3">
+            <div className="card" style={{ textAlign: "center" }}>
+              <div style={{ fontSize: "3rem", marginBottom: "16px" }}>
+                {"\uD83D\uDCDD"}
+              </div>
+              <h3 style={{ fontSize: "1.15rem", marginBottom: "8px" }}>
+                피드백 수집기
+              </h3>
+              <p style={{ color: "var(--text-muted)", fontSize: "0.9rem" }}>
+                &ldquo;아니, 그게 아니라&rdquo; &ldquo;다시 해줘&rdquo; 같은 교정 패턴을 한국어/영어로 인식하여 자동 학습합니다.
+              </p>
+            </div>
+            <div className="card" style={{ textAlign: "center" }}>
+              <div style={{ fontSize: "3rem", marginBottom: "16px" }}>
+                {"\u26A1"}
+              </div>
+              <h3 style={{ fontSize: "1.15rem", marginBottom: "8px" }}>
+                컨텍스트 최적화
+              </h3>
+              <p style={{ color: "var(--text-muted)", fontSize: "0.9rem" }}>
+                토큰 예산 내에서 가장 중요한 정보를 우선 배치. 핵심 구문 추출로 효율적인 대화를 유지합니다.
+              </p>
+            </div>
+            <div className="card" style={{ textAlign: "center" }}>
+              <div style={{ fontSize: "3rem", marginBottom: "16px" }}>
+                {"\uD83D\uDEE1\uFE0F"}
+              </div>
+              <h3 style={{ fontSize: "1.15rem", marginBottom: "8px" }}>
+                무결성 검증
+              </h3>
+              <p style={{ color: "var(--text-muted)", fontSize: "0.9rem" }}>
+                SHA-256 해시로 학습 데이터의 무결성을 실시간 검증. 네트워크 호출 없이 로컬에서만 동작하여 안전합니다.
+              </p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* == How It Works == */}
       <section
         id="how-it-works"
         style={{ background: "var(--bg-card)" }}
       >
         <div className="container">
           <div className="section-header">
-            <span className="section-badge">{"\uC0AC\uC6A9\uBC95"}</span>
-            <h2>{"\uC2DC\uC791\uC740 \uAC04\uB2E8\uD569\uB2C8\uB2E4"}</h2>
-            <p>3\uB2E8\uACC4\uB9CC\uC73C\uB85C MoA\uB97C \uC2DC\uC791\uD560 \uC218 \uC788\uC2B5\uB2C8\uB2E4</p>
+            <span className="section-badge">사용법</span>
+            <h2>3단계로 시작하세요</h2>
+            <p>복잡한 설정 없이, 누구나 바로 시작할 수 있습니다</p>
           </div>
           <div className="grid-3">
             {STEPS.map((s) => (
@@ -313,13 +650,13 @@ export default function Home() {
         </div>
       </section>
 
-      {/* ── Use Cases ── */}
+      {/* == Use Cases == */}
       <section id="use-cases">
         <div className="container">
           <div className="section-header">
-            <span className="section-badge">{"\uC0AC\uC6A9 \uC0AC\uB840"}</span>
-            <h2>{"\uC774\uB7F0 \uBD84\uB4E4\uC774 \uC0AC\uC6A9\uD569\uB2C8\uB2E4"}</h2>
-            <p>{"\uB2E4\uC591\uD55C \uC0C1\uD669\uC5D0\uC11C MoA\uAC00 \uB3C4\uC640\uB4DC\uB9BD\uB2C8\uB2E4"}</p>
+            <span className="section-badge">활용 사례</span>
+            <h2>이런 분들이 사용합니다</h2>
+            <p>다양한 상황에서 MoA가 도와드립니다</p>
           </div>
           <div className="grid-2">
             {USE_CASES.map((uc) => (
@@ -346,41 +683,21 @@ export default function Home() {
               </div>
             ))}
           </div>
-        </div>
-      </section>
-
-      {/* ── Skills ── */}
-      <section id="skills" style={{ background: "var(--bg-card)" }}>
-        <div className="container">
-          <div className="section-header">
-            <span className="section-badge">{"\uC2A4\uD0AC"}</span>
-            <h2>AI\uC5D0\uAC8C \uB354 \uB9CE\uC740 \uB2A5\uB825\uC744</h2>
-            <p>{"\uB2E4\uC591\uD55C \uC2A4\uD0AC\uC744 \uCD94\uAC00\uD558\uC5EC AI\uC758 \uB2A5\uB825\uC744 \uD655\uC7A5\uD558\uC138\uC694"}</p>
-          </div>
-          <div className="grid-4">
-            {SKILLS.map((s) => (
-              <div
-                className="card"
-                key={s.name}
-                style={{ textAlign: "center", padding: "24px" }}
-              >
-                <div style={{ fontSize: "2.5rem", marginBottom: "12px" }}>
-                  {s.icon}
-                </div>
-                <h4 style={{ fontSize: "1rem" }}>{s.name}</h4>
-              </div>
-            ))}
+          <div style={{ textAlign: "center", marginTop: "32px" }}>
+            <a href="/use-cases" className="btn btn-outline">
+              사용사례 더 보기
+            </a>
           </div>
         </div>
       </section>
 
-      {/* ── Channels ── */}
-      <section id="channels">
+      {/* == Channels == */}
+      <section id="channels" style={{ background: "var(--bg-card)" }}>
         <div className="container">
           <div className="section-header">
-            <span className="section-badge">{"\uCC44\uB110"}</span>
-            <h2>15\uAC1C \uCC44\uB110, \uD558\uB098\uC758 AI</h2>
-            <p>{"\uC5B4\uB514\uC11C\uB4E0 \uC775\uC219\uD55C \uBA54\uC2E0\uC800\uB85C AI\uC640 \uB300\uD654\uD558\uC138\uC694"}</p>
+            <span className="section-badge">채널</span>
+            <h2>15개 채널, 하나의 AI</h2>
+            <p>어디서든 익숙한 메신저로 AI와 대화하세요</p>
           </div>
           <div
             style={{
@@ -418,13 +735,13 @@ export default function Home() {
         </div>
       </section>
 
-      {/* ── Voice ── */}
-      <section id="voice" style={{ background: "var(--bg-card)" }}>
+      {/* == Voice == */}
+      <section id="voice">
         <div className="container">
           <div className="section-header">
-            <span className="section-badge">{"\uC74C\uC131 AI"}</span>
-            <h2>{"\uBAA9\uC18C\uB9AC\uB85C AI\uC640 \uC18C\uD1B5\uD558\uC138\uC694"}</h2>
-            <p>{"\uC138 \uAC00\uC9C0 \uC74C\uC131 \uBAA8\uB4DC\uB85C \uC790\uC5F0\uC2A4\uB7EC\uC6B4 AI \uACBD\uD5D8"}</p>
+            <span className="section-badge">음성 AI</span>
+            <h2>목소리로 AI와 소통하세요</h2>
+            <p>세 가지 음성 모드로 자연스러운 AI 경험</p>
           </div>
           <div className="grid-3">
             {VOICE_MODES.map((v) => (
@@ -450,13 +767,13 @@ export default function Home() {
         </div>
       </section>
 
-      {/* ── Pricing ── */}
-      <section id="pricing">
+      {/* == Pricing == */}
+      <section id="pricing" style={{ background: "var(--bg-card)" }}>
         <div className="container">
           <div className="section-header">
-            <span className="section-badge">{"\uC694\uAE08\uC81C"}</span>
-            <h2>{"\uD569\uB9AC\uC801\uC778 \uC694\uAE08\uC81C"}</h2>
-            <p>{"\uBCA0\uD0C0 \uAE30\uAC04 \uB3D9\uC548 \uBB34\uB8CC\uB85C \uCCB4\uD5D8\uD574\uBCF4\uC138\uC694"}</p>
+            <span className="section-badge">요금제</span>
+            <h2>합리적인 요금제</h2>
+            <p>베타 기간 동안 무료로 체험해보세요</p>
           </div>
           <div className="grid-3">
             {PRICING.map((tier) => (
@@ -500,7 +817,7 @@ export default function Home() {
                       color: "var(--text-heading)",
                     }}
                   >
-                    {tier.price === "0" ? "\uBB34\uB8CC" : `${tier.price}\uC6D0`}
+                    {tier.price === "0" ? "무료" : `${tier.price}원`}
                   </span>
                 </div>
                 <p
@@ -538,7 +855,7 @@ export default function Home() {
                   className={`btn ${tier.highlight ? "btn-primary" : "btn-outline"}`}
                   style={{ width: "100%" }}
                 >
-                  {tier.price === "0" ? "\uBB34\uB8CC\uB85C \uC2DC\uC791" : "\uC2DC\uC791\uD558\uAE30"}
+                  {tier.price === "0" ? "무료로 시작" : "시작하기"}
                 </a>
               </div>
             ))}
@@ -546,10 +863,10 @@ export default function Home() {
         </div>
       </section>
 
-      {/* ── Download ── */}
+      {/* == Download == */}
       <DownloadSection />
 
-      {/* ── Footer ── */}
+      {/* == Footer == */}
       <footer
         style={{
           borderTop: "1px solid var(--border)",
@@ -568,28 +885,30 @@ export default function Home() {
             }}
           >
             <a
+              href="/community"
+              style={{ color: "var(--text-muted)", fontSize: "0.95rem" }}
+            >
+              커뮤니티
+            </a>
+            <a
+              href="/use-cases"
+              style={{ color: "var(--text-muted)", fontSize: "0.95rem" }}
+            >
+              사용사례
+            </a>
+            <a
+              href="/feedback"
+              style={{ color: "var(--text-muted)", fontSize: "0.95rem" }}
+            >
+              건의사항
+            </a>
+            <a
               href="https://discord.gg/moa-community"
               target="_blank"
               rel="noopener noreferrer"
               style={{ color: "var(--text-muted)", fontSize: "0.95rem" }}
             >
-              {"\uCEE4\uBBA4\uB2C8\uD2F0"}
-            </a>
-            <a
-              href="https://github.com/lawith/moa/issues"
-              target="_blank"
-              rel="noopener noreferrer"
-              style={{ color: "var(--text-muted)", fontSize: "0.95rem" }}
-            >
-              {"\uAC74\uC758\uC0AC\uD56D"}
-            </a>
-            <a
-              href="https://github.com/lawith/moa"
-              target="_blank"
-              rel="noopener noreferrer"
-              style={{ color: "var(--text-muted)", fontSize: "0.95rem" }}
-            >
-              GitHub
+              Discord
             </a>
             <a
               href="https://pf.kakao.com/moa-ai"
@@ -597,7 +916,7 @@ export default function Home() {
               rel="noopener noreferrer"
               style={{ color: "var(--text-muted)", fontSize: "0.95rem" }}
             >
-              {"\uCE74\uCE74\uC624\uD1A1 \uCC44\uB110"}
+              카카오톡 채널
             </a>
           </div>
           <p

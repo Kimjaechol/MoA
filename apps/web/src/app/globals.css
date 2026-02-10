@@ -324,3 +324,126 @@ section {
   color: var(--danger);
   background: rgba(252, 129, 129, 0.1);
 }
+
+/* ============================================
+   Stats Bar
+   ============================================ */
+
+.stats-bar {
+  display: flex;
+  justify-content: center;
+  gap: 48px;
+  flex-wrap: wrap;
+}
+
+.stat-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+}
+
+.stat-value {
+  font-size: 2rem;
+  font-weight: 800;
+  background: var(--gradient);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+.stat-label {
+  font-size: 0.85rem;
+  color: var(--text-muted);
+  font-weight: 500;
+}
+
+@media (max-width: 768px) {
+  .stats-bar { gap: 24px; }
+  .stat-value { font-size: 1.5rem; }
+}
+
+/* ============================================
+   Why MoA Cards
+   ============================================ */
+
+.why-card {
+  position: relative;
+  overflow: hidden;
+}
+
+.why-card::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 3px;
+  background: var(--gradient);
+  opacity: 0;
+  transition: opacity 0.3s;
+}
+
+.why-card:hover::before {
+  opacity: 1;
+}
+
+/* ============================================
+   Skill Tags & Category Cards
+   ============================================ */
+
+.skill-category-card:hover {
+  transform: translateY(-4px);
+}
+
+.skill-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.skill-tag {
+  display: inline-block;
+  padding: 4px 12px;
+  border: 1px solid;
+  border-radius: 16px;
+  font-size: 0.8rem;
+  font-weight: 500;
+  transition: all 0.2s;
+  background: transparent;
+}
+
+.skill-tag:hover {
+  background: rgba(255, 255, 255, 0.05);
+  transform: translateY(-1px);
+}
+
+/* ============================================
+   Fallback Cards
+   ============================================ */
+
+.fallback-card {
+  position: relative;
+  overflow: hidden;
+}
+
+.fallback-tier-badge {
+  display: inline-block;
+  padding: 4px 14px;
+  border-radius: 16px;
+  font-size: 0.8rem;
+  font-weight: 700;
+  text-align: center;
+  margin: 0 auto;
+  width: fit-content;
+}
+
+.fallback-example {
+  padding: 12px;
+  border: 1px solid;
+  border-radius: var(--radius);
+  background: rgba(0, 0, 0, 0.15);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}

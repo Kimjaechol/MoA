@@ -1,16 +1,16 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import Link from "next/link";
 
 const NAV_LINKS = [
-  { href: "#features", label: "기능" },
-  { href: "#how-it-works", label: "사용법" },
-  { href: "#use-cases", label: "사용사례" },
-  { href: "#skills", label: "스킬" },
-  { href: "#channels", label: "채널" },
-  { href: "#download", label: "다운로드" },
-  { href: "https://discord.gg/moa-community", label: "커뮤니티" },
-  { href: "https://github.com/lawith/moa/issues", label: "건의사항" },
+  { href: "#features", label: "기능", isAnchor: true },
+  { href: "#skills", label: "스킬", isAnchor: true },
+  { href: "#channels", label: "채널", isAnchor: true },
+  { href: "/use-cases", label: "사용사례", isAnchor: false },
+  { href: "/community", label: "커뮤니티", isAnchor: false },
+  { href: "/feedback", label: "건의사항", isAnchor: false },
+  { href: "#download", label: "다운로드", isAnchor: true },
 ];
 
 export default function Nav() {
@@ -31,22 +31,22 @@ export default function Nav() {
       }}
     >
       <div className="nav-inner">
-        <a href="#" className="nav-logo">
+        <Link href="/" className="nav-logo">
           MoA
-        </a>
+        </Link>
 
         <ul className={`nav-links${open ? " open" : ""}`}>
           {NAV_LINKS.map((link) => (
             <li key={link.href}>
-              <a
-                href={link.href}
-                onClick={() => setOpen(false)}
-                {...(link.href.startsWith("http")
-                  ? { target: "_blank", rel: "noopener noreferrer" }
-                  : {})}
-              >
-                {link.label}
-              </a>
+              {link.isAnchor ? (
+                <a href={link.href} onClick={() => setOpen(false)}>
+                  {link.label}
+                </a>
+              ) : (
+                <Link href={link.href} onClick={() => setOpen(false)}>
+                  {link.label}
+                </Link>
+              )}
             </li>
           ))}
         </ul>
