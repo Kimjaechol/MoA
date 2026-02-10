@@ -401,7 +401,7 @@ function extractEmotionContext(content: string, keyword: string): string {
 
   let start = idx;
   while (start > 0) {
-    if (sentenceBreaks.test(content[start - 1]!)) {
+    if (sentenceBreaks.test(content[start - 1])) {
       break;
     }
     start--;
@@ -409,7 +409,7 @@ function extractEmotionContext(content: string, keyword: string): string {
 
   let end = idx + keyword.length;
   while (end < content.length) {
-    if (sentenceBreaks.test(content[end]!)) {
+    if (sentenceBreaks.test(content[end])) {
       end++; // include the punctuation
       break;
     }
