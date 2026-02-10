@@ -74,6 +74,147 @@ export const SKILL_API_KEYS: Record<string, SkillApiKeyConfig[]> = {
       freeFallback: "Individual per-skill key configuration",
     },
   ],
+  notion: [
+    {
+      envVar: "NOTION_API_KEY",
+      description: "Enables Notion API for pages/databases/blocks management",
+      required: false,
+      freeFallback: "Local markdown files, Obsidian vault, or SQLite DB",
+      validatePattern: /^(ntn_|secret_)[a-zA-Z0-9]+$/,
+    },
+  ],
+  "nano-banana-pro": [
+    {
+      envVar: "GEMINI_API_KEY",
+      description: "Enables Gemini 3 Pro Image for high-quality image generation/editing",
+      required: false,
+      freeFallback: "Ollama local models, Hugging Face free inference API",
+    },
+  ],
+  gemini: [
+    {
+      envVar: "GEMINI_API_KEY",
+      description: "Enables Gemini CLI for code review, planning, and large-context analysis",
+      required: false,
+      freeFallback: "Ollama local models (Gemma, Llama) or Google AI Studio free tier",
+    },
+  ],
+  summarize: [
+    {
+      envVar: "GEMINI_API_KEY",
+      description: "Enables high-quality summarization with Gemini or other LLM providers",
+      required: false,
+      freeFallback: "Default free model (google/gemini-3-flash-preview) or --extract-only mode",
+    },
+  ],
+  "fal-ai": [
+    {
+      envVar: "FAL_KEY",
+      description: "Enables fal.ai for FLUX/SDXL image, video, and audio generation",
+      required: false,
+      freeFallback: "Ollama local models, openai-whisper for transcription",
+    },
+  ],
+  "fal-text-to-image": [
+    {
+      envVar: "FAL_KEY",
+      description: "Enables fal.ai FLUX/SDXL for text-to-image generation and editing",
+      required: false,
+      freeFallback: "nano-banana-pro, Hugging Face free inference, Ollama",
+    },
+  ],
+  "replicate-api": [
+    {
+      envVar: "REPLICATE_API_TOKEN",
+      description: "Enables Replicate for running thousands of AI models on cloud GPUs",
+      required: false,
+      freeFallback: "Ollama local models, Hugging Face free inference",
+      validatePattern: /^r8_[a-zA-Z0-9]+$/,
+    },
+  ],
+  "google-search": [
+    {
+      envVar: "GOOGLE_CSE_API_KEY",
+      description: "Enables Google Custom Search for structured search results",
+      required: false,
+      freeFallback: "brave-search, DuckDuckGo, or openclaw-serper",
+    },
+  ],
+  "openclaw-serper": [
+    {
+      envVar: "SERPER_API_KEY",
+      description: "Enables Serper for Google Search results (2,500 free searches included)",
+      required: false,
+      freeFallback: "brave-search, DuckDuckGo API",
+    },
+  ],
+  parallel: [
+    {
+      envVar: "PARALLEL_API_KEY",
+      description: "Enables Parallel.ai for high-accuracy web research",
+      required: false,
+      freeFallback: "brave-search + perplexity cascading fallback",
+    },
+  ],
+  "slack-api": [
+    {
+      envVar: "SLACK_BOT_TOKEN",
+      description: "Enables advanced Slack workspace automation (channels, users, files)",
+      required: false,
+      freeFallback: "Basic slack skill or Incoming Webhooks",
+      validatePattern: /^xoxb-[0-9]+-[0-9]+-[a-zA-Z0-9]+$/,
+    },
+  ],
+  airtable: [
+    {
+      envVar: "AIRTABLE_API_KEY",
+      description: "Enables Airtable for base/table/record management",
+      required: false,
+      freeFallback: "Local SQLite, xlsx skill, or JSON files",
+      validatePattern: /^pat[a-zA-Z0-9.]+$/,
+    },
+  ],
+  "home-assistant": [
+    {
+      envVar: "HA_TOKEN",
+      description: "Enables Home Assistant for smart home control",
+      required: false,
+      freeFallback: "openhue (Philips Hue), eightctl (Eight Sleep), macOS Shortcuts",
+    },
+  ],
+  "hugging-face-trackio": [
+    {
+      envVar: "HF_TOKEN",
+      description: "Enables Hugging Face Trackio for ML experiment tracking dashboard",
+      required: false,
+      freeFallback: "Local TensorBoard, CSV logs, or matplotlib charts",
+      validatePattern: /^hf_[a-zA-Z0-9]{30,}$/,
+    },
+  ],
+  "sora-2-nature-documentary": [
+    {
+      envVar: "OPENAI_API_KEY",
+      description: "Enables OpenAI Sora 2 for nature documentary video generation",
+      required: false,
+      freeFallback: "Pexels/Pixabay stock footage, ffmpeg slideshow generation",
+    },
+  ],
+  "google-imagen-3-portrait-photography": [
+    {
+      envVar: "GEMINI_API_KEY",
+      description: "Enables Google Imagen 3 for photorealistic portrait generation",
+      required: false,
+      freeFallback: "nano-banana-pro, fal-ai FLUX, Hugging Face free models",
+    },
+  ],
+  "gemini-nano-banana-pro-portraits": [
+    {
+      envVar: "GEMINI_API_KEY",
+      description: "Enables Gemini Nano Banana Pro for portrait photo templates",
+      required: false,
+      freeFallback: "nano-banana-pro fallback chain (Ollama, HF free inference)",
+    },
+  ],
 };
 
 /**
