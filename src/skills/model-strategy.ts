@@ -43,8 +43,10 @@ const COST_EFFICIENT_STRATEGY: ModelStrategyDefinition = {
     {
       priority: 3,
       label: "유료 LLM 가성비 버전",
-      description: "비용 대비 성능이 우수한 유료 모델 사용",
+      description: "비용 대비 성능이 우수한 유료 모델 사용 (Kimi K2 via Groq 우선)",
       models: [
+        "groq/kimi-k2-0905",
+        "gemini/gemini-2.5-flash",
         "deepseek/deepseek-chat",
         "anthropic/claude-sonnet-4-5",
         "openai/gpt-4o",

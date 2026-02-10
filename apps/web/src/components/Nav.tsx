@@ -10,6 +10,7 @@ const NAV_LINKS = [
   { href: "/use-cases", label: "사용사례", isAnchor: false },
   { href: "/community", label: "커뮤니티", isAnchor: false },
   { href: "/feedback", label: "건의사항", isAnchor: false },
+  { href: "/mypage", label: "마이페이지", isAnchor: false },
   { href: "#download", label: "다운로드", isAnchor: true },
 ];
 

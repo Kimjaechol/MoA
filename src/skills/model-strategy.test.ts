@@ -166,10 +166,12 @@ describe("Model Strategy System", () => {
   });
 
   describe("tier model ordering", () => {
-    it("cost-efficient tier 3 should have budget models", () => {
+    it("cost-efficient tier 3 should have Kimi K2-0905 Groq first, then budget models", () => {
       const tier3 = MODEL_STRATEGIES["cost-efficient"].tiers[2];
       expect(tier3.label).toBe("유료 LLM 가성비 버전");
+      expect(tier3.models[0]).toBe("groq/kimi-k2-0905");
       expect(tier3.models.some((m) => m.includes("deepseek"))).toBe(true);
+      expect(tier3.models.some((m) => m.includes("gemini-2.5-flash"))).toBe(true);
     });
 
     it("cost-efficient tier 4 should have top-tier models", () => {

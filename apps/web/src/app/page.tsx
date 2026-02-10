@@ -21,15 +21,15 @@ const WHY_MOA = [
   },
   {
     icon: "\uD83D\uDD11",
-    title: "LLM 가입 없이 모든 AI 사용",
-    desc: "API key가 뭔지 몰라도 괜찮습니다. MoA 하나만 가입하면 GPT-4o, Claude, Gemini 등 거의 모든 LLM을 바로 사용할 수 있습니다. 별도 AI 서비스 가입이 필요 없습니다.",
-    highlight: "MoA 가입 = 모든 AI",
+    title: "내 API 키로 모든 AI 사용",
+    desc: "마이페이지에서 Groq, Gemini, OpenAI, Claude 등의 API 키를 직접 관리하세요. 무료 키(Groq, Gemini)부터 유료 키까지, 입력한 키를 MoA가 전략에 따라 자동 운용합니다.",
+    highlight: "내 키 = 내 AI",
   },
   {
     icon: "\uD83D\uDCB0",
     title: "AI 최저비용 자동 전략",
-    desc: "내장 무료 SLM을 우선 사용하고, 유료 LLM의 무료 한도를 활용한 뒤, 필요할 때만 유료 LLM을 사용합니다. 이미 구독 중인 유료 LLM이 있다면 우선 적용됩니다.",
-    highlight: "무료 SLM 우선 사용",
+    desc: "내장 무료 SLM을 우선 사용하고, 유료 LLM의 무료 한도(Groq, Gemini 등)를 활용한 뒤, Kimi K2-0905 Groq 등 가성비 모델을 사용합니다. 이미 구독 중인 LLM이 있다면 우선 적용됩니다.",
+    highlight: "Kimi K2 Groq 가성비",
   },
   {
     icon: "\uD83C\uDD93",
@@ -97,7 +97,7 @@ const FEATURES = [
   {
     icon: "\uD83E\uDDE9",
     title: "AI 모델 전략 선택",
-    desc: "가성비 전략 또는 최대성능 전략 중 선택. 회원가입 시 설정하고 앱에서 언제든 변경할 수 있습니다.",
+    desc: "가성비(Kimi K2 Groq 우선) 또는 최대성능 전략 중 선택. 마이페이지에서 API 키를 직접 관리하고 전략을 변경할 수 있습니다.",
   },
   {
     icon: "\uD83E\uDDEC",
@@ -208,11 +208,11 @@ const MODEL_STRATEGIES = [
     desc: "비용을 최소화하면서 최적의 결과를 제공합니다. 회원가입 시 기본 설정되며, 앱에서 언제든지 변경 가능합니다.",
     tiers: [
       { step: "1", label: "무료 내장 SLM", detail: "기본 대화/요약을 무료로 처리", tag: "무료" },
-      { step: "2", label: "유료 LLM 무료 한도", detail: "GPT, Gemini 등의 무료 범위 활용", tag: "무료" },
-      { step: "3", label: "유료 LLM 가성비 버전", detail: "DeepSeek, Sonnet 등 가성비 모델", tag: "유료" },
+      { step: "2", label: "유료 LLM 무료 한도", detail: "Groq, Gemini 등의 무료 범위 활용", tag: "무료" },
+      { step: "3", label: "유료 LLM 가성비 버전", detail: "Kimi K2-0905 Groq → Gemini Flash → DeepSeek 등", tag: "유료" },
       { step: "4", label: "유료 LLM 최고 버전", detail: "Opus, GPT-5 등 프리미엄 모델", tag: "유료" },
     ],
-    note: "이미 구독 중인 유료 LLM이 있다면 해당 모델이 우선 적용되어 비용을 절약합니다.",
+    note: "이미 구독 중인 유료 LLM이 있다면 해당 모델이 우선 적용됩니다. 마이페이지에서 API 키를 직접 관리하세요.",
   },
   {
     id: "max-performance",
@@ -324,7 +324,8 @@ const PRICING = [
       "내장 SLM 무제한 사용",
       "기본 스킬 (날씨, 캘린더 등)",
       "카카오톡 연동",
-      "LLM 가입 불필요",
+      "무료 LLM 한도 내 사용 (Groq, Gemini)",
+      "본인 API 키 보유 시 모든 LLM 사용 가능",
     ],
   },
   {
@@ -336,7 +337,7 @@ const PRICING = [
     features: [
       "기기 3대 연결",
       "AI 대화 무제한",
-      "모든 LLM 사용 (가입 불필요)",
+      "모든 LLM 사용 (마이페이지에서 API 키 관리)",
       "100+ 모든 스킬 사용",
       "파일 전송 무제한",
       "음성 AI (비동기)",
@@ -419,8 +420,8 @@ export default function Home() {
             }}
           >
             MoA는 카카오톡 한 줄로 AI를 제어하는 차세대 에이전트입니다.
-            별도 LLM 가입 없이 모든 AI를 사용하고, 내장 SLM으로 완전 무료 시작.
-            100개 이상의 전문 스킬과 AI 최저비용 전략으로 항상 최적의 결과를 제공합니다.
+            마이페이지에서 API 키를 관리하고, Kimi K2-0905 Groq 등 가성비 모델부터 최고급 LLM까지.
+            100개 이상의 전문 스킬과 2가지 모델 전략으로 항상 최적의 결과를 제공합니다.
           </p>
           <p
             style={{
@@ -635,10 +636,48 @@ export default function Home() {
             ))}
           </div>
           <div style={{ textAlign: "center", marginTop: "40px" }}>
-            <p style={{ color: "var(--text-muted)", fontSize: "0.95rem", maxWidth: "700px", margin: "0 auto" }}>
-              GPT-4o, Claude, Gemini, DeepSeek, Mistral, Groq 등 모든 주요 AI를 지원합니다.
-              API key를 몰라도 MoA가 알아서 처리하며, 이미 구독 중인 AI가 있다면 자동으로 우선 적용됩니다.
+            <p style={{ color: "var(--text-muted)", fontSize: "0.95rem", maxWidth: "700px", margin: "0 auto 20px" }}>
+              GPT-4o, Claude, Gemini, DeepSeek, Kimi K2-0905 (Groq), Mistral, Grok 등 모든 주요 AI를 지원합니다.
+              마이페이지에서 각 LLM의 API 키를 직접 관리하고, 선택한 전략에 따라 MoA가 자동으로 모델을 운용합니다.
             </p>
+            <a href="/mypage" className="btn btn-outline btn-sm">
+              마이페이지에서 API 키 관리하기
+            </a>
+          </div>
+
+          {/* Free Trial Policy */}
+          <div
+            style={{
+              marginTop: "48px",
+              padding: "24px 32px",
+              borderRadius: "var(--radius-lg)",
+              background: "rgba(0,0,0,0.15)",
+              border: "1px solid var(--border)",
+              maxWidth: "800px",
+              margin: "48px auto 0",
+            }}
+          >
+            <h3 style={{ fontSize: "1.1rem", marginBottom: "16px", textAlign: "center" }}>
+              무료 체험 정책
+            </h3>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: "16px", fontSize: "0.9rem" }}>
+              <div style={{ padding: "16px", borderRadius: "var(--radius)", background: "rgba(72,187,120,0.08)", border: "1px solid rgba(72,187,120,0.2)" }}>
+                <div style={{ fontWeight: 700, color: "var(--success)", marginBottom: "8px" }}>
+                  {"\u2705"} API 키 보유 시
+                </div>
+                <p style={{ color: "var(--text-muted)", fontSize: "0.85rem" }}>
+                  본인의 유료 LLM API 키로 무료 체험 기간 동안 모든 기능을 제한 없이 사용할 수 있습니다.
+                </p>
+              </div>
+              <div style={{ padding: "16px", borderRadius: "var(--radius)", background: "rgba(236,201,75,0.08)", border: "1px solid rgba(236,201,75,0.2)" }}>
+                <div style={{ fontWeight: 700, color: "var(--warning)", marginBottom: "8px" }}>
+                  {"\u26A0\uFE0F"} API 키 미보유 시
+                </div>
+                <p style={{ color: "var(--text-muted)", fontSize: "0.85rem" }}>
+                  무료 범위 내에서만 사용 가능합니다. (무료 SLM + 유료 LLM 무료 한도까지만)
+                </p>
+              </div>
+            </div>
           </div>
         </div>
       </section>
@@ -981,6 +1020,12 @@ export default function Home() {
               style={{ color: "var(--text-muted)", fontSize: "0.95rem" }}
             >
               건의사항
+            </a>
+            <a
+              href="/mypage"
+              style={{ color: "var(--text-muted)", fontSize: "0.95rem" }}
+            >
+              마이페이지
             </a>
             <a
               href="https://discord.gg/moa-community"

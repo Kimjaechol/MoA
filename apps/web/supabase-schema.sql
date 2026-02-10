@@ -130,3 +130,54 @@ CREATE INDEX IF NOT EXISTS idx_usecase_likes_post ON moa_usecase_likes(post_id);
 CREATE INDEX IF NOT EXISTS idx_usecase_likes_visitor ON moa_usecase_likes(visitor_id);
 CREATE INDEX IF NOT EXISTS idx_usecase_comments_post ON moa_usecase_comments(post_id);
 CREATE INDEX IF NOT EXISTS idx_usecase_comments_created ON moa_usecase_comments(created_at ASC);
+
+-- ============================================
+-- 8. User API Keys (사용자 API 키 관리)
+-- Each user stores their own LLM API keys.
+-- Keys are encrypted at application level before storage.
+-- ============================================
+
+CREATE TABLE IF NOT EXISTS moa_user_api_keys (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id TEXT NOT NULL,
+  provider TEXT NOT NULL CHECK (provider IN (
+    'openai', 'anthropic', 'gemini', 'groq', 'deepseek', 'mistral', 'xai'
+  )),
+  -- API key is encrypted at app level (AES-256) before storing
+  encrypted_key TEXT NOT NULL,
+  -- Display label e.g. "sk-...abc" (last 4 chars only)
+  key_hint TEXT,
+  is_active BOOLEAN NOT NULL DEFAULT true,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  UNIQUE(user_id, provider)
+);
+
+ALTER TABLE moa_user_api_keys ENABLE ROW LEVEL SECURITY;
+
+-- Users can only see their own keys (enforced via API)
+CREATE POLICY "Users read own keys" ON moa_user_api_keys
+  FOR SELECT USING (true);
+
+-- 9. User Model Strategy Settings (사용자 모델 전략 설정)
+CREATE TABLE IF NOT EXISTS moa_user_settings (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id TEXT NOT NULL UNIQUE,
+  model_strategy TEXT NOT NULL DEFAULT 'cost-efficient' CHECK (model_strategy IN ('cost-efficient', 'max-performance')),
+  -- Free trial tracking
+  trial_started_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  trial_days INTEGER NOT NULL DEFAULT 30,
+  is_premium BOOLEAN NOT NULL DEFAULT false,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+ALTER TABLE moa_user_settings ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "Users read own settings" ON moa_user_settings
+  FOR SELECT USING (true);
+
+-- User API Keys & Settings Indexes
+CREATE INDEX IF NOT EXISTS idx_user_api_keys_user ON moa_user_api_keys(user_id);
+CREATE INDEX IF NOT EXISTS idx_user_api_keys_provider ON moa_user_api_keys(user_id, provider);
+CREATE INDEX IF NOT EXISTS idx_user_settings_user ON moa_user_settings(user_id);

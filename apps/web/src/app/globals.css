@@ -447,3 +447,25 @@ section {
   flex-direction: column;
   gap: 4px;
 }
+
+/* ============================================
+   MyPage — Strategy & Provider Cards
+   ============================================ */
+
+.mypage-strategy-card {
+  font-family: inherit;
+  transition: all 0.2s;
+}
+
+.mypage-strategy-card:hover {
+  transform: translateY(-2px);
+}
+
+.mypage-provider-card {
+  transition: all 0.2s;
+}
+
+.mypage-provider-card:hover {
+  border-color: var(--primary) !important;
+  transform: translateY(-2px);
+}

@@ -417,7 +417,7 @@ export const LLM_PROVIDERS: LlmProviderConfig[] = [
   },
   {
     id: "groq",
-    name: "Groq (fast inference)",
+    name: "Groq (Kimi K2 + fast inference)",
     envVar: "GROQ_API_KEY",
     capabilities: [
       "text-generation",
@@ -425,6 +425,7 @@ export const LLM_PROVIDERS: LlmProviderConfig[] = [
       "code-generation",
       "translation",
       "audio-transcription",
+      "long-context",
     ],
   },
 ];
