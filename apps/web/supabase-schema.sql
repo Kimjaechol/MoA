@@ -76,3 +76,108 @@ CREATE INDEX IF NOT EXISTS idx_likes_post ON moa_community_likes(post_id);
 CREATE INDEX IF NOT EXISTS idx_likes_visitor ON moa_community_likes(visitor_id);
 CREATE INDEX IF NOT EXISTS idx_comments_post ON moa_community_comments(post_id);
 CREATE INDEX IF NOT EXISTS idx_comments_created ON moa_community_comments(created_at ASC);
+
+-- ============================================
+-- 5. Use Case Posts (사용사례 게시판)
+-- ============================================
+
+CREATE TABLE IF NOT EXISTS moa_usecase_posts (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  nickname TEXT NOT NULL,
+  email TEXT,
+  title TEXT NOT NULL,
+  content TEXT NOT NULL,
+  like_count INTEGER NOT NULL DEFAULT 0,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+ALTER TABLE moa_usecase_posts ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "Public read access" ON moa_usecase_posts
+  FOR SELECT USING (true);
+
+-- 6. Use Case Likes (사용사례 좋아요)
+CREATE TABLE IF NOT EXISTS moa_usecase_likes (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  post_id UUID NOT NULL REFERENCES moa_usecase_posts(id) ON DELETE CASCADE,
+  visitor_id TEXT NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  UNIQUE(post_id, visitor_id)
+);
+
+ALTER TABLE moa_usecase_likes ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "Public read access" ON moa_usecase_likes
+  FOR SELECT USING (true);
+
+-- 7. Use Case Comments (사용사례 댓글)
+CREATE TABLE IF NOT EXISTS moa_usecase_comments (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  post_id UUID NOT NULL REFERENCES moa_usecase_posts(id) ON DELETE CASCADE,
+  nickname TEXT NOT NULL,
+  content TEXT NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+ALTER TABLE moa_usecase_comments ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "Public read access" ON moa_usecase_comments
+  FOR SELECT USING (true);
+
+-- Use Case Indexes
+CREATE INDEX IF NOT EXISTS idx_usecase_posts_created ON moa_usecase_posts(created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_usecase_likes_post ON moa_usecase_likes(post_id);
+CREATE INDEX IF NOT EXISTS idx_usecase_likes_visitor ON moa_usecase_likes(visitor_id);
+CREATE INDEX IF NOT EXISTS idx_usecase_comments_post ON moa_usecase_comments(post_id);
+CREATE INDEX IF NOT EXISTS idx_usecase_comments_created ON moa_usecase_comments(created_at ASC);
+
+-- ============================================
+-- 8. User API Keys (사용자 API 키 관리)
+-- Each user stores their own LLM API keys.
+-- Keys are encrypted at application level before storage.
+-- ============================================
+
+CREATE TABLE IF NOT EXISTS moa_user_api_keys (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id TEXT NOT NULL,
+  provider TEXT NOT NULL CHECK (provider IN (
+    'openai', 'anthropic', 'gemini', 'groq', 'deepseek', 'mistral', 'xai'
+  )),
+  -- API key is encrypted at app level (AES-256) before storing
+  encrypted_key TEXT NOT NULL,
+  -- Display label e.g. "sk-...abc" (last 4 chars only)
+  key_hint TEXT,
+  is_active BOOLEAN NOT NULL DEFAULT true,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  UNIQUE(user_id, provider)
+);
+
+ALTER TABLE moa_user_api_keys ENABLE ROW LEVEL SECURITY;
+
+-- Users can only see their own keys (enforced via API)
+CREATE POLICY "Users read own keys" ON moa_user_api_keys
+  FOR SELECT USING (true);
+
+-- 9. User Model Strategy Settings (사용자 모델 전략 설정)
+CREATE TABLE IF NOT EXISTS moa_user_settings (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id TEXT NOT NULL UNIQUE,
+  model_strategy TEXT NOT NULL DEFAULT 'cost-efficient' CHECK (model_strategy IN ('cost-efficient', 'max-performance')),
+  -- Free trial tracking
+  trial_started_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  trial_days INTEGER NOT NULL DEFAULT 30,
+  is_premium BOOLEAN NOT NULL DEFAULT false,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+ALTER TABLE moa_user_settings ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "Users read own settings" ON moa_user_settings
+  FOR SELECT USING (true);
+
+-- User API Keys & Settings Indexes
+CREATE INDEX IF NOT EXISTS idx_user_api_keys_user ON moa_user_api_keys(user_id);
+CREATE INDEX IF NOT EXISTS idx_user_api_keys_provider ON moa_user_api_keys(user_id, provider);
+CREATE INDEX IF NOT EXISTS idx_user_settings_user ON moa_user_settings(user_id);

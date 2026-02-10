@@ -89,3 +89,71 @@ export interface IntegrityCheckResult {
   actualHash: string;
   status: "ok" | "modified" | "missing";
 }
+
+// =====================================================================
+// Model Strategy Types
+// =====================================================================
+
+/**
+ * User-selectable model strategy.
+ *
+ * - "cost-efficient": Minimize cost while maintaining acceptable quality.
+ *     무료 SLM → 유료 LLM 무료한도 → 유료 LLM 가성비 → 유료 LLM 최고급
+ *     (사용자가 이미 유료 구독 중인 LLM이 있으면 우선 적용)
+ *
+ * - "max-performance": Always use the best available model.
+ *     현 시점 최고성능 유료 LLM 적용.
+ *     1개 모델로 처리 실패 시 여러 최고급 모델을 병렬 처리.
+ */
+export type ModelStrategyId = "cost-efficient" | "max-performance";
+
+/** A single tier in the model resolution chain. */
+export interface ModelStrategyTier {
+  /** Tier priority (lower = tried first) */
+  priority: number;
+  /** Human-readable tier label */
+  label: string;
+  /** Description of what this tier does */
+  description: string;
+  /** Model references for this tier (provider/model format) */
+  models: string[];
+  /** Whether this tier is free */
+  free: boolean;
+}
+
+/** Full definition of a model strategy. */
+export interface ModelStrategyDefinition {
+  id: ModelStrategyId;
+  /** Display name */
+  name: string;
+  /** Short description for UI */
+  description: string;
+  /** Ordered tiers (tried in priority order) */
+  tiers: ModelStrategyTier[];
+  /** Whether to try parallel execution on failure (max-performance only) */
+  parallelFallback: boolean;
+}
+
+/** User's persisted model strategy preference. */
+export interface UserModelStrategyConfig {
+  /** Selected strategy */
+  strategy: ModelStrategyId;
+  /** User's subscribed LLM provider IDs (for cost-efficient priority) */
+  subscribedProviders?: string[];
+  /** Custom primary model override (optional) */
+  primaryOverride?: string;
+}
+
+/** Result of model strategy resolution. */
+export interface ModelStrategyResolution {
+  /** Which strategy was used */
+  strategy: ModelStrategyId;
+  /** Which tier resolved */
+  tierLabel: string;
+  /** Selected model(s) */
+  selectedModels: Array<{ provider: string; model: string }>;
+  /** Whether parallel execution is being used */
+  parallel: boolean;
+  /** Human-readable explanation */
+  explanation: string;
+}
