@@ -144,6 +144,8 @@ export default function MyPage() {
     daysLeft: number;
     isPremium: boolean;
   } | null>(null);
+  const [creditBalance, setCreditBalance] = useState<number | null>(null);
+  const [creditPlan, setCreditPlan] = useState("free");
 
   const [editingProvider, setEditingProvider] = useState<string | null>(null);
   const [keyInput, setKeyInput] = useState("");
@@ -172,6 +174,16 @@ export default function MyPage() {
     } catch {
       // Silent fail on load
     }
+
+    // Load credit balance
+    try {
+      const credRes = await fetch(`/api/credits?user_id=${encodeURIComponent(userId)}`);
+      if (credRes.ok) {
+        const credData = await credRes.json();
+        setCreditBalance(credData.balance ?? 100);
+        setCreditPlan(credData.plan ?? "free");
+      }
+    } catch { /* silent */ }
   }, [userId]);
 
   useEffect(() => {
@@ -307,7 +319,7 @@ export default function MyPage() {
             </div>
           )}
 
-          {/* Trial Status Banner */}
+          {/* Credit & Plan Status Banner */}
           <div
             className="card"
             style={{
@@ -331,12 +343,28 @@ export default function MyPage() {
                     : "⚠️ 유료 LLM API 키가 없으면 무료 범위 내에서만 사용 가능합니다. (무료 SLM + 유료 LLM 무료 한도)"}
                 </p>
               </div>
-              <div style={{ textAlign: "center" }}>
-                <div style={{ fontSize: "1.5rem", fontWeight: 800, color: "var(--primary)" }}>
-                  {configuredCount}/{LLM_PROVIDERS.length}
+              <div style={{ display: "flex", gap: "24px", alignItems: "center" }}>
+                <div style={{ textAlign: "center" }}>
+                  <div style={{ fontSize: "1.5rem", fontWeight: 800, color: "var(--primary)" }}>
+                    {creditBalance !== null ? creditBalance.toLocaleString() : "100"}
+                  </div>
+                  <div style={{ fontSize: "0.75rem", color: "var(--text-muted)" }}>크레딧 잔액</div>
                 </div>
-                <div style={{ fontSize: "0.75rem", color: "var(--text-muted)" }}>API 키 등록</div>
+                <div style={{ textAlign: "center" }}>
+                  <div style={{ fontSize: "1.5rem", fontWeight: 800, color: "var(--primary)" }}>
+                    {configuredCount}/{LLM_PROVIDERS.length}
+                  </div>
+                  <div style={{ fontSize: "0.75rem", color: "var(--text-muted)" }}>API 키 등록</div>
+                </div>
               </div>
+            </div>
+            <div style={{ marginTop: "16px", display: "flex", gap: "12px", flexWrap: "wrap" }}>
+              <Link href="/billing" className="btn btn-sm btn-primary">
+                {creditPlan === "free" ? "요금제 업그레이드" : "결제 및 크레딧 관리"}
+              </Link>
+              <span style={{ fontSize: "0.8rem", color: "var(--text-muted)", alignSelf: "center" }}>
+                현재 플랜: <strong>{creditPlan === "free" ? "Free" : creditPlan === "basic" ? "Basic" : "Pro"}</strong>
+              </span>
             </div>
           </div>
 

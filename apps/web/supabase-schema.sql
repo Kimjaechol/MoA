@@ -285,3 +285,103 @@ CREATE POLICY "Users read own autocode sessions" ON moa_autocode_sessions
 
 CREATE INDEX IF NOT EXISTS idx_autocode_user ON moa_autocode_sessions(user_id);
 CREATE INDEX IF NOT EXISTS idx_autocode_created ON moa_autocode_sessions(created_at DESC);
+
+-- ============================================
+-- 14. Credits (크레딧 잔액)
+-- Each user has a credit balance for AI usage.
+-- ============================================
+
+CREATE TABLE IF NOT EXISTS moa_credits (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id TEXT NOT NULL UNIQUE,
+  balance INTEGER NOT NULL DEFAULT 100,  -- free tier starts with 100
+  monthly_quota INTEGER NOT NULL DEFAULT 100,
+  monthly_used INTEGER NOT NULL DEFAULT 0,
+  plan TEXT NOT NULL DEFAULT 'free' CHECK (plan IN ('free', 'basic', 'pro')),
+  quota_reset_at TIMESTAMPTZ NOT NULL DEFAULT (now() + INTERVAL '30 days'),
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+ALTER TABLE moa_credits ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Users read own credits" ON moa_credits FOR SELECT USING (true);
+CREATE INDEX IF NOT EXISTS idx_credits_user ON moa_credits(user_id);
+
+-- ============================================
+-- 15. Credit Transactions (크레딧 사용/충전 내역)
+-- ============================================
+
+CREATE TABLE IF NOT EXISTS moa_credit_transactions (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id TEXT NOT NULL,
+  amount INTEGER NOT NULL,            -- positive=charge, negative=usage
+  balance_after INTEGER NOT NULL,     -- balance after this transaction
+  tx_type TEXT NOT NULL CHECK (tx_type IN (
+    'usage', 'purchase', 'subscription', 'bonus', 'refund', 'monthly_reset'
+  )),
+  description TEXT,                   -- e.g. "채팅 - anthropic/claude-opus-4-6"
+  model_used TEXT,                    -- model that consumed credits (for usage)
+  reference_id TEXT,                  -- payment_id or session_id
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+ALTER TABLE moa_credit_transactions ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Users read own transactions" ON moa_credit_transactions FOR SELECT USING (true);
+CREATE INDEX IF NOT EXISTS idx_credit_tx_user ON moa_credit_transactions(user_id);
+CREATE INDEX IF NOT EXISTS idx_credit_tx_created ON moa_credit_transactions(created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_credit_tx_type ON moa_credit_transactions(user_id, tx_type);
+
+-- ============================================
+-- 16. Subscriptions (구독 관리)
+-- ============================================
+
+CREATE TABLE IF NOT EXISTS moa_subscriptions (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id TEXT NOT NULL,
+  plan TEXT NOT NULL CHECK (plan IN ('basic', 'pro')),
+  status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'canceled', 'expired', 'past_due')),
+  amount INTEGER NOT NULL,            -- 9900 or 29900 (KRW)
+  billing_cycle TEXT NOT NULL DEFAULT 'monthly',
+  current_period_start TIMESTAMPTZ NOT NULL DEFAULT now(),
+  current_period_end TIMESTAMPTZ NOT NULL DEFAULT (now() + INTERVAL '30 days'),
+  canceled_at TIMESTAMPTZ,
+  payment_method TEXT,               -- card_last4 or method label
+  portone_billing_key TEXT,          -- for recurring billing
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+ALTER TABLE moa_subscriptions ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Users read own subscriptions" ON moa_subscriptions FOR SELECT USING (true);
+CREATE INDEX IF NOT EXISTS idx_sub_user ON moa_subscriptions(user_id);
+CREATE INDEX IF NOT EXISTS idx_sub_status ON moa_subscriptions(user_id, status);
+
+-- ============================================
+-- 17. Payments (결제 기록)
+-- ============================================
+
+CREATE TABLE IF NOT EXISTS moa_payments (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id TEXT NOT NULL,
+  payment_id TEXT NOT NULL UNIQUE,     -- PortOne merchant_uid
+  imp_uid TEXT,                        -- PortOne imp_uid
+  pay_method TEXT,                     -- card, kakao, naverpay, tosspay, etc.
+  amount INTEGER NOT NULL,             -- KRW
+  status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN (
+    'pending', 'paid', 'failed', 'canceled', 'refunded'
+  )),
+  product_type TEXT NOT NULL CHECK (product_type IN ('credit_pack', 'subscription')),
+  product_name TEXT NOT NULL,          -- e.g. "크레딧 500", "Basic 월간 구독"
+  credits_granted INTEGER DEFAULT 0,   -- credits added on success
+  card_name TEXT,
+  card_number TEXT,                    -- masked: ****-****-****-1234
+  receipt_url TEXT,
+  paid_at TIMESTAMPTZ,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+ALTER TABLE moa_payments ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Users read own payments" ON moa_payments FOR SELECT USING (true);
+CREATE INDEX IF NOT EXISTS idx_payments_user ON moa_payments(user_id);
+CREATE INDEX IF NOT EXISTS idx_payments_pid ON moa_payments(payment_id);
+CREATE INDEX IF NOT EXISTS idx_payments_created ON moa_payments(created_at DESC);

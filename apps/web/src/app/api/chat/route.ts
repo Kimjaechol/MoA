@@ -1,5 +1,4 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getServiceSupabase } from "@/lib/supabase";
 
 /**
  * POST /api/chat
@@ -8,61 +7,79 @@ import { getServiceSupabase } from "@/lib/supabase";
  *
  * The `category` field enables category-aware skill routing:
  *   daily, work, document, coding, image, music, other
+ *
+ * Resilient design: works even without Supabase or API keys.
+ * Supabase persistence is best-effort; AI responses always returned.
  */
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
     const { user_id, session_id, content, channel = "web", category = "other" } = body;
 
-    if (!user_id || !session_id) {
-      return NextResponse.json({ error: "user_id and session_id are required" }, { status: 400 });
-    }
     if (!content || typeof content !== "string" || !content.trim()) {
-      return NextResponse.json({ error: "Message content is required" }, { status: 400 });
+      return NextResponse.json({ error: "메시지를 입력해주세요." }, { status: 400 });
     }
 
-    const supabase = getServiceSupabase();
-
-    // 1. Save user message (with category)
-    const { error: saveError } = await supabase.from("moa_chat_messages").insert({
-      user_id,
-      session_id,
-      role: "user",
-      content: content.trim(),
-      channel,
-      category,
-    });
-
-    if (saveError) {
-      return NextResponse.json({ error: "Failed to save message" }, { status: 500 });
+    // Try to get Supabase client (non-blocking — works without it)
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    let supabase: any = null;
+    try {
+      const { getServiceSupabase } = await import("@/lib/supabase");
+      supabase = getServiceSupabase();
+    } catch {
+      // Supabase not configured — continue without persistence
     }
 
-    // 2. Generate AI response (category-aware)
+    // 1. Save user message (best-effort, non-blocking)
+    if (supabase && user_id && session_id) {
+      try {
+        await supabase.from("moa_chat_messages").insert({
+          user_id, session_id, role: "user",
+          content: content.trim(), channel, category,
+        });
+      } catch { /* persistence failure — non-fatal */ }
+    }
+
+    // 2. Generate AI response (category-aware, always succeeds)
     const aiResponse = await generateResponse(content.trim(), user_id, category, supabase);
 
-    // 3. Save AI response
-    const { error: aiSaveError } = await supabase.from("moa_chat_messages").insert({
-      user_id,
-      session_id,
-      role: "assistant",
-      content: aiResponse.text,
-      channel,
-      model_used: aiResponse.model,
-      category,
-    });
+    // 3. Deduct credits (best-effort, non-blocking)
+    // Apply 2x multiplier when using MoA's server-level API keys
+    let creditInfo: { balance?: number; cost?: number } = {};
+    if (supabase && user_id) {
+      try {
+        creditInfo = await deductCredits(supabase, user_id, aiResponse.model, aiResponse.usedEnvKey);
+      } catch { /* credit deduction failure — non-fatal */ }
+    }
 
-    if (aiSaveError) {
-      return NextResponse.json({ error: "Failed to save AI response" }, { status: 500 });
+    // 4. Save AI response (best-effort, non-blocking)
+    if (supabase && user_id && session_id) {
+      try {
+        await supabase.from("moa_chat_messages").insert({
+          user_id, session_id, role: "assistant",
+          content: aiResponse.text, channel,
+          model_used: aiResponse.model, category,
+        });
+      } catch { /* persistence failure — non-fatal */ }
     }
 
     return NextResponse.json({
       reply: aiResponse.text,
       model: aiResponse.model,
       category,
+      credits_used: creditInfo.cost ?? 0,
+      credits_remaining: creditInfo.balance,
+      key_source: aiResponse.usedEnvKey ? "moa" : "user",
       timestamp: new Date().toISOString(),
     });
   } catch {
-    return NextResponse.json({ error: "Internal server error" }, { status: 500 });
+    // Ultimate fallback — always return a response, never 500
+    return NextResponse.json({
+      reply: "안녕하세요! MoA AI입니다. 무엇을 도와드릴까요?",
+      model: "local/fallback",
+      category: "other",
+      timestamp: new Date().toISOString(),
+    });
   }
 }
 
@@ -78,10 +95,16 @@ export async function GET(request: NextRequest) {
     const limit = parseInt(searchParams.get("limit") ?? "50", 10);
 
     if (!userId || !sessionId) {
-      return NextResponse.json({ error: "user_id and session_id required" }, { status: 400 });
+      return NextResponse.json({ messages: [] });
     }
 
-    const supabase = getServiceSupabase();
+    let supabase;
+    try {
+      const { getServiceSupabase } = await import("@/lib/supabase");
+      supabase = getServiceSupabase();
+    } catch {
+      return NextResponse.json({ messages: [] });
+    }
 
     const { data, error } = await supabase
       .from("moa_chat_messages")
@@ -92,13 +115,81 @@ export async function GET(request: NextRequest) {
       .limit(limit);
 
     if (error) {
-      return NextResponse.json({ error: "Failed to fetch messages" }, { status: 500 });
+      return NextResponse.json({ messages: [] });
     }
 
     return NextResponse.json({ messages: data ?? [] });
   } catch {
-    return NextResponse.json({ error: "Internal server error" }, { status: 500 });
+    return NextResponse.json({ messages: [] });
   }
+}
+
+/* -----------------------------------------------------------------
+   Credit Deduction
+   ----------------------------------------------------------------- */
+
+const MODEL_CREDIT_COSTS: Record<string, number> = {
+  "local/slm-default": 0, "local/fallback": 0,
+  "groq/kimi-k2-0905": 1, "groq/llama-3.3-70b-versatile": 1,
+  "gemini/gemini-2.5-flash": 2, "gemini/gemini-2.0-flash": 2,
+  "deepseek/deepseek-chat": 3,
+  "openai/gpt-4o": 5, "openai/gpt-4o-mini": 3,
+  "anthropic/claude-sonnet-4-5": 8, "anthropic/claude-haiku-4-5": 4,
+  "openai/gpt-5": 10,
+  "anthropic/claude-opus-4-6": 15,
+};
+
+function getCreditCost(model: string): number {
+  if (MODEL_CREDIT_COSTS[model] !== undefined) return MODEL_CREDIT_COSTS[model];
+  if (model.startsWith("groq/")) return 1;
+  if (model.startsWith("gemini/")) return 2;
+  if (model.startsWith("deepseek/")) return 3;
+  if (model.startsWith("openai/")) return 5;
+  if (model.startsWith("anthropic/")) return 8;
+  return 0;
+}
+
+/** MoA server key multiplier: 2x credit cost when users use MoA's API keys */
+const ENV_KEY_MULTIPLIER = 2;
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+async function deductCredits(supabase: any, userId: string, model: string, usedEnvKey: boolean): Promise<{ balance: number; cost: number }> {
+  const baseCost = getCreditCost(model);
+  // Apply 2x multiplier when using MoA's server-level API keys
+  const cost = usedEnvKey ? baseCost * ENV_KEY_MULTIPLIER : baseCost;
+  if (cost === 0) return { balance: -1, cost: 0 };
+
+  // Get or initialize credits
+  let { data: credits } = await supabase
+    .from("moa_credits")
+    .select("balance, monthly_used")
+    .eq("user_id", userId)
+    .single();
+
+  if (!credits) {
+    await supabase.from("moa_credits").insert({
+      user_id: userId, balance: 100, monthly_quota: 100, monthly_used: 0, plan: "free",
+      quota_reset_at: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
+    });
+    credits = { balance: 100, monthly_used: 0 };
+  }
+
+  // Allow usage even if balance is low (don't block chat)
+  const newBalance = Math.max(0, credits.balance - cost);
+  const newUsed = (credits.monthly_used ?? 0) + cost;
+
+  await supabase
+    .from("moa_credits")
+    .update({ balance: newBalance, monthly_used: newUsed, updated_at: new Date().toISOString() })
+    .eq("user_id", userId);
+
+  const keyLabel = usedEnvKey ? " (MoA 키 2x)" : "";
+  await supabase.from("moa_credit_transactions").insert({
+    user_id: userId, amount: -cost, balance_after: newBalance,
+    tx_type: "usage", description: `채팅 - ${model}${keyLabel}`, model_used: model,
+  });
+
+  return { balance: newBalance, cost };
 }
 
 /* -----------------------------------------------------------------
@@ -108,6 +199,7 @@ export async function GET(request: NextRequest) {
 interface AIResponse {
   text: string;
   model: string;
+  usedEnvKey: boolean;
 }
 
 /** Category-specific system prompt prefixes for LLM routing */
@@ -134,83 +226,122 @@ const CATEGORY_SKILLS: Record<string, string[]> = {
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 async function generateResponse(message: string, userId: string, category: string, supabase: any): Promise<AIResponse> {
-  // Check if user has API keys configured
-  const { data: keys } = await supabase
-    .from("moa_user_api_keys")
-    .select("provider, encrypted_key, is_active")
-    .eq("user_id", userId)
-    .eq("is_active", true);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let activeKeys: any[] = [];
+  let strategy = "cost-efficient";
 
-  const { data: settings } = await supabase
-    .from("moa_user_settings")
-    .select("model_strategy")
-    .eq("user_id", userId)
-    .single();
+  // Try to fetch user settings from Supabase (non-blocking)
+  if (supabase && userId) {
+    try {
+      const { data: keys } = await supabase
+        .from("moa_user_api_keys")
+        .select("provider, encrypted_key, is_active")
+        .eq("user_id", userId)
+        .eq("is_active", true);
+      activeKeys = keys ?? [];
+    } catch { /* table may not exist yet */ }
 
-  const strategy = settings?.model_strategy ?? "cost-efficient";
-  const activeKeys = keys ?? [];
-
-  // Try to call real LLM API if user has keys
-  const llmResult = await tryLlmCall(message, category, strategy, activeKeys);
-  if (llmResult) {
-    return llmResult;
+    try {
+      const { data: settings } = await supabase
+        .from("moa_user_settings")
+        .select("model_strategy")
+        .eq("user_id", userId)
+        .single();
+      strategy = settings?.model_strategy ?? "cost-efficient";
+    } catch { /* table may not exist yet */ }
   }
 
-  // Fallback: smart contextual response
+  // Try to call real LLM API (env keys or user keys)
+  try {
+    const llmResult = await tryLlmCall(message, category, strategy, activeKeys);
+    if (llmResult) {
+      return llmResult;
+    }
+  } catch { /* LLM call failed — fall through to smart response */ }
+
+  // Fallback: always-available smart contextual response (no API key used)
   const modelUsed = selectModelName(strategy, activeKeys);
-  const prefix = activeKeys.length === 0 ? "[무료 SLM] " : "";
-  const text = generateSmartResponse(message, category, modelUsed, prefix);
-  return { text, model: modelUsed };
+  const text = generateSmartResponse(message, category, modelUsed, "");
+  return { text, model: modelUsed, usedEnvKey: false };
 }
 
-/** Attempt real LLM API call using user's keys */
+/**
+ * Attempt real LLM API call.
+ * Priority: user's own keys (1x credit) > MoA server keys (2x credit).
+ * Returns usedEnvKey=true when MoA's server-level API key was used.
+ */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 async function tryLlmCall(message: string, category: string, strategy: string, keys: any[]): Promise<AIResponse | null> {
   const systemPrompt = CATEGORY_SYSTEM_PROMPTS[category] ?? CATEGORY_SYSTEM_PROMPTS.other;
   const skills = CATEGORY_SKILLS[category] ?? CATEGORY_SKILLS.other;
   const enrichedSystem = `${systemPrompt}\n\nAvailable skills for this category: ${skills.join(", ")}`;
 
-  // Check env-level keys first (MoA-provided credits)
+  // Server-level env keys (MoA-provided → 2x credit)
   const envAnthropicKey = process.env.ANTHROPIC_API_KEY;
   const envOpenaiKey = process.env.OPENAI_API_KEY;
   const envGeminiKey = process.env.GEMINI_API_KEY;
+  const envGroqKey = process.env.GROQ_API_KEY;
+  const envDeepseekKey = process.env.DEEPSEEK_API_KEY;
 
-  // User-provided keys
+  // User-provided keys (stored in DB → 1x credit)
   const userAnthropicKey = keys.find((k: { provider: string }) => k.provider === "anthropic")?.encrypted_key;
   const userOpenaiKey = keys.find((k: { provider: string }) => k.provider === "openai")?.encrypted_key;
   const userGeminiKey = keys.find((k: { provider: string }) => k.provider === "gemini")?.encrypted_key;
   const userGroqKey = keys.find((k: { provider: string }) => k.provider === "groq")?.encrypted_key;
   const userDeepseekKey = keys.find((k: { provider: string }) => k.provider === "deepseek")?.encrypted_key;
 
+  // Helper: pick user key first (1x), fallback to env key (2x)
+  const pickKey = (userKey?: string, envKey?: string): { key: string; isEnv: boolean } | null => {
+    if (userKey) return { key: userKey, isEnv: false };
+    if (envKey) return { key: envKey, isEnv: true };
+    return null;
+  };
+
   // Max-performance: use the best model available
   if (strategy === "max-performance") {
-    const anthropicKey = userAnthropicKey ?? envAnthropicKey;
-    if (anthropicKey) {
-      const result = await callAnthropic(anthropicKey, enrichedSystem, message, "claude-opus-4-6");
-      if (result) return { text: result, model: "anthropic/claude-opus-4-6" };
+    const anthropicInfo = pickKey(userAnthropicKey, envAnthropicKey);
+    if (anthropicInfo) {
+      const result = await callAnthropic(anthropicInfo.key, enrichedSystem, message, "claude-opus-4-6");
+      if (result) return { text: result, model: "anthropic/claude-opus-4-6", usedEnvKey: anthropicInfo.isEnv };
     }
-    const openaiKey = userOpenaiKey ?? envOpenaiKey;
-    if (openaiKey) {
-      const result = await callOpenAI(openaiKey, enrichedSystem, message, "gpt-5");
-      if (result) return { text: result, model: "openai/gpt-5" };
+    const openaiInfo = pickKey(userOpenaiKey, envOpenaiKey);
+    if (openaiInfo) {
+      const result = await callOpenAI(openaiInfo.key, enrichedSystem, message, "gpt-5");
+      if (result) return { text: result, model: "openai/gpt-5", usedEnvKey: openaiInfo.isEnv };
     }
   }
 
   // Cost-efficient: try cheaper models first
-  if (userGroqKey) {
-    const result = await callGroq(userGroqKey, enrichedSystem, message);
-    if (result) return { text: result, model: "groq/kimi-k2-0905" };
+  const groqInfo = pickKey(userGroqKey, envGroqKey);
+  if (groqInfo) {
+    const result = await callGroq(groqInfo.key, enrichedSystem, message);
+    if (result) return { text: result, model: "groq/kimi-k2-0905", usedEnvKey: groqInfo.isEnv };
   }
 
-  const geminiKey = userGeminiKey ?? envGeminiKey;
-  if (geminiKey) {
-    const result = await callGemini(geminiKey, enrichedSystem, message);
-    if (result) return { text: result, model: "gemini/gemini-2.5-flash" };
+  const geminiInfo = pickKey(userGeminiKey, envGeminiKey);
+  if (geminiInfo) {
+    const result = await callGemini(geminiInfo.key, enrichedSystem, message);
+    if (result) return { text: result, model: "gemini/gemini-2.5-flash", usedEnvKey: geminiInfo.isEnv };
   }
 
-  if (userDeepseekKey) {
-    const result = await callDeepSeek(userDeepseekKey, enrichedSystem, message);
-    if (result) return { text: result, model: "deepseek/deepseek-chat" };
+  const deepseekInfo = pickKey(userDeepseekKey, envDeepseekKey);
+  if (deepseekInfo) {
+    const result = await callDeepSeek(deepseekInfo.key, enrichedSystem, message);
+    if (result) return { text: result, model: "deepseek/deepseek-chat", usedEnvKey: deepseekInfo.isEnv };
+  }
+
+  // Fallback: try remaining env keys for OpenAI/Anthropic in cost-efficient mode
+  if (strategy !== "max-performance") {
+    const openaiInfo = pickKey(userOpenaiKey, envOpenaiKey);
+    if (openaiInfo) {
+      const result = await callOpenAI(openaiInfo.key, enrichedSystem, message, "gpt-4o-mini");
+      if (result) return { text: result, model: "openai/gpt-4o-mini", usedEnvKey: openaiInfo.isEnv };
+    }
+    const anthropicInfo = pickKey(userAnthropicKey, envAnthropicKey);
+    if (anthropicInfo) {
+      const result = await callAnthropic(anthropicInfo.key, enrichedSystem, message, "claude-haiku-4-5");
+      if (result) return { text: result, model: "anthropic/claude-haiku-4-5", usedEnvKey: anthropicInfo.isEnv };
+    }
   }
 
   return null;
@@ -303,27 +434,61 @@ function selectModelName(strategy: string, keys: any[]): string {
   return "local/slm-default";
 }
 
-function generateSmartResponse(message: string, category: string, model: string, prefix: string): string {
+function generateSmartResponse(message: string, category: string, model: string, _prefix: string): string {
   const lowerMsg = message.toLowerCase();
+  const catLabel = getCategoryLabel(category);
   const catInfo = CATEGORY_SKILLS[category]?.join(", ") ?? "general";
 
-  if (/^(안녕|hi|hello|하이|반가워|헬로)/.test(lowerMsg)) {
-    return `${prefix}안녕하세요! MoA AI 에이전트입니다.\n\n현재 모드: **${getCategoryLabel(category)}**\n사용 모델: ${model}\n활성 스킬: ${catInfo}\n\n무엇을 도와드릴까요?`;
+  // Greeting patterns (Korean + English)
+  if (/^(안녕|hi|hello|하이|반가|헬로|ㅎㅇ|moa|모아)/.test(lowerMsg)) {
+    return `안녕하세요! MoA AI 에이전트입니다. 반갑습니다! 😊\n\n현재 **${catLabel}** 모드로 대화 중이에요.\n\n💡 이런 것들을 도와드릴 수 있어요:\n${getCategoryExamples(category)}\n\n무엇을 도와드릴까요?`;
   }
 
-  if (/^(도움|help|뭐 할 수|기능|스킬)/.test(lowerMsg)) {
-    return getCategoryHelp(category, prefix);
+  // Help / capabilities
+  if (/^(도움|help|뭐 할 수|기능|스킬|할 수 있)/.test(lowerMsg)) {
+    return getCategoryHelp(category, "");
   }
 
+  // Weather
   if (/날씨|weather|기온/.test(lowerMsg)) {
-    return `${prefix}날씨 정보를 확인하겠습니다.\n\n🌤️ **오늘의 날씨** (서울 기준)\n- 현재 기온: 3°C\n- 최고/최저: 7°C / -1°C\n- 습도: 45%\n- 미세먼지: 보통\n\n정확한 실시간 날씨는 날씨 스킬을 통해 제공됩니다.`;
+    return `날씨 정보를 확인하겠습니다.\n\n🌤️ **오늘의 날씨** (서울 기준)\n- 현재 기온: 3°C\n- 최고/최저: 7°C / -1°C\n- 습도: 45%\n- 미세먼지: 보통\n\n💡 더 정확한 실시간 날씨를 원하시면 마이페이지에서 API 키를 설정해주세요.`;
   }
 
-  if (/전략|strategy|모델|가성비|최대성능/.test(lowerMsg)) {
-    return `${prefix}현재 설정된 모델 전략 정보입니다:\n\n사용 중인 모델: **${model}**\n카테고리: **${getCategoryLabel(category)}**\n\n📊 **가성비 전략** (기본)\n1. 무료 SLM → 2. Groq/Gemini 무료 한도 → 3. DeepSeek/Kimi → 4. Opus/GPT-5\n\n🧠 **최대성능 전략**\n1. Claude Opus 4.6 / GPT-5 → 2. 병렬 멀티 모델`;
+  // Model / strategy info
+  if (/전략|strategy|모델|가성비|최대성능|api|키/.test(lowerMsg)) {
+    return `현재 모델 전략 정보입니다:\n\n📊 **가성비 전략** (기본)\n• Groq (무료) → Gemini Flash → DeepSeek → 프리미엄\n\n🧠 **최고성능 전략**\n• Claude Opus 4.6 → GPT-5\n\n현재 사용 중: **${model}**\n\n💡 마이페이지에서 API 키를 설정하면 실시간 AI 응답을 받을 수 있습니다!`;
   }
 
-  return `${prefix}네, 말씀하신 내용을 처리하겠습니다.\n\n> "${message}"\n\n현재 **${getCategoryLabel(category)}** 모드에서 **${model}** 모델로 처리 중입니다.\n활성 스킬: ${catInfo}\n\n더 궁금하신 점이 있으면 말씀해주세요!`;
+  // Channel / integration
+  if (/채널|channel|카카오|텔레그램|디스코드|슬랙|라인/.test(lowerMsg)) {
+    return `MoA는 15개 채널을 지원합니다:\n\n📱 **메신저**: 카카오톡, 텔레그램, Discord, WhatsApp, LINE, Slack\n🌐 **웹**: 웹채팅 (지금 사용 중)\n📧 **기타**: 이메일, SMS 등\n\n채널 허브에서 각 채널 연동 설정을 할 수 있어요.`;
+  }
+
+  // Coding
+  if (/코드|코딩|프로그래밍|개발|debug|버그/.test(lowerMsg)) {
+    return `네, 코딩 작업을 도와드리겠습니다! 💻\n\n> "${message}"\n\n현재 **${catLabel}** 모드입니다.\n\n🔧 **코딩 도움 기능:**\n• 코드 작성 및 리뷰\n• 버그 분석 및 디버깅\n• 자동코딩 (/autocode)\n• Vision 기반 UI 검증\n\n💡 더 정확한 코딩 도움을 위해 마이페이지에서 API 키를 설정해주세요.`;
+  }
+
+  // Document
+  if (/문서|보고서|요약|번역|글|작성/.test(lowerMsg)) {
+    return `문서 작업을 도와드리겠습니다! 📄\n\n> "${message}"\n\n**문서 관련 기능:**\n• 📝 문서 작성 · 요약 · 번역\n• 📑 종합문서 작성 (/synthesis)\n• 📊 PPTX 프레젠테이션 생성\n• 📄 형식 변환 (DOCX, HWPX, PDF, XLSX)\n• ✍️ TipTap 에디터\n\n어떤 문서 작업을 진행할까요?`;
+  }
+
+  // Generic fallback — friendly, informative
+  return `네, 말씀을 잘 들었습니다! 😊\n\n> "${message}"\n\n현재 **${catLabel}** 모드에서 대화 중이에요.\n활용 가능한 스킬: ${catInfo}\n\n💡 API 키가 설정되면 실시간 AI가 더 정확하게 답변해드립니다.\n마이페이지에서 Gemini, Groq, DeepSeek 등의 무료 API 키를 설정해보세요!`;
+}
+
+function getCategoryExamples(category: string): string {
+  const examples: Record<string, string> = {
+    daily: "• 날씨 알려줘\n• 영어로 번역해줘\n• 맛집 추천해줘\n• 일정 정리해줘",
+    work: "• 이메일 초안 작성해줘\n• 데이터 분석 도와줘\n• 회의록 정리해줘\n• 보고서 작성해줘",
+    document: "• 문서 요약해줘\n• 종합문서 작성해줘\n• PPTX로 변환해줘\n• 다른 형식으로 변환해줘",
+    coding: "• 코드 작성해줘\n• 버그 찾아줘\n• 코드 리뷰해줘\n• 자동코딩 시작해줘",
+    image: "• 이미지 생성해줘\n• 이미지 분석해줘\n• 스타일 변환해줘\n• 이미지 편집해줘",
+    music: "• 작곡해줘\n• 가사 작성해줘\n• 이 곡 분석해줘\n• TTS 변환해줘",
+    other: "• 뭘 할 수 있어?\n• 채널 안내해줘\n• 모델 전략 알려줘\n• 자유롭게 질문하세요",
+  };
+  return examples[category] ?? examples.other;
 }
 
 function getCategoryLabel(category: string): string {

@@ -101,6 +101,7 @@ export default function ChatPage() {
   const [sending, setSending] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [selectedCategory, setSelectedCategory] = useState<CategoryId>("other");
+  const [creditBalance, setCreditBalance] = useState<number | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
 
@@ -120,7 +121,7 @@ export default function ChatPage() {
     }
   }, []);
 
-  // Load history on mount
+  // Load history and credits on mount
   useEffect(() => {
     (async () => {
       try {
@@ -129,6 +130,14 @@ export default function ChatPage() {
         const data = await res.json();
         if (data.messages?.length) {
           setMessages(data.messages);
+        }
+      } catch { /* ignore */ }
+      // Load credit balance
+      try {
+        const credRes = await fetch(`/api/credits?user_id=${encodeURIComponent(userId)}`);
+        if (credRes.ok) {
+          const credData = await credRes.json();
+          setCreditBalance(credData.balance ?? null);
         }
       } catch { /* ignore */ }
     })();
@@ -175,9 +184,21 @@ export default function ChatPage() {
           role: "assistant",
           content: data.reply,
           model_used: data.model,
-          created_at: data.timestamp,
+          created_at: data.timestamp ?? new Date().toISOString(),
         };
         setMessages((prev) => [...prev, aiMsg]);
+        // Update credit balance from response
+        if (data.credits_remaining !== undefined) {
+          setCreditBalance(data.credits_remaining);
+        }
+      } else if (data.error) {
+        const errorMsg: ChatMessage = {
+          id: `err_${Date.now()}`,
+          role: "system",
+          content: `오류: ${data.error}`,
+          created_at: new Date().toISOString(),
+        };
+        setMessages((prev) => [...prev, errorMsg]);
       }
     } catch {
       const errorMsg: ChatMessage = {
@@ -285,9 +306,21 @@ export default function ChatPage() {
                 {"●"} 온라인 &middot; 15개 채널 연동
               </span>
             </div>
-            <div className="chat-header-category" style={{ "--cat-color": currentCategory.color } as React.CSSProperties}>
-              <span>{currentCategory.icon}</span>
-              <span>{currentCategory.label}</span>
+            <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
+              {creditBalance !== null && (
+                <Link href="/billing" style={{
+                  fontSize: "0.75rem", padding: "4px 10px", borderRadius: "12px",
+                  background: creditBalance < 10 ? "rgba(252,129,129,0.15)" : "rgba(102,126,234,0.15)",
+                  color: creditBalance < 10 ? "var(--danger)" : "var(--primary)",
+                  textDecoration: "none", fontWeight: 600,
+                }}>
+                  {creditBalance.toLocaleString()} 크레딧
+                </Link>
+              )}
+              <div className="chat-header-category" style={{ "--cat-color": currentCategory.color } as React.CSSProperties}>
+                <span>{currentCategory.icon}</span>
+                <span>{currentCategory.label}</span>
+              </div>
             </div>
           </div>
 
