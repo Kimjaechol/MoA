@@ -202,15 +202,32 @@ interface AIResponse {
   usedEnvKey: boolean;
 }
 
+/**
+ * Strict language enforcement rule — appended to all system prompts.
+ * Prevents CJK language mixing (e.g. Japanese in Korean responses).
+ */
+const LANGUAGE_RULE = `
+
+[CRITICAL LANGUAGE RULE]
+You MUST respond in the SAME language as the user's message.
+- If the user writes in Korean, respond ONLY in Korean. Never mix Japanese, Chinese, or any other language.
+- If the user writes in Japanese, respond ONLY in Japanese.
+- If the user writes in English, respond ONLY in English.
+- If the user writes in Chinese, respond ONLY in Chinese.
+- If the user explicitly requests a different language (e.g. "영어로 답해줘"), follow that instruction.
+- English technical terms (API, URL, code snippets) are acceptable in any language.
+- ABSOLUTELY DO NOT mix different Asian languages. For example, never use Japanese words (ありません, ちょっと, etc.) in a Korean response. This is strictly forbidden.
+`;
+
 /** Category-specific system prompt prefixes for LLM routing */
 const CATEGORY_SYSTEM_PROMPTS: Record<string, string> = {
-  daily: "You are a daily life assistant. Help with schedules, weather, translations, lifestyle tips, and general questions. Respond naturally in Korean.",
-  work: "You are a professional work assistant. Help with emails, reports, meeting notes, data analysis, and business tasks. Respond in a professional Korean tone.",
-  document: "You are a document specialist. Help with document creation, summarization, conversion, synthesis, and formatting. Respond in Korean.",
-  coding: "You are an expert software engineer. Help with code writing, debugging, code review, and automated coding tasks. Include code snippets and technical details.",
-  image: "You are an image/visual AI assistant. Help with image generation prompts, editing instructions, image analysis, and style transfer. Respond in Korean.",
-  music: "You are a music AI assistant. Help with composition, lyrics writing, TTS, and music analysis. Respond in Korean.",
-  other: "You are MoA, a versatile AI assistant with 100+ skills across 15 channels. Help with any request. Respond in Korean.",
+  daily: `You are a daily life assistant. Help with schedules, weather, translations, lifestyle tips, and general questions.${LANGUAGE_RULE}`,
+  work: `You are a professional work assistant. Help with emails, reports, meeting notes, data analysis, and business tasks.${LANGUAGE_RULE}`,
+  document: `You are a document specialist. Help with document creation, summarization, conversion, synthesis, and formatting.${LANGUAGE_RULE}`,
+  coding: `You are an expert software engineer. Help with code writing, debugging, code review, and automated coding tasks. Include code snippets and technical details.${LANGUAGE_RULE}`,
+  image: `You are an image/visual AI assistant. Help with image generation prompts, editing instructions, image analysis, and style transfer.${LANGUAGE_RULE}`,
+  music: `You are a music AI assistant. Help with composition, lyrics writing, TTS, and music analysis.${LANGUAGE_RULE}`,
+  other: `You are MoA, a versatile AI assistant with 100+ skills across 15 channels. Help with any request.${LANGUAGE_RULE}`,
 };
 
 /** Category-specific skill sets for routing */
@@ -315,7 +332,7 @@ async function tryLlmCall(message: string, category: string, strategy: string, k
   const groqInfo = pickKey(userGroqKey, envGroqKey);
   if (groqInfo) {
     const result = await callGroq(groqInfo.key, enrichedSystem, message);
-    if (result) return { text: result, model: "groq/kimi-k2-0905", usedEnvKey: groqInfo.isEnv };
+    if (result) return { text: result, model: "groq/llama-3.3-70b-versatile", usedEnvKey: groqInfo.isEnv };
   }
 
   const geminiInfo = pickKey(userGeminiKey, envGeminiKey);
@@ -428,7 +445,7 @@ function selectModelName(strategy: string, keys: any[]): string {
     if (keys.some((k: { provider: string }) => k.provider === "anthropic")) return "anthropic/claude-opus-4-6";
     if (keys.some((k: { provider: string }) => k.provider === "openai")) return "openai/gpt-5";
   }
-  if (keys.some((k: { provider: string }) => k.provider === "groq")) return "groq/kimi-k2-0905";
+  if (keys.some((k: { provider: string }) => k.provider === "groq")) return "groq/llama-3.3-70b-versatile";
   if (keys.some((k: { provider: string }) => k.provider === "gemini")) return "gemini/gemini-2.5-flash";
   if (keys.some((k: { provider: string }) => k.provider === "deepseek")) return "deepseek/deepseek-chat";
   return "local/slm-default";
