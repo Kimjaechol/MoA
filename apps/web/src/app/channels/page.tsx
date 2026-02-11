@@ -383,6 +383,34 @@ export default function ChannelsPage() {
       <Nav />
       <main style={{ paddingTop: "100px", minHeight: "100vh" }}>
         <div className="container">
+          {/* App Download Banner */}
+          <div
+            style={{
+              background: "linear-gradient(135deg, rgba(102,126,234,0.15), rgba(118,75,162,0.15))",
+              border: "1px solid rgba(102,126,234,0.3)",
+              borderRadius: "var(--radius)",
+              padding: "24px 32px",
+              marginBottom: "40px",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "space-between",
+              flexWrap: "wrap",
+              gap: "16px",
+            }}
+          >
+            <div>
+              <h3 style={{ fontSize: "1.1rem", marginBottom: "4px" }}>
+                MoA 데스크톱 앱으로 더 강력하게
+              </h3>
+              <p style={{ color: "var(--text-muted)", fontSize: "0.85rem", margin: 0 }}>
+                로컬 파일 접근, 자동 업데이트, 시스템 트레이 — 원클릭 설치
+              </p>
+            </div>
+            <Link href="/download" className="btn btn-primary" style={{ whiteSpace: "nowrap" }}>
+              앱 다운로드
+            </Link>
+          </div>
+
           {/* Header */}
           <div className="section-header">
             <span className="section-badge">{CHANNEL_DATA.length}개 채널</span>
@@ -397,8 +425,8 @@ export default function ChannelsPage() {
               모든 채널에서 동일한 AI, 동일한 기억, 동일한 스킬을 사용할 수 있습니다.
             </p>
             <div style={{ display: "flex", gap: "12px", justifyContent: "center", flexWrap: "wrap" }}>
-              <Link href="/#web-chat" className="btn btn-primary">
-                웹에서 바로 채팅 시작
+              <Link href="/download" className="btn btn-primary">
+                앱 다운로드
               </Link>
               <Link href="#all-channels" className="btn btn-outline">
                 모든 채널 보기
@@ -527,9 +555,14 @@ export default function ChannelsPage() {
                   </p>
                 </div>
               </div>
-              <Link href="/#web-chat" className="btn btn-primary">
-                지금 바로 대화 시작하기
-              </Link>
+              <div style={{ display: "flex", gap: "12px", justifyContent: "center", flexWrap: "wrap" }}>
+                <Link href="/download" className="btn btn-primary">
+                  MoA 앱 다운로드
+                </Link>
+                <Link href="/chat" className="btn btn-outline">
+                  웹에서 바로 채팅
+                </Link>
+              </div>
             </div>
           </section>
         </div>

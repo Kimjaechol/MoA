@@ -345,6 +345,29 @@ export default function ChannelDetailPage() {
             </div>
           </section>
 
+          {/* App Download Banner */}
+          <div
+            className="card"
+            style={{
+              marginBottom: "32px",
+              background: "linear-gradient(135deg, rgba(102,126,234,0.12), rgba(118,75,162,0.12))",
+              border: "1px solid rgba(102,126,234,0.25)",
+              padding: "28px 32px",
+              textAlign: "center",
+            }}
+          >
+            <h3 style={{ fontSize: "1.15rem", marginBottom: "8px" }}>
+              MoA 데스크톱 앱 설치
+            </h3>
+            <p style={{ color: "var(--text-muted)", fontSize: "0.9rem", marginBottom: "16px" }}>
+              데스크톱 앱을 설치하면 로컬 파일 접근, 시스템 트레이, 자동 업데이트를 사용할 수 있습니다.
+              <br />카카오톡, 텔레그램 등 채널과 함께 사용하면 더욱 강력합니다.
+            </p>
+            <Link href="/download" className="btn btn-primary" style={{ minWidth: "200px" }}>
+              원클릭 다운로드
+            </Link>
+          </div>
+
           {/* CTA */}
           <div style={{ textAlign: "center", marginBottom: "64px" }}>
             <a
@@ -357,6 +380,9 @@ export default function ChannelDetailPage() {
               {ch.connectLabel}
             </a>
             <div style={{ display: "flex", gap: "12px", justifyContent: "center", marginTop: "16px" }}>
+              <Link href="/download" className="btn btn-outline btn-sm">
+                앱 다운로드
+              </Link>
               <Link href="/chat" className="btn btn-outline btn-sm">
                 웹에서 바로 채팅
               </Link>

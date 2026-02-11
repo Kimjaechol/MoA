@@ -471,12 +471,17 @@ function generateSmartResponse(message: string, category: string, model: string,
 
   // Greeting patterns (Korean + English)
   if (/^(안녕|hi|hello|하이|반가|헬로|ㅎㅇ|moa|모아)/.test(lowerMsg)) {
-    return `안녕하세요! MoA AI 에이전트입니다. 반갑습니다! 😊\n\n현재 **${catLabel}** 모드로 대화 중이에요.\n\n💡 이런 것들을 도와드릴 수 있어요:\n${getCategoryExamples(category)}\n\n무엇을 도와드릴까요?`;
+    return `안녕하세요! MoA AI 에이전트입니다. 반갑습니다! 😊\n\n현재 **${catLabel}** 모드로 대화 중이에요.\n\n💡 이런 것들을 도와드릴 수 있어요:\n${getCategoryExamples(category)}\n\n📥 **MoA 데스크톱 앱**을 설치하면 로컬 파일 접근, 자동 업데이트 등 더 강력한 기능을 사용할 수 있어요!\n👉 다운로드: https://moa.lawith.kr/download\n\n무엇을 도와드릴까요?`;
   }
 
   // Help / capabilities
   if (/^(도움|help|뭐 할 수|기능|스킬|할 수 있)/.test(lowerMsg)) {
-    return getCategoryHelp(category, "");
+    return getCategoryHelp(category, "") + "\n\n📥 데스크톱 앱: https://moa.lawith.kr/download";
+  }
+
+  // Download / install
+  if (/다운로드|download|설치|install|앱/.test(lowerMsg)) {
+    return `MoA 앱을 다운로드하세요! 📥\n\n🖥️ **데스크톱 앱** (Windows/macOS/Linux)\n• 로컬 파일 접근 (E드라이브 등)\n• 시스템 트레이 상주\n• 자동 업데이트\n• 원클릭 설치\n\n👉 다운로드: https://moa.lawith.kr/download\n\n📱 모바일은 위 링크에서 Android/iOS도 지원합니다.`;
   }
 
   // Weather
