@@ -110,6 +110,24 @@ export interface PdfRenderResult {
   ocrGuidance?: string;
 }
 
+/** Document conversion result */
+export interface DocumentConvertResult {
+  /** Converted content (HTML, Markdown, or editor HTML). */
+  content: string;
+  /** Output format. */
+  format: "html" | "markdown" | "editor";
+  /** Source document type. */
+  sourceType: "pdf" | "docx" | "xlsx" | "pptx" | "hwpx" | "unknown";
+  /** Number of pages/sheets/slides. */
+  pageCount: number;
+  /** Whether the PDF was scanned/image-based. */
+  isScanned?: boolean;
+  /** Plain text extraction. */
+  plainText: string;
+  /** Path where output was saved. */
+  savedTo?: string;
+}
+
 /** Combined vision result from the orchestrator */
 export interface VisionResult {
   /** Which layers contributed to this result */

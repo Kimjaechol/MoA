@@ -3,6 +3,10 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { describe, expect, it, beforeEach, afterEach } from "vitest";
+import { convertDocToHtml } from "./converter/doc-to-html.js";
+import { generateEditorHtml } from "./converter/editor-template.js";
+import { convertHtmlToMarkdown } from "./converter/html-to-markdown.js";
+import { convertDocument } from "./converter/index.js";
 import { createVisionTool } from "./index.js";
 import { parseDocument, HWP_CONVERSION_NOTICE } from "./layer2-document.js";
 
@@ -460,5 +464,402 @@ describe("createVisionTool", () => {
     } finally {
       await fs.rm(tmpDir, { recursive: true, force: true }).catch(() => {});
     }
+  });
+
+  it("has convert action parameters in schema", () => {
+    const tool = createVisionTool();
+    expect(tool).not.toBeNull();
+    const schema = tool!.parameters;
+    expect(schema.properties).toHaveProperty("output_format");
+    expect(schema.properties).toHaveProperty("output_path");
+    expect(schema.properties).toHaveProperty("editor_theme");
+  });
+
+  it("description mentions convert action", () => {
+    const tool = createVisionTool();
+    expect(tool).not.toBeNull();
+    expect(tool!.description).toContain("convert");
+    expect(tool!.description).toContain("HTML");
+    expect(tool!.description).toContain("Markdown");
+    expect(tool!.description).toContain("editor");
+  });
+
+  it("throws when convert action is called without file", async () => {
+    const tool = createVisionTool();
+    expect(tool).not.toBeNull();
+    await expect(tool!.execute("test-call-id", { action: "convert" })).rejects.toThrow(
+      /file parameter required/,
+    );
+  });
+
+  it("throws on invalid output_format for convert", async () => {
+    const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "vision-tool-test-"));
+    try {
+      const zip = new JSZip();
+      zip.file(
+        "word/document.xml",
+        `<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:r><w:t>Test</w:t></w:r></w:p><w:sectPr/></w:body></w:document>`,
+      );
+      const docxPath = path.join(tmpDir, "test.docx");
+      await fs.writeFile(docxPath, await zip.generateAsync({ type: "nodebuffer" }));
+
+      const tool = createVisionTool();
+      await expect(
+        tool!.execute("test-call-id", { action: "convert", file: docxPath, output_format: "docx" }),
+      ).rejects.toThrow(/Invalid output_format/);
+    } finally {
+      await fs.rm(tmpDir, { recursive: true, force: true }).catch(() => {});
+    }
+  });
+});
+
+// ─── Document Converter Tests ─────────────────────────
+
+describe("converter: doc-to-html", () => {
+  let tmpDir: string;
+
+  beforeEach(async () => {
+    tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "converter-test-"));
+  });
+
+  afterEach(async () => {
+    await fs.rm(tmpDir, { recursive: true, force: true }).catch(() => {});
+  });
+
+  it("converts a .docx with formatting to HTML", async () => {
+    const zip = new JSZip();
+    zip.file(
+      "word/document.xml",
+      `<?xml version="1.0" encoding="UTF-8"?>
+      <w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
+        <w:body>
+          <w:p>
+            <w:pPr>
+              <w:jc w:val="center"/>
+            </w:pPr>
+            <w:r>
+              <w:rPr><w:b/></w:rPr>
+              <w:t>Bold Title</w:t>
+            </w:r>
+          </w:p>
+          <w:p>
+            <w:r>
+              <w:rPr><w:i/></w:rPr>
+              <w:t>Italic text</w:t>
+            </w:r>
+          </w:p>
+          <w:sectPr/>
+        </w:body>
+      </w:document>`,
+    );
+
+    const docxPath = path.join(tmpDir, "formatted.docx");
+    await fs.writeFile(docxPath, await zip.generateAsync({ type: "nodebuffer" }));
+
+    const result = await convertDocToHtml(docxPath);
+
+    expect(result.type).toBe("docx");
+    expect(result.html).toContain("<strong>Bold Title</strong>");
+    expect(result.html).toContain("<em>Italic text</em>");
+    expect(result.html).toContain("text-align:center");
+    expect(result.html).toContain("<!DOCTYPE html>");
+  });
+
+  it("converts a .xlsx to HTML table", async () => {
+    const zip = new JSZip();
+    zip.file(
+      "xl/sharedStrings.xml",
+      `<?xml version="1.0" encoding="UTF-8"?>
+      <sst xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
+        <si><t>Name</t></si>
+        <si><t>Score</t></si>
+        <si><t>Alice</t></si>
+      </sst>`,
+    );
+    zip.file(
+      "xl/worksheets/sheet1.xml",
+      `<?xml version="1.0" encoding="UTF-8"?>
+      <worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
+        <sheetData>
+          <row r="1">
+            <c r="A1" t="s"><v>0</v></c>
+            <c r="B1" t="s"><v>1</v></c>
+          </row>
+          <row r="2">
+            <c r="A2" t="s"><v>2</v></c>
+            <c r="B2"><v>95</v></c>
+          </row>
+        </sheetData>
+      </worksheet>`,
+    );
+
+    const xlsxPath = path.join(tmpDir, "test.xlsx");
+    await fs.writeFile(xlsxPath, await zip.generateAsync({ type: "nodebuffer" }));
+
+    const result = await convertDocToHtml(xlsxPath);
+
+    expect(result.type).toBe("xlsx");
+    expect(result.html).toContain("<table");
+    expect(result.html).toContain("Name");
+    expect(result.html).toContain("Score");
+    expect(result.html).toContain("Alice");
+    expect(result.html).toContain("95");
+  });
+
+  it("converts a .pptx to HTML slides", async () => {
+    const zip = new JSZip();
+    zip.file(
+      "ppt/slides/slide1.xml",
+      `<?xml version="1.0" encoding="UTF-8"?>
+      <p:sld xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main"
+             xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main">
+        <p:cSld>
+          <p:spTree>
+            <p:sp>
+              <p:txBody>
+                <a:p><a:r><a:rPr b="1"/><a:t>Presentation Title</a:t></a:r></a:p>
+              </p:txBody>
+            </p:sp>
+          </p:spTree>
+        </p:cSld>
+      </p:sld>`,
+    );
+
+    const pptxPath = path.join(tmpDir, "test.pptx");
+    await fs.writeFile(pptxPath, await zip.generateAsync({ type: "nodebuffer" }));
+
+    const result = await convertDocToHtml(pptxPath);
+
+    expect(result.type).toBe("pptx");
+    expect(result.html).toContain("Presentation Title");
+    expect(result.html).toContain("<strong>");
+    expect(result.html).toContain("Slide 1");
+  });
+
+  it("converts a .hwpx to HTML", async () => {
+    const zip = new JSZip();
+    zip.file(
+      "Contents/section0.xml",
+      `<?xml version="1.0" encoding="UTF-8"?>
+      <hs:sec xmlns:hs="http://www.hancom.co.kr/hwpml/2011/paragraph">
+        <hs:p>
+          <hs:run><hs:t>한글 HTML 변환 테스트</hs:t></hs:run>
+        </hs:p>
+      </hs:sec>`,
+    );
+
+    const hwpxPath = path.join(tmpDir, "test.hwpx");
+    await fs.writeFile(hwpxPath, await zip.generateAsync({ type: "nodebuffer" }));
+
+    const result = await convertDocToHtml(hwpxPath);
+
+    expect(result.type).toBe("hwpx");
+    expect(result.html).toContain("한글 HTML 변환 테스트");
+    expect(result.html).toContain("<!DOCTYPE html>");
+    expect(result.plainText).toContain("한글 HTML 변환 테스트");
+  });
+});
+
+// ─── HTML → Markdown Converter Tests ──────────────────
+
+describe("converter: html-to-markdown", () => {
+  it("converts headings to markdown", () => {
+    const html = "<h1>Title</h1><h2>Subtitle</h2><h3>Section</h3>";
+    const md = convertHtmlToMarkdown(html);
+    expect(md).toContain("# Title");
+    expect(md).toContain("## Subtitle");
+    expect(md).toContain("### Section");
+  });
+
+  it("converts bold and italic", () => {
+    const html = "<p><strong>bold</strong> and <em>italic</em></p>";
+    const md = convertHtmlToMarkdown(html);
+    expect(md).toContain("**bold**");
+    expect(md).toContain("*italic*");
+  });
+
+  it("converts tables to GFM format", () => {
+    const html = `<table>
+      <tr><th>Name</th><th>Age</th></tr>
+      <tr><td>Alice</td><td>30</td></tr>
+    </table>`;
+    const md = convertHtmlToMarkdown(html);
+    expect(md).toContain("| Name | Age |");
+    expect(md).toContain("| --- | --- |");
+    expect(md).toContain("| Alice | 30 |");
+  });
+
+  it("converts links", () => {
+    const html = '<p>Visit <a href="https://example.com">example</a></p>';
+    const md = convertHtmlToMarkdown(html);
+    expect(md).toContain("[example](https://example.com)");
+  });
+
+  it("converts unordered lists", () => {
+    const html = "<ul><li>Item 1</li><li>Item 2</li></ul>";
+    const md = convertHtmlToMarkdown(html);
+    expect(md).toContain("- Item 1");
+    expect(md).toContain("- Item 2");
+  });
+
+  it("converts ordered lists", () => {
+    const html = "<ol><li>First</li><li>Second</li></ol>";
+    const md = convertHtmlToMarkdown(html);
+    expect(md).toContain("1. First");
+    expect(md).toContain("2. Second");
+  });
+
+  it("handles horizontal rules", () => {
+    const html = "<p>Before</p><hr><p>After</p>";
+    const md = convertHtmlToMarkdown(html);
+    expect(md).toContain("---");
+  });
+
+  it("decodes HTML entities", () => {
+    const html = "<p>A &amp; B &lt; C &gt; D</p>";
+    const md = convertHtmlToMarkdown(html);
+    expect(md).toContain("A & B < C > D");
+  });
+});
+
+// ─── Editor Template Tests ────────────────────────────
+
+describe("converter: editor-template", () => {
+  it("generates a valid self-contained HTML editor", () => {
+    const html = generateEditorHtml({
+      title: "테스트 문서",
+      content: "<p>Hello World</p>",
+      theme: "light",
+      lang: "ko",
+    });
+
+    expect(html).toContain("<!DOCTYPE html>");
+    expect(html).toContain("테스트 문서");
+    expect(html).toContain("contenteditable");
+    expect(html).toContain("Hello World");
+    expect(html).toContain("MoA Editor");
+  });
+
+  it("supports dark theme", () => {
+    const html = generateEditorHtml({
+      title: "Dark Doc",
+      theme: "dark",
+    });
+
+    expect(html).toContain('data-theme="dark"');
+  });
+
+  it("supports English language", () => {
+    const html = generateEditorHtml({
+      lang: "en",
+    });
+
+    expect(html).toContain("Save");
+    expect(html).toContain("Bold");
+    expect(html).toContain("Undo");
+  });
+
+  it("includes toolbar buttons", () => {
+    const html = generateEditorHtml();
+    expect(html).toContain("bold");
+    expect(html).toContain("italic");
+    expect(html).toContain("underline");
+    expect(html).toContain("justifyCenter");
+    expect(html).toContain("insertTable");
+  });
+
+  it("includes save/export functionality", () => {
+    const html = generateEditorHtml();
+    expect(html).toContain("saveAs");
+    expect(html).toContain("exportPdf");
+    expect(html).toContain("htmlToMarkdown");
+  });
+});
+
+// ─── Unified convertDocument Tests ────────────────────
+
+describe("converter: convertDocument", () => {
+  let tmpDir: string;
+
+  beforeEach(async () => {
+    tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "convert-doc-test-"));
+  });
+
+  afterEach(async () => {
+    await fs.rm(tmpDir, { recursive: true, force: true }).catch(() => {});
+  });
+
+  it("converts .docx to HTML", async () => {
+    const zip = new JSZip();
+    zip.file(
+      "word/document.xml",
+      `<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:r><w:t>Test Content</w:t></w:r></w:p><w:sectPr/></w:body></w:document>`,
+    );
+    const docxPath = path.join(tmpDir, "test.docx");
+    await fs.writeFile(docxPath, await zip.generateAsync({ type: "nodebuffer" }));
+
+    const result = await convertDocument(docxPath, { format: "html" });
+
+    expect(result.format).toBe("html");
+    expect(result.sourceType).toBe("docx");
+    expect(result.content).toContain("Test Content");
+    expect(result.content).toContain("<!DOCTYPE html>");
+  });
+
+  it("converts .docx to Markdown", async () => {
+    const zip = new JSZip();
+    zip.file(
+      "word/document.xml",
+      `<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:pPr><w:pStyle w:val="Heading1"/></w:pPr><w:r><w:t>Heading</w:t></w:r></w:p><w:p><w:r><w:t>Body text</w:t></w:r></w:p><w:sectPr/></w:body></w:document>`,
+    );
+    const docxPath = path.join(tmpDir, "test.docx");
+    await fs.writeFile(docxPath, await zip.generateAsync({ type: "nodebuffer" }));
+
+    const result = await convertDocument(docxPath, { format: "markdown" });
+
+    expect(result.format).toBe("markdown");
+    expect(result.content).toContain("Heading");
+    expect(result.content).toContain("Body text");
+  });
+
+  it("converts .docx to editor format", async () => {
+    const zip = new JSZip();
+    zip.file(
+      "word/document.xml",
+      `<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:r><w:t>Edit me</w:t></w:r></w:p><w:sectPr/></w:body></w:document>`,
+    );
+    const docxPath = path.join(tmpDir, "test.docx");
+    await fs.writeFile(docxPath, await zip.generateAsync({ type: "nodebuffer" }));
+
+    const result = await convertDocument(docxPath, { format: "editor" });
+
+    expect(result.format).toBe("editor");
+    expect(result.content).toContain("contenteditable");
+    expect(result.content).toContain("MoA Editor");
+    expect(result.content).toContain("Edit me");
+  });
+
+  it("saves output to file when outputPath is given", async () => {
+    const zip = new JSZip();
+    zip.file(
+      "word/document.xml",
+      `<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:r><w:t>Saved content</w:t></w:r></w:p><w:sectPr/></w:body></w:document>`,
+    );
+    const docxPath = path.join(tmpDir, "test.docx");
+    await fs.writeFile(docxPath, await zip.generateAsync({ type: "nodebuffer" }));
+
+    const outputPath = path.join(tmpDir, "output.html");
+    const result = await convertDocument(docxPath, { format: "html", outputPath });
+
+    expect(result.savedTo).toBe(outputPath);
+    const savedContent = await fs.readFile(outputPath, "utf-8");
+    expect(savedContent).toContain("Saved content");
+  });
+
+  it("rejects unsupported file types", async () => {
+    const txtPath = path.join(tmpDir, "test.txt");
+    await fs.writeFile(txtPath, "plain text");
+
+    await expect(convertDocument(txtPath)).rejects.toThrow(/지원하지 않는 파일 형식/);
   });
 });

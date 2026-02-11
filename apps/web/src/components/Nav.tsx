@@ -8,6 +8,7 @@ const NAV_LINKS = [
   { href: "#features", label: "기능", isAnchor: true },
   { href: "/channels", label: "채널", isAnchor: false },
   { href: "/use-cases", label: "사용사례", isAnchor: false },
+  { href: "/editor", label: "에디터", isAnchor: false },
   { href: "/community", label: "커뮤니티", isAnchor: false },
   { href: "/mypage", label: "마이페이지", isAnchor: false },
   { href: "#download", label: "다운로드", isAnchor: true },

@@ -6,6 +6,7 @@
  *   document   — Layer 2: Parse .docx/.xlsx/.pptx
  *   screenshot — Layer 3: Smart screenshot with diff detection
  *   pdf        — Layer 4: PDF text extraction + optional rendering
+ *   convert    — Document conversion: PDF/Office → HTML/Markdown/Editor
  *   auto       — Orchestrator: runs all relevant layers automatically
  */
 
@@ -15,6 +16,7 @@ import type { OpenClawConfig } from "../../../config/config.js";
 import type { AnyAgentTool } from "../common.js";
 import { assertSandboxPath } from "../../sandbox-paths.js";
 import { jsonResult, readStringParam, readNumberParam, imageResult } from "../common.js";
+import { convertDocument, type ConvertOutputFormat } from "./converter/index.js";
 import { captureAccessibilitySnapshot } from "./layer1-accessibility.js";
 import { parseDocument } from "./layer2-document.js";
 import { captureSmartScreenshot } from "./layer3-screenshot.js";
@@ -22,6 +24,7 @@ import { renderPdf } from "./layer4-pdf.js";
 import { orchestrateVision, type VisionLayerName } from "./orchestrator.js";
 
 export type { VisionResult } from "./types.js";
+export type { DocumentConvertResult } from "./types.js";
 
 export function createVisionTool(options?: {
   config?: OpenClawConfig;
@@ -44,10 +47,11 @@ export function createVisionTool(options?: {
       '  "document"   — Parse an Office document (.docx/.xlsx/.pptx/.hwpx) and extract text.',
       '  "screenshot" — Capture a smart screenshot with change detection.',
       '  "pdf"        — Extract text from a PDF (digital + scanned/image PDF auto-detection).',
+      '  "convert"    — Convert document (PDF/Office) to HTML, Markdown, or interactive editor.',
       '  "auto"       — Automatically run all relevant layers based on provided params.',
       "",
       "Parameters:",
-      "  action (required): one of snapshot, document, screenshot, pdf, auto",
+      "  action (required): one of snapshot, document, screenshot, pdf, convert, auto",
       "  file: file path (required for document and pdf actions)",
       "  target_id: browser tab/target ID",
       "  profile: browser profile name",
@@ -57,6 +61,9 @@ export function createVisionTool(options?: {
       "  render_images: render PDF pages as images (pdf action; auto for scanned PDFs)",
       "  max_pages: max PDF pages to process",
       "  force_scanned: force scanned/image PDF mode for OCR (pdf action)",
+      "  output_format: conversion output format — html, markdown, editor (convert action)",
+      "  output_path: save converted file to this path (convert action)",
+      "  editor_theme: light or dark theme for editor output (convert action)",
       "  layers: comma-separated layer names for auto action (e.g. accessibility,screenshot)",
       "",
       "Supported document types: .docx, .xlsx, .pptx, .hwpx",
@@ -64,6 +71,11 @@ export function createVisionTool(options?: {
       "",
       "Scanned PDF: auto-detected and rendered as high-res images for vision model OCR.",
       "  The result includes layout recognition guidance (headers, tables, columns).",
+      "",
+      "Convert action: Converts PDF/Office documents to styled HTML/Markdown/Editor.",
+      '  output_format "html" — styled HTML preserving layout, fonts, tables, alignment.',
+      '  output_format "markdown" — GFM Markdown with tables, headings, formatting.',
+      '  output_format "editor" — self-contained HTML editor (WYSIWYG, save/export).',
     ].join("\n"),
     parameters: Type.Object({
       action: Type.String(),
@@ -76,6 +88,9 @@ export function createVisionTool(options?: {
       render_images: Type.Optional(Type.Boolean()),
       max_pages: Type.Optional(Type.Number()),
       force_scanned: Type.Optional(Type.Boolean()),
+      output_format: Type.Optional(Type.String()),
+      output_path: Type.Optional(Type.String()),
+      editor_theme: Type.Optional(Type.String()),
       layers: Type.Optional(Type.String()),
     }),
     execute: async (_toolCallId, args) => {
@@ -92,6 +107,9 @@ export function createVisionTool(options?: {
       const maxPages = readNumberParam(params, "max_pages", { integer: true });
       const forceScanned =
         typeof params.force_scanned === "boolean" ? params.force_scanned : undefined;
+      const outputFormat = readStringParam(params, "output_format");
+      const outputPath = readStringParam(params, "output_path");
+      const editorTheme = readStringParam(params, "editor_theme");
       const layersRaw = readStringParam(params, "layers");
 
       // Resolve file path within sandbox if needed
@@ -261,6 +279,60 @@ export function createVisionTool(options?: {
           });
         }
 
+        // ── Document Converter ──
+        case "convert": {
+          if (!resolvedFile) {
+            throw new Error("file parameter required for convert action");
+          }
+
+          const format = (outputFormat ?? "html") as ConvertOutputFormat;
+          if (!["html", "markdown", "editor"].includes(format)) {
+            throw new Error(
+              `Invalid output_format: "${format}". Use one of: html, markdown, editor`,
+            );
+          }
+
+          // Resolve output path within sandbox if needed
+          let resolvedOutputPath: string | undefined;
+          if (outputPath) {
+            if (sandboxRoot) {
+              const info = await assertSandboxPath({
+                filePath: outputPath,
+                cwd: sandboxRoot,
+                root: sandboxRoot,
+              });
+              resolvedOutputPath = info.resolved;
+            } else {
+              resolvedOutputPath = path.resolve(outputPath);
+            }
+          }
+
+          const result = await convertDocument(resolvedFile, {
+            format,
+            maxPages,
+            outputPath: resolvedOutputPath,
+            editorTheme: editorTheme === "dark" ? "dark" : "light",
+          });
+
+          // Truncate content for JSON response (full content saved to file if outputPath given)
+          const truncatedContent =
+            result.content.length > 50_000
+              ? result.content.slice(0, 50_000) + "\n\n... (내용이 50,000자를 초과하여 잘렸습니다)"
+              : result.content;
+
+          return jsonResult({
+            action: "convert",
+            format: result.format,
+            sourceType: result.sourceType,
+            pageCount: result.pageCount,
+            isScanned: result.isScanned,
+            contentLength: result.content.length,
+            plainTextLength: result.plainText.length,
+            savedTo: result.savedTo,
+            content: truncatedContent,
+          });
+        }
+
         // ── Orchestrator: Auto ──
         case "auto": {
           const layers = layersRaw
@@ -342,7 +414,7 @@ export function createVisionTool(options?: {
 
         default:
           throw new Error(
-            `Unknown vision action: "${action}". Use one of: snapshot, document, screenshot, pdf, auto`,
+            `Unknown vision action: "${action}". Use one of: snapshot, document, screenshot, pdf, convert, auto`,
           );
       }
     },
