@@ -10,8 +10,8 @@ import { detectPlatform, type Platform } from "../../lib/detect-platform";
    One-click install for all platforms.
    ============================================ */
 
-/** GitHub releases base URL */
-const RELEASES_BASE = "https://github.com/Kimjaechol/MoA/releases/latest/download";
+/** GitHub releases page */
+const RELEASES_PAGE = "https://github.com/Kimjaechol/MoA/releases";
 
 interface PlatformDownload {
   name: string;
@@ -23,6 +23,7 @@ interface PlatformDownload {
   secondaryUrl?: string;
   terminalCmd?: string;
   steps: string[];
+  comingSoon?: boolean;
 }
 
 const DOWNLOADS: Record<Exclude<Platform, null>, PlatformDownload> = {
@@ -30,67 +31,68 @@ const DOWNLOADS: Record<Exclude<Platform, null>, PlatformDownload> = {
     name: "Windows",
     icon: "\uD83E\uDE9F",
     desc: "Windows 10/11 (64-bit)",
-    primaryAction: "MoA 설치하기 (.exe)",
-    primaryUrl: `${RELEASES_BASE}/MoA-Setup-latest.exe`,
+    primaryAction: "MoA 데스크톱 앱 (준비 중)",
+    primaryUrl: RELEASES_PAGE,
     terminalCmd: `powershell -c "irm https://moa.lawith.kr/install.ps1 | iex"`,
+    comingSoon: true,
     steps: [
-      "위 버튼을 클릭하여 설치 파일을 다운로드합니다",
-      "다운로드된 MoA-Setup.exe를 더블클릭합니다",
-      "설치가 자동으로 완료되고 MoA가 실행됩니다",
+      "데스크톱 앱은 현재 준비 중입니다",
+      "아래 '웹에서 바로 사용하기' 버튼으로 지금 바로 이용하세요",
+      "앱 출시 시 이 페이지에서 다운로드할 수 있습니다",
     ],
   },
   macos: {
     name: "macOS",
     icon: "\uD83C\uDF4E",
     desc: "macOS 12+ (Apple Silicon / Intel)",
-    primaryAction: "MoA 설치하기 (.dmg)",
-    primaryUrl: `${RELEASES_BASE}/MoA-latest-mac.dmg`,
+    primaryAction: "MoA 데스크톱 앱 (준비 중)",
+    primaryUrl: RELEASES_PAGE,
     terminalCmd: `curl -fsSL https://moa.lawith.kr/install.sh | bash`,
+    comingSoon: true,
     steps: [
-      "위 버튼을 클릭하여 DMG 파일을 다운로드합니다",
-      "DMG를 열고 MoA 아이콘을 Applications 폴더로 드래그합니다",
-      "Launchpad에서 MoA를 실행합니다",
+      "데스크톱 앱은 현재 준비 중입니다",
+      "아래 '웹에서 바로 사용하기' 버튼으로 지금 바로 이용하세요",
+      "앱 출시 시 이 페이지에서 다운로드할 수 있습니다",
     ],
   },
   linux: {
     name: "Linux",
     icon: "\uD83D\uDC27",
     desc: "Ubuntu 20.04+, Debian 11+, Fedora 35+",
-    primaryAction: "MoA 설치하기 (.AppImage)",
-    primaryUrl: `${RELEASES_BASE}/MoA-latest-linux.AppImage`,
-    secondaryAction: ".deb 패키지",
-    secondaryUrl: `${RELEASES_BASE}/MoA-latest-linux.deb`,
+    primaryAction: "MoA 데스크톱 앱 (준비 중)",
+    primaryUrl: RELEASES_PAGE,
     terminalCmd: `curl -fsSL https://moa.lawith.kr/install.sh | bash`,
+    comingSoon: true,
     steps: [
-      "위 버튼을 클릭하여 AppImage를 다운로드합니다",
-      "파일에 실행 권한을 부여합니다: chmod +x MoA-*.AppImage",
-      "더블클릭하여 실행합니다",
+      "데스크톱 앱은 현재 준비 중입니다",
+      "아래 '웹에서 바로 사용하기' 버튼으로 지금 바로 이용하세요",
+      "앱 출시 시 이 페이지에서 다운로드할 수 있습니다",
     ],
   },
   android: {
     name: "Android",
     icon: "\uD83E\uDD16",
     desc: "Android 10+ (스마트폰, 태블릿)",
-    primaryAction: "Google Play에서 받기",
+    primaryAction: "Google Play (준비 중)",
     primaryUrl: "https://play.google.com/store/apps/details?id=com.lawith.moa",
-    secondaryAction: "APK 직접 다운로드",
-    secondaryUrl: `${RELEASES_BASE}/MoA-latest.apk`,
+    comingSoon: true,
     steps: [
-      "Google Play 스토어에서 'MoA'를 검색합니다",
-      "'설치' 버튼을 누릅니다",
-      "설치 완료 후 앱을 실행합니다",
+      "모바일 앱은 현재 준비 중입니다",
+      "아래 '웹에서 바로 사용하기' 버튼으로 지금 바로 이용하세요",
+      "앱 출시 시 Google Play에서 다운로드할 수 있습니다",
     ],
   },
   ios: {
     name: "iOS / iPadOS",
     icon: "\uD83D\uDCF1",
     desc: "iPhone, iPad (iOS 15+)",
-    primaryAction: "App Store에서 받기",
+    primaryAction: "App Store (준비 중)",
     primaryUrl: "https://apps.apple.com/app/moa-ai-assistant/id0000000000",
+    comingSoon: true,
     steps: [
-      "App Store에서 'MoA'를 검색합니다",
-      "'받기' 버튼을 누릅니다",
-      "설치 완료 후 앱을 실행합니다",
+      "모바일 앱은 현재 준비 중입니다",
+      "아래 '웹에서 바로 사용하기' 버튼으로 지금 바로 이용하세요",
+      "앱 출시 시 App Store에서 다운로드할 수 있습니다",
     ],
   },
 };
@@ -170,23 +172,43 @@ export default function DownloadPage() {
             <h2 style={{ fontSize: "1.8rem", marginBottom: "8px" }}>MoA for {info.name}</h2>
             <p style={{ color: "var(--text-muted)", marginBottom: "28px" }}>{info.desc}</p>
 
-            {/* Primary Download Button */}
-            <div style={{ display: "flex", gap: "12px", justifyContent: "center", flexWrap: "wrap", marginBottom: "20px" }}>
-              <a
-                href={info.primaryUrl}
-                className="btn btn-primary"
-                style={{ fontSize: "1.15rem", padding: "16px 40px", fontWeight: 700 }}
-              >
-                {info.primaryAction}
-              </a>
-              {info.secondaryUrl && (
-                <a
-                  href={info.secondaryUrl}
-                  className="btn btn-outline"
-                  style={{ fontSize: "0.95rem", padding: "14px 28px" }}
-                >
-                  {info.secondaryAction}
-                </a>
+            {/* Primary Action */}
+            <div style={{ display: "flex", gap: "12px", justifyContent: "center", flexWrap: "wrap", marginBottom: "20px", flexDirection: "column", alignItems: "center" }}>
+              {info.comingSoon ? (
+                <>
+                  <span
+                    className="btn btn-outline"
+                    style={{ fontSize: "1.05rem", padding: "14px 36px", fontWeight: 600, opacity: 0.6, cursor: "default" }}
+                  >
+                    {info.primaryAction}
+                  </span>
+                  <Link
+                    href="/chat"
+                    className="btn btn-primary"
+                    style={{ fontSize: "1.15rem", padding: "16px 40px", fontWeight: 700 }}
+                  >
+                    웹에서 바로 사용하기
+                  </Link>
+                </>
+              ) : (
+                <>
+                  <a
+                    href={info.primaryUrl}
+                    className="btn btn-primary"
+                    style={{ fontSize: "1.15rem", padding: "16px 40px", fontWeight: 700 }}
+                  >
+                    {info.primaryAction}
+                  </a>
+                  {info.secondaryUrl && (
+                    <a
+                      href={info.secondaryUrl}
+                      className="btn btn-outline"
+                      style={{ fontSize: "0.95rem", padding: "14px 28px" }}
+                    >
+                      {info.secondaryAction}
+                    </a>
+                  )}
+                </>
               )}
             </div>
 
