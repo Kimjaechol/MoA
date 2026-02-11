@@ -147,6 +147,12 @@ export default function MyPage() {
   const [creditBalance, setCreditBalance] = useState<number | null>(null);
   const [creditPlan, setCreditPlan] = useState("free");
 
+  const [phone, setPhone] = useState<string | null>(null);
+  const [phoneInput, setPhoneInput] = useState("");
+  const [phoneEditing, setPhoneEditing] = useState(false);
+  const [phoneSaving, setPhoneSaving] = useState(false);
+  const [kakaoChannelAdded, setKakaoChannelAdded] = useState(false);
+
   const [editingProvider, setEditingProvider] = useState<string | null>(null);
   const [keyInput, setKeyInput] = useState("");
   const [saving, setSaving] = useState(false);
@@ -170,6 +176,12 @@ export default function MyPage() {
       }
       if (data.trialStatus) {
         setTrialStatus(data.trialStatus);
+      }
+      if (data.phone) {
+        setPhone(data.phone);
+      }
+      if (data.kakaoChannelAdded) {
+        setKakaoChannelAdded(true);
       }
     } catch {
       // Silent fail on load
@@ -276,6 +288,73 @@ export default function MyPage() {
     }
   };
 
+  // Save phone number
+  const handleSavePhone = async () => {
+    if (!phoneInput.trim()) return;
+    setPhoneSaving(true);
+    setMessage(null);
+
+    try {
+      const res = await fetch("/api/mypage", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "update_phone",
+          user_id: userId,
+          phone: phoneInput.trim(),
+        }),
+      });
+
+      const data = await res.json();
+      if (data.success) {
+        setPhone(data.phone);
+        setPhoneEditing(false);
+        setPhoneInput("");
+        setMessage({
+          type: "success",
+          text: data.alimtalkSent
+            ? "휴대폰 번호가 저장되었습니다. 카카오톡 채널 추가 안내가 발송되었습니다!"
+            : "휴대폰 번호가 저장되었습니다.",
+        });
+      } else {
+        setMessage({ type: "error", text: data.error || "저장 실패" });
+      }
+    } catch {
+      setMessage({ type: "error", text: "네트워크 오류가 발생했습니다." });
+    } finally {
+      setPhoneSaving(false);
+    }
+  };
+
+  // Resend channel invite
+  const handleResendChannelInvite = async () => {
+    setMessage(null);
+    try {
+      const res = await fetch("/api/alimtalk", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "send_channel_invite",
+          user_id: userId,
+        }),
+      });
+
+      const data = await res.json();
+      if (data.success) {
+        setMessage({
+          type: "success",
+          text: data.skipped
+            ? data.reason
+            : "카카오톡 채널 추가 안내가 발송되었습니다!",
+        });
+      } else {
+        setMessage({ type: "error", text: data.error || "발송 실패" });
+      }
+    } catch {
+      setMessage({ type: "error", text: "네트워크 오류가 발생했습니다." });
+    }
+  };
+
   const configuredCount = Object.keys(apiKeys).length;
   const hasAnyPaidKey = Object.keys(apiKeys).some(
     (p) => !LLM_PROVIDERS.find((lp) => lp.id === p)?.free
@@ -367,6 +446,179 @@ export default function MyPage() {
               </span>
             </div>
           </div>
+
+          {/* ===== Phone & KakaoTalk Channel ===== */}
+          <section style={{ marginBottom: "48px" }}>
+            <h2 style={{ fontSize: "1.5rem", fontWeight: 700, marginBottom: "8px" }}>
+              카카오톡 연동
+            </h2>
+            <p style={{ color: "var(--text-muted)", fontSize: "0.9rem", marginBottom: "24px" }}>
+              휴대폰 번호를 등록하면 카카오톡 채널 추가 안내가 자동으로 발송됩니다.
+              채널을 추가하면 카카오톡으로 MoA AI에게 직접 질문하고 지시할 수 있습니다.
+            </p>
+
+            <div
+              className="card"
+              style={{
+                padding: "24px",
+                border: kakaoChannelAdded
+                  ? "1px solid rgba(72,187,120,0.5)"
+                  : "1px solid var(--border)",
+              }}
+            >
+              {/* Phone number section */}
+              <div style={{ marginBottom: "20px" }}>
+                <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "12px" }}>
+                  <span style={{ fontSize: "1.3rem" }}>{"📱"}</span>
+                  <h3 style={{ fontSize: "1rem", fontWeight: 600 }}>휴대폰 번호</h3>
+                  {phone && (
+                    <span
+                      style={{
+                        fontSize: "0.7rem",
+                        padding: "2px 8px",
+                        borderRadius: "8px",
+                        background: "rgba(72,187,120,0.15)",
+                        color: "var(--success)",
+                        fontWeight: 600,
+                      }}
+                    >
+                      등록됨
+                    </span>
+                  )}
+                </div>
+
+                {phone && !phoneEditing ? (
+                  <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
+                    <code
+                      style={{
+                        fontSize: "0.95rem",
+                        background: "rgba(0,0,0,0.2)",
+                        padding: "6px 12px",
+                        borderRadius: "6px",
+                        color: "var(--text-muted)",
+                      }}
+                    >
+                      {phone}
+                    </code>
+                    <button
+                      onClick={() => { setPhoneEditing(true); setPhoneInput(""); }}
+                      style={{
+                        background: "none",
+                        border: "none",
+                        color: "var(--primary)",
+                        cursor: "pointer",
+                        fontSize: "0.8rem",
+                      }}
+                    >
+                      변경
+                    </button>
+                  </div>
+                ) : (
+                  <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
+                    <input
+                      type="tel"
+                      className="form-input"
+                      placeholder="010-1234-5678"
+                      value={phoneInput}
+                      onChange={(e) => setPhoneInput(e.target.value)}
+                      style={{ flex: 1, maxWidth: "280px", fontSize: "0.9rem" }}
+                      autoFocus={phoneEditing}
+                    />
+                    <button
+                      className="btn btn-sm btn-primary"
+                      onClick={handleSavePhone}
+                      disabled={phoneSaving || !phoneInput.trim()}
+                    >
+                      {phoneSaving ? "저장 중..." : "저장"}
+                    </button>
+                    {phoneEditing && (
+                      <button
+                        className="btn btn-sm btn-outline"
+                        onClick={() => { setPhoneEditing(false); setPhoneInput(""); }}
+                      >
+                        취소
+                      </button>
+                    )}
+                  </div>
+                )}
+                <p style={{ fontSize: "0.8rem", color: "var(--text-muted)", marginTop: "8px" }}>
+                  번호 저장 시 카카오톡 채널 추가 안내 알림톡이 자동 발송됩니다.
+                </p>
+              </div>
+
+              {/* KakaoTalk Channel Status */}
+              <div
+                style={{
+                  borderTop: "1px solid var(--border)",
+                  paddingTop: "20px",
+                }}
+              >
+                <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "12px" }}>
+                  <span style={{ fontSize: "1.3rem" }}>{"💬"}</span>
+                  <h3 style={{ fontSize: "1rem", fontWeight: 600 }}>카카오톡 채널</h3>
+                  {kakaoChannelAdded ? (
+                    <span
+                      style={{
+                        fontSize: "0.7rem",
+                        padding: "2px 8px",
+                        borderRadius: "8px",
+                        background: "rgba(72,187,120,0.15)",
+                        color: "var(--success)",
+                        fontWeight: 600,
+                      }}
+                    >
+                      연결됨
+                    </span>
+                  ) : (
+                    <span
+                      style={{
+                        fontSize: "0.7rem",
+                        padding: "2px 8px",
+                        borderRadius: "8px",
+                        background: "rgba(236,201,75,0.15)",
+                        color: "var(--warning)",
+                        fontWeight: 600,
+                      }}
+                    >
+                      미연결
+                    </span>
+                  )}
+                </div>
+
+                {kakaoChannelAdded ? (
+                  <p style={{ color: "var(--success)", fontSize: "0.9rem" }}>
+                    카카오톡으로 MoA AI와 대화할 수 있습니다.
+                  </p>
+                ) : (
+                  <div>
+                    <p style={{ color: "var(--text-muted)", fontSize: "0.9rem", marginBottom: "12px" }}>
+                      카카오톡 채널을 추가하면 카카오톡에서 바로 AI에게 질문할 수 있습니다.
+                    </p>
+                    <div style={{ display: "flex", gap: "12px", flexWrap: "wrap" }}>
+                      <a
+                        href="https://pf.kakao.com/_xoMoAC"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="btn btn-sm"
+                        style={{ background: "#FEE500", color: "#191919", fontWeight: 600 }}
+                      >
+                        카카오톡 채널 추가하기
+                      </a>
+                      {phone && (
+                        <button
+                          className="btn btn-sm btn-outline"
+                          onClick={handleResendChannelInvite}
+                          style={{ fontSize: "0.8rem" }}
+                        >
+                          알림톡 다시 받기
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+          </section>
 
           {/* ===== Model Strategy Selection ===== */}
           <section style={{ marginBottom: "48px" }}>
