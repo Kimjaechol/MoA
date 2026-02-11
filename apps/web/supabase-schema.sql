@@ -194,6 +194,7 @@ CREATE TABLE IF NOT EXISTS moa_chat_messages (
   role TEXT NOT NULL CHECK (role IN ('user', 'assistant', 'system')),
   content TEXT NOT NULL,
   channel TEXT NOT NULL DEFAULT 'web',
+  category TEXT DEFAULT 'other',
   model_used TEXT,
   token_count INTEGER,
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
@@ -226,5 +227,61 @@ CREATE POLICY "Users read own connections" ON moa_channel_connections
 CREATE INDEX IF NOT EXISTS idx_chat_user ON moa_chat_messages(user_id);
 CREATE INDEX IF NOT EXISTS idx_chat_session ON moa_chat_messages(session_id);
 CREATE INDEX IF NOT EXISTS idx_chat_created ON moa_chat_messages(created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_chat_category ON moa_chat_messages(category);
 CREATE INDEX IF NOT EXISTS idx_channel_conn_user ON moa_channel_connections(user_id);
 CREATE INDEX IF NOT EXISTS idx_channel_conn_channel ON moa_channel_connections(user_id, channel);
+
+-- ============================================
+-- 12. Synthesis Jobs (종합문서 작성 기록)
+-- ============================================
+
+CREATE TABLE IF NOT EXISTS moa_synthesis_jobs (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id TEXT NOT NULL,
+  title TEXT,
+  source_count INTEGER NOT NULL DEFAULT 0,
+  output_format TEXT NOT NULL DEFAULT 'report',
+  output_length TEXT NOT NULL DEFAULT 'medium',
+  language TEXT NOT NULL DEFAULT 'ko',
+  model_used TEXT,
+  status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'processing', 'completed', 'failed')),
+  result_content TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  completed_at TIMESTAMPTZ
+);
+
+ALTER TABLE moa_synthesis_jobs ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "Users read own synthesis jobs" ON moa_synthesis_jobs
+  FOR SELECT USING (true);
+
+CREATE INDEX IF NOT EXISTS idx_synthesis_user ON moa_synthesis_jobs(user_id);
+CREATE INDEX IF NOT EXISTS idx_synthesis_created ON moa_synthesis_jobs(created_at DESC);
+
+-- ============================================
+-- 13. Auto-Code Sessions (AI 자동코딩 세션)
+-- ============================================
+
+CREATE TABLE IF NOT EXISTS moa_autocode_sessions (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id TEXT NOT NULL,
+  goal TEXT NOT NULL,
+  framework TEXT NOT NULL DEFAULT 'nextjs',
+  model_used TEXT,
+  max_iterations INTEGER NOT NULL DEFAULT 10,
+  completed_iterations INTEGER NOT NULL DEFAULT 0,
+  error_count INTEGER NOT NULL DEFAULT 0,
+  fix_count INTEGER NOT NULL DEFAULT 0,
+  status TEXT NOT NULL DEFAULT 'idle' CHECK (status IN ('idle', 'running', 'complete', 'failed')),
+  final_code TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  completed_at TIMESTAMPTZ
+);
+
+ALTER TABLE moa_autocode_sessions ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "Users read own autocode sessions" ON moa_autocode_sessions
+  FOR SELECT USING (true);
+
+CREATE INDEX IF NOT EXISTS idx_autocode_user ON moa_autocode_sessions(user_id);
+CREATE INDEX IF NOT EXISTS idx_autocode_created ON moa_autocode_sessions(created_at DESC);
