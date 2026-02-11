@@ -13,6 +13,32 @@ const RAILWAY_BACKEND =
 const nextConfig: NextConfig = {
   output: "standalone",
 
+  // PptxGenJS uses node: protocol imports — handle for client bundles
+  webpack: (config, { isServer }) => {
+    if (!isServer) {
+      // Polyfill node: protocol URIs to empty modules for browser builds
+      config.resolve.fallback = {
+        ...config.resolve.fallback,
+        fs: false,
+        path: false,
+        https: false,
+        http: false,
+        stream: false,
+        zlib: false,
+      };
+      // Handle node: prefix scheme
+      config.plugins.push(
+        new (require("webpack")).NormalModuleReplacementPlugin(
+          /^node:/,
+          (resource: { request: string }) => {
+            resource.request = resource.request.replace(/^node:/, "");
+          },
+        ),
+      );
+    }
+    return config;
+  },
+
   async rewrites() {
     return [
       // Install HTML page: moa.lawith.kr/install → Railway /install

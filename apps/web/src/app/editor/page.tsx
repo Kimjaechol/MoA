@@ -27,6 +27,7 @@ import {
   exportAsHwpx,
   exportAsXlsx,
 } from "../../components/editor/export-utils";
+import { exportAsPptx } from "../../components/editor/pptx-generator";
 import "../../components/editor/editor.css";
 
 /**
@@ -35,15 +36,29 @@ import "../../components/editor/editor.css";
  * TipTap (ProseMirror) based rich text editor with:
  *   - Full formatting toolbar (headings, fonts, colors, alignment, tables)
  *   - Upload & convert PDF/Office documents
- *   - Export to HTML, Markdown, Text, PDF, DOCX, HWPX, XLSX
+ *   - Export to HTML, Markdown, Text, PDF, DOCX, HWPX, XLSX, PPTX
+ *   - AI-powered PPTX: summarizes content into presentation slides
  */
 
 const SUPPORTED_EXTENSIONS = [".pdf", ".docx", ".xlsx", ".pptx", ".hwpx"];
+
+const PPTX_THEMES = [
+  { value: "blue", label: "Blue", color: "#667eea" },
+  { value: "dark", label: "Dark", color: "#bb86fc" },
+  { value: "green", label: "Green", color: "#4caf50" },
+  { value: "red", label: "Red", color: "#e53935" },
+  { value: "purple", label: "Purple", color: "#9c27b0" },
+] as const;
 
 export default function EditorPage() {
   const [title, setTitle] = useState("제목 없는 문서");
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [showPptxDialog, setShowPptxDialog] = useState(false);
+  const [pptxTheme, setPptxTheme] = useState<string>("blue");
+  const [pptxMaxSlides, setPptxMaxSlides] = useState(12);
+  const [pptxUseAi, setPptxUseAi] = useState(true);
+  const [isGenerating, setIsGenerating] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const editor = useEditor({
@@ -105,7 +120,7 @@ export default function EditorPage() {
           "<hr>",
           "<p>이 문서를 변환하려면 MoA 에이전트에게 다음과 같이 요청하세요:</p>",
           "<br>",
-          '<pre><code>',
+          "<pre><code>",
           `vision({ action: "convert", file: "${file.name}", output_format: "html" })`,
           "</code></pre>",
           "<br>",
@@ -162,10 +177,31 @@ export default function EditorPage() {
         case "xlsx":
           await exportAsXlsx(html, title);
           break;
+        case "pptx":
+          setShowPptxDialog(true);
+          break;
       }
     },
     [title, getHtmlContent, getTextContent],
   );
+
+  const handlePptxGenerate = useCallback(async () => {
+    setIsGenerating(true);
+    setShowPptxDialog(false);
+    try {
+      const html = getHtmlContent();
+      await exportAsPptx(html, {
+        title,
+        theme: pptxTheme as "blue" | "dark" | "green" | "red" | "purple",
+        maxSlides: pptxMaxSlides,
+        useAi: pptxUseAi,
+      });
+    } catch (err) {
+      setError(`PPTX 생성 중 오류: ${String(err)}`);
+    } finally {
+      setIsGenerating(false);
+    }
+  }, [title, pptxTheme, pptxMaxSlides, pptxUseAi, getHtmlContent]);
 
   return (
     <>
@@ -209,6 +245,13 @@ export default function EditorPage() {
             <button className="export-btn" onClick={() => handleExport("xlsx")}>
               XLSX
             </button>
+            <button
+              className="export-btn export-btn-pptx"
+              onClick={() => handleExport("pptx")}
+              disabled={isGenerating}
+            >
+              {isGenerating ? "생성중..." : "PPTX"}
+            </button>
             <button className="export-btn export-btn-primary" onClick={() => handleExport("pdf")}>
               PDF
             </button>
@@ -247,7 +290,7 @@ export default function EditorPage() {
         )}
 
         {/* Loading */}
-        {isLoading && (
+        {(isLoading || isGenerating) && (
           <div
             style={{
               padding: "12px 16px",
@@ -257,7 +300,7 @@ export default function EditorPage() {
               flexShrink: 0,
             }}
           >
-            문서 변환 중...
+            {isGenerating ? "AI 프레젠테이션 생성 중..." : "문서 변환 중..."}
           </div>
         )}
 
@@ -274,6 +317,91 @@ export default function EditorPage() {
           <span>MoA Document Editor (TipTap)</span>
         </div>
       </div>
+
+      {/* PPTX Generation Dialog */}
+      {showPptxDialog && (
+        <div className="pptx-dialog-overlay" onClick={() => setShowPptxDialog(false)}>
+          <div className="pptx-dialog" onClick={(e) => e.stopPropagation()}>
+            <h3 className="pptx-dialog-title">AI 프레젠테이션 생성</h3>
+            <p className="pptx-dialog-desc">
+              문서 내용을 요약하여 발표용 PPTX 슬라이드를 생성합니다.
+              핵심 키워드 위주로 스토리 흐름에 맞게 구성됩니다.
+            </p>
+
+            {/* Theme Selection */}
+            <div className="pptx-dialog-section">
+              <label className="pptx-dialog-label">테마 색상</label>
+              <div className="pptx-theme-grid">
+                {PPTX_THEMES.map((t) => (
+                  <button
+                    key={t.value}
+                    className={`pptx-theme-btn ${pptxTheme === t.value ? "active" : ""}`}
+                    onClick={() => setPptxTheme(t.value)}
+                    style={{ "--theme-color": t.color } as React.CSSProperties}
+                  >
+                    <span className="pptx-theme-swatch" style={{ background: t.color }} />
+                    <span>{t.label}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Max Slides */}
+            <div className="pptx-dialog-section">
+              <label className="pptx-dialog-label">
+                최대 슬라이드 수: <strong>{pptxMaxSlides}</strong>
+              </label>
+              <input
+                type="range"
+                min={5}
+                max={30}
+                value={pptxMaxSlides}
+                onChange={(e) => setPptxMaxSlides(parseInt(e.target.value, 10))}
+                className="pptx-slider"
+              />
+              <div className="pptx-slider-labels">
+                <span>5</span>
+                <span>15</span>
+                <span>30</span>
+              </div>
+            </div>
+
+            {/* AI Toggle */}
+            <div className="pptx-dialog-section">
+              <label className="pptx-toggle-label">
+                <input
+                  type="checkbox"
+                  checked={pptxUseAi}
+                  onChange={(e) => setPptxUseAi(e.target.checked)}
+                  className="pptx-toggle"
+                />
+                <span>AI 요약 사용 (LLM API 키 필요)</span>
+              </label>
+              <p className="pptx-dialog-hint">
+                {pptxUseAi
+                  ? "LLM이 문서 내용을 분석하여 최적의 발표 구조를 생성합니다. API 키가 없으면 자동으로 스마트 추출 모드로 전환됩니다."
+                  : "HTML 구조를 분석하여 제목/내용 기반으로 슬라이드를 구성합니다."}
+              </p>
+            </div>
+
+            {/* Actions */}
+            <div className="pptx-dialog-actions">
+              <button
+                className="pptx-dialog-cancel"
+                onClick={() => setShowPptxDialog(false)}
+              >
+                취소
+              </button>
+              <button
+                className="pptx-dialog-generate"
+                onClick={handlePptxGenerate}
+              >
+                프레젠테이션 생성
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </>
   );
 }

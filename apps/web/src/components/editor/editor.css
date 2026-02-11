@@ -455,6 +455,236 @@
   }
 }
 
+/* ─── PPTX Button ────────────────────────────── */
+
+.export-btn-pptx {
+  background: linear-gradient(135deg, #ff6b35, #f7931e) !important;
+  color: white !important;
+  border-color: transparent !important;
+  font-weight: 700 !important;
+}
+
+.export-btn-pptx:hover {
+  opacity: 0.9;
+  color: white !important;
+  border-color: transparent !important;
+}
+
+.export-btn-pptx:disabled {
+  opacity: 0.6;
+  cursor: wait;
+}
+
+/* ─── PPTX Dialog ────────────────────────────── */
+
+.pptx-dialog-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.6);
+  backdrop-filter: blur(4px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+}
+
+.pptx-dialog {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  padding: 28px 32px;
+  max-width: 480px;
+  width: 90%;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.4);
+}
+
+.pptx-dialog-title {
+  font-size: 20px;
+  font-weight: 700;
+  color: var(--text);
+  margin: 0 0 8px;
+}
+
+.pptx-dialog-desc {
+  font-size: 13px;
+  color: var(--text-muted);
+  margin: 0 0 20px;
+  line-height: 1.5;
+}
+
+.pptx-dialog-section {
+  margin-bottom: 18px;
+}
+
+.pptx-dialog-label {
+  display: block;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+  margin-bottom: 8px;
+}
+
+/* Theme grid */
+.pptx-theme-grid {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.pptx-theme-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 14px;
+  border: 2px solid var(--border);
+  border-radius: 10px;
+  background: var(--bg);
+  color: var(--text);
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 500;
+  transition: all 0.15s;
+}
+
+.pptx-theme-btn:hover {
+  border-color: var(--theme-color, var(--primary));
+}
+
+.pptx-theme-btn.active {
+  border-color: var(--theme-color, var(--primary));
+  background: rgba(102, 126, 234, 0.08);
+}
+
+.pptx-theme-swatch {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+/* Slider */
+.pptx-slider {
+  width: 100%;
+  height: 6px;
+  border-radius: 3px;
+  -webkit-appearance: none;
+  appearance: none;
+  background: var(--border);
+  outline: none;
+  cursor: pointer;
+}
+
+.pptx-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: var(--primary);
+  cursor: pointer;
+  border: 2px solid white;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+}
+
+.pptx-slider-labels {
+  display: flex;
+  justify-content: space-between;
+  font-size: 10px;
+  color: var(--text-muted);
+  margin-top: 4px;
+}
+
+/* Toggle */
+.pptx-toggle-label {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 13px;
+  color: var(--text);
+  cursor: pointer;
+}
+
+.pptx-toggle {
+  width: 40px;
+  height: 22px;
+  -webkit-appearance: none;
+  appearance: none;
+  background: var(--border);
+  border-radius: 11px;
+  cursor: pointer;
+  position: relative;
+  transition: background 0.2s;
+  flex-shrink: 0;
+}
+
+.pptx-toggle::before {
+  content: "";
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: white;
+  transition: transform 0.2s;
+}
+
+.pptx-toggle:checked {
+  background: var(--primary);
+}
+
+.pptx-toggle:checked::before {
+  transform: translateX(18px);
+}
+
+.pptx-dialog-hint {
+  font-size: 11px;
+  color: var(--text-muted);
+  margin: 6px 0 0;
+  line-height: 1.4;
+}
+
+/* Dialog actions */
+.pptx-dialog-actions {
+  display: flex;
+  gap: 10px;
+  justify-content: flex-end;
+  margin-top: 24px;
+}
+
+.pptx-dialog-cancel {
+  padding: 10px 20px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg);
+  color: var(--text);
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 500;
+  transition: all 0.15s;
+}
+
+.pptx-dialog-cancel:hover {
+  background: var(--bg-card-hover);
+}
+
+.pptx-dialog-generate {
+  padding: 10px 24px;
+  border: none;
+  border-radius: 8px;
+  background: linear-gradient(135deg, #ff6b35, #f7931e);
+  color: white;
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 700;
+  transition: all 0.15s;
+}
+
+.pptx-dialog-generate:hover {
+  opacity: 0.9;
+  transform: translateY(-1px);
+}
+
 /* ─── Print ──────────────────────────────────── */
 
 @media print {
