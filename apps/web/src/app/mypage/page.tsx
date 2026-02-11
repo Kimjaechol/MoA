@@ -12,7 +12,7 @@ const LLM_PROVIDERS = [
   {
     id: "groq",
     name: "Groq (Kimi K2-0905)",
-    icon: "\u26A1",
+    icon: "⚡",
     color: "#f97316",
     desc: "Kimi K2-0905 모델을 초고속 Groq 인프라에서 실행. 가성비 전략의 최우선 모델.",
     placeholder: "gsk_...",
@@ -23,7 +23,7 @@ const LLM_PROVIDERS = [
   {
     id: "gemini",
     name: "Google Gemini",
-    icon: "\uD83D\uDC8E",
+    icon: "💎",
     color: "#4285f4",
     desc: "Gemini 2.5 Flash/Pro. Google AI Studio에서 무료 API key 발급 가능.",
     placeholder: "AIza...",
@@ -34,7 +34,7 @@ const LLM_PROVIDERS = [
   {
     id: "openai",
     name: "OpenAI (ChatGPT)",
-    icon: "\uD83E\uDD16",
+    icon: "🤖",
     color: "#10a37f",
     desc: "GPT-4o, GPT-5, DALL-E, Whisper, Sora 등 사용 가능.",
     placeholder: "sk-...",
@@ -45,7 +45,7 @@ const LLM_PROVIDERS = [
   {
     id: "anthropic",
     name: "Anthropic (Claude)",
-    icon: "\uD83E\uDDE0",
+    icon: "🧠",
     color: "#d4a574",
     desc: "Claude Opus, Sonnet, Haiku. 코드, 분석, 긴 문서에 강점.",
     placeholder: "sk-ant-...",
@@ -56,7 +56,7 @@ const LLM_PROVIDERS = [
   {
     id: "deepseek",
     name: "DeepSeek",
-    icon: "\uD83D\uDD2C",
+    icon: "🔬",
     color: "#1e40af",
     desc: "DeepSeek Chat/R1. 코딩 및 수학적 추론에 특화된 가성비 모델.",
     placeholder: "sk-...",
@@ -67,7 +67,7 @@ const LLM_PROVIDERS = [
   {
     id: "mistral",
     name: "Mistral AI",
-    icon: "\uD83C\uDF0A",
+    icon: "🌊",
     color: "#ff7000",
     desc: "Mistral Large/Medium. 유럽 기반 고성능 오픈소스 LLM.",
     placeholder: "...",
@@ -78,7 +78,7 @@ const LLM_PROVIDERS = [
   {
     id: "xai",
     name: "xAI (Grok)",
-    icon: "\uD83D\uDE80",
+    icon: "🚀",
     color: "#1da1f2",
     desc: "Grok 3. 실시간 웹 검색과 이미지 생성 기능 내장.",
     placeholder: "xai-...",
@@ -91,29 +91,29 @@ const LLM_PROVIDERS = [
 const STRATEGY_OPTIONS = [
   {
     id: "cost-efficient",
-    icon: "\uD83D\uDCB0",
-    title: "\uCD5C\uC800\uBE44\uC6A9 (\uAC00\uC131\uBE44 \uC804\uB7B5)",
+    icon: "💰",
+    title: "최저비용 (가성비 전략)",
     color: "#48bb78",
-    desc: "\uBB34\uB8CC SLM\uBD80\uD130 \uC2DC\uC791\uD558\uC5EC \uB2E8\uACC4\uC801\uC73C\uB85C \uC0C1\uC704 \uBAA8\uB378\uC744 \uC0AC\uC6A9\uD569\uB2C8\uB2E4.",
+    desc: "무료 SLM부터 시작하여 단계적으로 상위 모델을 사용합니다.",
     tiers: [
-      "\u2460 \uBB34\uB8CC \uB0B4\uC7A5 SLM",
-      "\u2461 \uC720\uB8CC LLM \uBB34\uB8CC \uD55C\uB3C4 (Groq, Gemini \uB4F1)",
-      "\u2462 \uC720\uB8CC LLM \uAC00\uC131\uBE44 (Kimi K2 Groq \u2192 Gemini Flash \u2192 DeepSeek \uB4F1)",
-      "\u2463 \uC720\uB8CC LLM \uCD5C\uACE0 (Opus, GPT-5 \uB4F1)",
+      "① 무료 내장 SLM",
+      "② 유료 LLM 무료 한도 (Groq, Gemini 등)",
+      "③ 유료 LLM 가성비 (Kimi K2 Groq → Gemini Flash → DeepSeek 등)",
+      "④ 유료 LLM 최고 (Opus, GPT-5 등)",
     ],
-    note: "\uC774\uBBF8 \uAD6C\uB3C5 \uC911\uC778 \uC720\uB8CC LLM\uC774 \uC788\uB2E4\uBA74 \uD574\uB2F9 \uBAA8\uB378\uC774 \uC6B0\uC120 \uC801\uC6A9\uB429\uB2C8\uB2E4.",
+    note: "이미 구독 중인 유료 LLM이 있다면 해당 모델이 우선 적용됩니다.",
   },
   {
     id: "max-performance",
-    icon: "\uD83E\uDDE0",
-    title: "\uCD5C\uACE0\uC9C0\uB2A5 (\uCD5C\uB300\uC131\uB2A5 \uC804\uB7B5)",
+    icon: "🧠",
+    title: "최고지능 (최대성능 전략)",
     color: "#667eea",
-    desc: "\uD604 \uC2DC\uC810 \uCD5C\uACE0 \uC131\uB2A5\uC758 AI\uB97C \uD56D\uC0C1 \uC0AC\uC6A9\uD569\uB2C8\uB2E4.",
+    desc: "현 시점 최고 성능의 AI를 항상 사용합니다.",
     tiers: [
-      "\u2460 \uCD5C\uACE0 \uC131\uB2A5 \uB2E8\uC77C \uBAA8\uB378 (Opus, GPT-5 \uB4F1)",
-      "\u2461 \uBCD1\uB82C \uBA40\uD2F0 \uBAA8\uB378 (5\uAC1C+ \uCD5C\uACE0\uAE09 AI \uB3D9\uC2DC \uCC98\uB9AC)",
+      "① 최고 성능 단일 모델 (Opus, GPT-5 등)",
+      "② 병렬 멀티 모델 (5개+ 최고급 AI 동시 처리)",
     ],
-    note: "\uBCF5\uC7A1\uD55C \uC694\uCCAD\uC740 \uC790\uB3D9\uC73C\uB85C \uC5EC\uB7EC \uCD5C\uACE0\uAE09 \uBAA8\uB378\uC744 \uBCD1\uB82C \uC2E4\uD589\uD569\uB2C8\uB2E4.",
+    note: "복잡한 요청은 자동으로 여러 최고급 모델을 병렬 실행합니다.",
   },
 ];
 
@@ -320,15 +320,15 @@ export default function MyPage() {
               <div>
                 <h3 style={{ fontSize: "1.1rem", marginBottom: "4px" }}>
                   {trialStatus?.isPremium
-                    ? "\uD83D\uDC51 프리미엄 회원"
+                    ? "👑 프리미엄 회원"
                     : trialStatus?.isTrialActive
-                      ? `\uD83C\uDF81 무료 체험 (${trialStatus.daysLeft}일 남음)`
-                      : "\uD83C\uDF81 무료 체험 (30일)"}
+                      ? `🎁 무료 체험 (${trialStatus.daysLeft}일 남음)`
+                      : "🎁 무료 체험 (30일)"}
                 </h3>
                 <p style={{ color: "var(--text-muted)", fontSize: "0.875rem" }}>
                   {hasAnyPaidKey
-                    ? "\u2705 유료 LLM API 키가 등록되어 있어 모든 기능을 사용할 수 있습니다."
-                    : "\u26A0\uFE0F 유료 LLM API 키가 없으면 무료 범위 내에서만 사용 가능합니다. (무료 SLM + 유료 LLM 무료 한도)"}
+                    ? "✅ 유료 LLM API 키가 등록되어 있어 모든 기능을 사용할 수 있습니다."
+                    : "⚠️ 유료 LLM API 키가 없으면 무료 범위 내에서만 사용 가능합니다. (무료 SLM + 유료 LLM 무료 한도)"}
                 </p>
               </div>
               <div style={{ textAlign: "center" }}>
@@ -443,8 +443,8 @@ export default function MyPage() {
                 color: "var(--warning)",
               }}
             >
-              <strong>\uD83D\uDD10 \uBCF4\uC548 \uC548\uB0B4:</strong> API \uD0A4\uB294 \uC554\uD638\uD654\uB418\uC5B4 \uC800\uC7A5\uB418\uBA70, MoA \uC11C\uBC84\uC5D0\uC11C\uB3C4 \uC6D0\uBB38\uC744 \uBCFC \uC218 \uC5C6\uC2B5\uB2C8\uB2E4.
-              \uD0A4\uB294 \uC624\uC9C1 AI \uBAA8\uB378 \uC694\uCCAD \uC2DC\uC5D0\uB9CC \uBCF5\uD638\uD654\uB418\uC5B4 \uC0AC\uC6A9\uB429\uB2C8\uB2E4.
+              <strong>{"🔐"} 보안 안내:</strong> API 키는 암호화되어 저장되며, MoA 서버에서도 원문을 볼 수 없습니다.
+              키는 오직 AI 모델 요청 시에만 복호화되어 사용됩니다.
             </div>
 
             <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
@@ -619,23 +619,23 @@ export default function MyPage() {
               }}
             >
               <h3 style={{ fontSize: "1.15rem", marginBottom: "16px" }}>
-                \uD83D\uDCCB \uBB34\uB8CC \uCCB4\uD5D8 \uC815\uCC45
+                {"📋"} 무료 체험 정책
               </h3>
               <div style={{ display: "flex", flexDirection: "column", gap: "12px", fontSize: "0.9rem", color: "var(--text-muted)" }}>
                 <div style={{ display: "flex", alignItems: "flex-start", gap: "10px" }}>
-                  <span style={{ color: "var(--success)", fontWeight: 700, flexShrink: 0 }}>\u2705</span>
+                  <span style={{ color: "var(--success)", fontWeight: 700, flexShrink: 0 }}>{"✅"}</span>
                   <span>
                     <strong>유료 LLM API 키 보유 시:</strong> 무료 체험 기간 동안 본인의 API 키로 모든 기능을 제한 없이 사용할 수 있습니다. 선택한 전략(가성비/최대성능)에 따라 모델이 자동 운용됩니다.
                   </span>
                 </div>
                 <div style={{ display: "flex", alignItems: "flex-start", gap: "10px" }}>
-                  <span style={{ color: "var(--warning)", fontWeight: 700, flexShrink: 0 }}>\u26A0\uFE0F</span>
+                  <span style={{ color: "var(--warning)", fontWeight: 700, flexShrink: 0 }}>{"⚠️"}</span>
                   <span>
-                    <strong>유료 LLM API 키 미보유 시:</strong> 무료 체험 기간 동안 무료 범위 내에서만 사용 가능합니다. (\u2460 무료 내장 SLM + \u2461 유료 LLM의 무료 한도까지만)
+                    <strong>유료 LLM API 키 미보유 시:</strong> 무료 체험 기간 동안 무료 범위 내에서만 사용 가능합니다. ({"①"} 무료 내장 SLM + {"②"} 유료 LLM의 무료 한도까지만)
                   </span>
                 </div>
                 <div style={{ display: "flex", alignItems: "flex-start", gap: "10px" }}>
-                  <span style={{ color: "var(--primary)", fontWeight: 700, flexShrink: 0 }}>\uD83D\uDCA1</span>
+                  <span style={{ color: "var(--primary)", fontWeight: 700, flexShrink: 0 }}>{"💡"}</span>
                   <span>
                     <strong>Groq와 Gemini는 무료 API 키를 제공합니다.</strong> 위 두 서비스에서 무료 API 키를 발급받으면 가성비 전략의 핵심 모델(Kimi K2-0905, Gemini 2.5 Flash)을 무료로 사용할 수 있습니다.
                   </span>

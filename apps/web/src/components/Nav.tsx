@@ -4,13 +4,14 @@ import { useState, useEffect } from "react";
 import Link from "next/link";
 
 const NAV_LINKS = [
-  { href: "/chat", label: "\uD83D\uDCAC \uCC44\uD305", isAnchor: false },
-  { href: "#features", label: "\uAE30\uB2A5", isAnchor: true },
-  { href: "/channels", label: "\uCC44\uB110", isAnchor: false },
-  { href: "/use-cases", label: "\uC0AC\uC6A9\uC0AC\uB840", isAnchor: false },
-  { href: "/community", label: "\uCEE4\uBBA4\uB2C8\uD2F0", isAnchor: false },
-  { href: "/mypage", label: "\uB9C8\uC774\uD398\uC774\uC9C0", isAnchor: false },
-  { href: "#download", label: "\uB2E4\uC6B4\uB85C\uB4DC", isAnchor: true },
+  { href: "/chat", label: "💬 채팅", isAnchor: false },
+  { href: "#features", label: "기능", isAnchor: true },
+  { href: "/channels", label: "채널", isAnchor: false },
+  { href: "/use-cases", label: "사용사례", isAnchor: false },
+  { href: "/editor", label: "에디터", isAnchor: false },
+  { href: "/community", label: "커뮤니티", isAnchor: false },
+  { href: "/mypage", label: "마이페이지", isAnchor: false },
+  { href: "#download", label: "다운로드", isAnchor: true },
 ];
 
 export default function Nav() {
