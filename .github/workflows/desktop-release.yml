@@ -1,0 +1,102 @@
+name: Desktop Release → Cloudflare R2
+
+# 데스크톱 앱을 빌드하고 Cloudflare R2에 업로드합니다.
+# GitHub Releases 대신 R2를 사용하여 저장소가 private이어도 다운로드가 가능합니다.
+
+on:
+  push:
+    tags:
+      - "v*" # v2026.1.30 등 버전 태그 push 시 실행
+  workflow_dispatch: # 수동 실행 가능
+
+jobs:
+  build-and-upload:
+    strategy:
+      matrix:
+        include:
+          - os: windows-latest
+            platform: win
+          - os: macos-latest
+            platform: mac
+          - os: ubuntu-latest
+            platform: linux
+
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Install desktop dependencies
+        working-directory: apps/desktop
+        run: npm install
+
+      - name: Build desktop app (${{ matrix.platform }})
+        working-directory: apps/desktop
+        run: |
+          if [ "${{ matrix.platform }}" = "win" ]; then
+            npm run build:win
+          elif [ "${{ matrix.platform }}" = "mac" ]; then
+            npm run build:mac
+          else
+            npm run build:linux
+          fi
+        shell: bash
+
+      - name: Install AWS CLI (for R2 upload)
+        if: matrix.platform != 'win'
+        run: |
+          if [ "${{ matrix.platform }}" = "mac" ]; then
+            brew install awscli
+          else
+            sudo apt-get update && sudo apt-get install -y awscli
+          fi
+        shell: bash
+
+      - name: Upload to Cloudflare R2
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: auto
+          R2_ENDPOINT: https://${{ secrets.R2_ACCOUNT_ID }}.r2.cloudflarestorage.com
+          R2_BUCKET: ${{ secrets.R2_BUCKET_NAME }}
+        shell: bash
+        run: |
+          RELEASE_DIR="apps/desktop/release"
+
+          upload() {
+            local file="$1"
+            local key="$2"
+            echo "Uploading $key..."
+            aws s3 cp "$file" "s3://${R2_BUCKET}/${key}" \
+              --endpoint-url "$R2_ENDPOINT" \
+              --no-progress
+            echo "  [OK] $key"
+          }
+
+          if [ "${{ matrix.platform }}" = "win" ]; then
+            for f in "$RELEASE_DIR"/MoA-Setup-*.exe; do
+              [ -f "$f" ] && upload "$f" "desktop/MoA-Setup-latest.exe"
+            done
+          elif [ "${{ matrix.platform }}" = "mac" ]; then
+            for f in "$RELEASE_DIR"/MoA-*.dmg; do
+              [ -f "$f" ] && upload "$f" "desktop/MoA-latest-mac.dmg"
+            done
+          else
+            for f in "$RELEASE_DIR"/MoA-*.AppImage; do
+              [ -f "$f" ] && upload "$f" "desktop/MoA-latest-linux.AppImage"
+            done
+          fi
+
+          # Upload auto-update metadata (latest.yml, latest-mac.yml, latest-linux.yml)
+          for yml in "$RELEASE_DIR"/latest*.yml; do
+            [ -f "$yml" ] && upload "$yml" "desktop/$(basename "$yml")"
+          done
+
+          echo ""
+          echo "Upload complete for ${{ matrix.platform }}!"

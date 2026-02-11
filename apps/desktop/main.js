@@ -12,7 +12,7 @@
  * Architecture:
  *   Renderer (BrowserWindow) loads moa.lawith.kr
  *   + preload.js exposes local APIs (file access, system info)
- *   + electron-updater handles GitHub Releases auto-update
+ *   + electron-updater handles Cloudflare R2 auto-update
  *   + System tray for background persistence
  */
 
@@ -46,7 +46,7 @@ let tray = null;
    ----------------------------------------------------------------- */
 
 function setupAutoUpdater() {
-  // GitHub Releases를 업데이트 소스로 사용
+  // Cloudflare R2를 업데이트 소스로 사용
   autoUpdater.autoDownload = true;
   autoUpdater.autoInstallOnAppQuit = true;
 
