@@ -1,227 +1,223 @@
 "use client";
 
-import { useState, useRef, useCallback } from "react";
+import { useState, useCallback, useRef } from "react";
+import { useEditor, EditorContent } from "@tiptap/react";
+import StarterKit from "@tiptap/starter-kit";
+import Table from "@tiptap/extension-table";
+import TableRow from "@tiptap/extension-table-row";
+import TableCell from "@tiptap/extension-table-cell";
+import TableHeader from "@tiptap/extension-table-header";
+import TextAlign from "@tiptap/extension-text-align";
+import FontFamily from "@tiptap/extension-font-family";
+import TextStyle from "@tiptap/extension-text-style";
+import Color from "@tiptap/extension-color";
+import Highlight from "@tiptap/extension-highlight";
+import ImageExt from "@tiptap/extension-image";
+import Underline from "@tiptap/extension-underline";
+import Placeholder from "@tiptap/extension-placeholder";
 import Nav from "../../components/Nav";
+import EditorToolbar from "../../components/editor/EditorToolbar";
+import { FontSize } from "../../components/editor/font-size-extension";
+import {
+  exportAsHtml,
+  exportAsMarkdown,
+  exportAsText,
+  exportAsPdf,
+  exportAsDocx,
+  exportAsHwpx,
+  exportAsXlsx,
+} from "../../components/editor/export-utils";
+import { exportAsPptx } from "../../components/editor/pptx-generator";
+import "../../components/editor/editor.css";
 
 /**
  * MoA Document Editor Page
  *
- * Client-side document editor that supports:
- *   - Uploading PDF/Office documents
- *   - Converting to HTML for editing
- *   - WYSIWYG editing with formatting toolbar
- *   - Exporting to HTML, Markdown, or text
- *
- * Note: The actual conversion uses the MoA vision tool's "convert" action
- * server-side. This page provides the editing UI for converted documents
- * and a local file upload + API call flow.
+ * TipTap (ProseMirror) based rich text editor with:
+ *   - Full formatting toolbar (headings, fonts, colors, alignment, tables)
+ *   - Upload & convert PDF/Office documents
+ *   - Export to HTML, Markdown, Text, PDF, DOCX, HWPX, XLSX, PPTX
+ *   - AI-powered PPTX: summarizes content into presentation slides
  */
-
-type ExportFormat = "html" | "md" | "txt";
 
 const SUPPORTED_EXTENSIONS = [".pdf", ".docx", ".xlsx", ".pptx", ".hwpx"];
 
+const PPTX_THEMES = [
+  { value: "blue", label: "Blue", color: "#667eea" },
+  { value: "dark", label: "Dark", color: "#bb86fc" },
+  { value: "green", label: "Green", color: "#4caf50" },
+  { value: "red", label: "Red", color: "#e53935" },
+  { value: "purple", label: "Purple", color: "#9c27b0" },
+] as const;
+
 export default function EditorPage() {
-  const [content, setContent] = useState<string>("");
   const [title, setTitle] = useState("제목 없는 문서");
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [charCount, setCharCount] = useState(0);
-  const editorRef = useRef<HTMLDivElement>(null);
+  const [showPptxDialog, setShowPptxDialog] = useState(false);
+  const [pptxTheme, setPptxTheme] = useState<string>("blue");
+  const [pptxMaxSlides, setPptxMaxSlides] = useState(12);
+  const [pptxUseAi, setPptxUseAi] = useState(true);
+  const [isGenerating, setIsGenerating] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const updateCharCount = useCallback(() => {
-    if (editorRef.current) {
-      setCharCount(editorRef.current.innerText?.length ?? 0);
-    }
-  }, []);
+  const editor = useEditor({
+    extensions: [
+      StarterKit.configure({
+        heading: { levels: [1, 2, 3, 4] },
+      }),
+      Table.configure({ resizable: true }),
+      TableRow,
+      TableCell,
+      TableHeader,
+      TextAlign.configure({
+        types: ["heading", "paragraph"],
+      }),
+      TextStyle,
+      FontFamily,
+      FontSize,
+      Color,
+      Highlight.configure({ multicolor: true }),
+      ImageExt.configure({ inline: false }),
+      Underline,
+      Placeholder.configure({
+        placeholder: "문서 내용을 입력하세요...",
+      }),
+    ],
+    content: "",
+    editorProps: {
+      attributes: {
+        class: "ProseMirror",
+      },
+    },
+  });
 
-  const execCommand = useCallback((cmd: string, value?: string) => {
-    document.execCommand(cmd, false, value ?? undefined);
-    editorRef.current?.focus();
-  }, []);
+  const charCount = editor?.storage.characterCount?.characters?.() ?? editor?.getText().length ?? 0;
+  const wordCount = editor?.getText().trim().split(/\s+/).filter(Boolean).length ?? 0;
 
-  const applyHeading = useCallback((tag: string) => {
-    document.execCommand("formatBlock", false, tag);
-    editorRef.current?.focus();
-  }, []);
+  const handleFileUpload = useCallback(
+    async (e: React.ChangeEvent<HTMLInputElement>) => {
+      const file = e.target.files?.[0];
+      if (!file || !editor) return;
 
-  const insertTable = useCallback(() => {
-    const rows = prompt("행 수 (Rows):", "3");
-    const cols = prompt("열 수 (Columns):", "3");
-    if (!rows || !cols) return;
-    const r = parseInt(rows, 10);
-    const c = parseInt(cols, 10);
-    if (isNaN(r) || isNaN(c) || r < 1 || c < 1) return;
-
-    let html = '<table style="width:100%;border-collapse:collapse;margin:12px 0">';
-    for (let i = 0; i < r; i++) {
-      html += "<tr>";
-      for (let j = 0; j < c; j++) {
-        const tag = i === 0 ? "th" : "td";
-        html += `<${tag} style="border:1px solid #ccc;padding:6px 10px">&nbsp;</${tag}>`;
+      const ext = "." + file.name.split(".").pop()?.toLowerCase();
+      if (!SUPPORTED_EXTENSIONS.includes(ext)) {
+        setError(`지원하지 않는 파일 형식입니다: ${ext}\n지원: ${SUPPORTED_EXTENSIONS.join(", ")}`);
+        return;
       }
-      html += "</tr>";
-    }
-    html += "</table><p><br></p>";
-    document.execCommand("insertHTML", false, html);
-    editorRef.current?.focus();
-  }, []);
 
-  const handleFileUpload = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
+      setIsLoading(true);
+      setError(null);
 
-    const ext = "." + file.name.split(".").pop()?.toLowerCase();
-    if (!SUPPORTED_EXTENSIONS.includes(ext)) {
-      setError(`지원하지 않는 파일 형식입니다: ${ext}\n지원: ${SUPPORTED_EXTENSIONS.join(", ")}`);
-      return;
-    }
+      try {
+        const fileName = file.name.replace(/\.[^.]+$/, "");
+        setTitle(fileName);
 
-    setIsLoading(true);
-    setError(null);
-
-    try {
-      // Read file as text or process locally
-      const fileName = file.name.replace(/\.[^.]+$/, "");
-      setTitle(fileName);
-
-      // For now, show file info and instructions
-      // Full conversion requires server-side MoA vision tool
-      const sizeMb = (file.size / 1024 / 1024).toFixed(2);
-      const infoHtml = [
-        `<h2>${fileName}</h2>`,
-        `<p style="color:#666">파일 크기: ${sizeMb} MB | 형식: ${ext.toUpperCase()}</p>`,
-        "<hr>",
-        "<p>이 문서를 변환하려면 MoA 에이전트에게 다음과 같이 요청하세요:</p>",
-        "<br>",
-        '<pre style="background:#f5f5f5;padding:12px;border-radius:4px;font-size:12px">',
-        `vision({ action: "convert", file: "${file.name}", output_format: "html" })`,
-        "</pre>",
-        "<br>",
-        "<p>또는 에이전트에게 직접 말씀하세요:</p>",
-        `<p style="color:#667eea;font-style:italic">"${file.name} 파일을 HTML로 변환해서 에디터에서 보여줘"</p>`,
-        "<br>",
-        "<p>변환 후 이 에디터에서 내용을 수정하고 원하는 형식으로 저장할 수 있습니다.</p>",
-      ].join("\n");
-
-      if (editorRef.current) {
-        editorRef.current.innerHTML = infoHtml;
-        setContent(infoHtml);
-        updateCharCount();
-      }
-    } catch (err) {
-      setError(`파일 처리 중 오류: ${String(err)}`);
-    } finally {
-      setIsLoading(false);
-    }
-  }, [updateCharCount]);
-
-  const exportDocument = useCallback((format: ExportFormat) => {
-    if (!editorRef.current) return;
-
-    let exportContent: string;
-    let mimeType: string;
-    let ext: string;
-
-    switch (format) {
-      case "html": {
-        const bodyHtml = editorRef.current.innerHTML;
-        exportContent = [
-          "<!DOCTYPE html>",
-          '<html lang="ko">',
-          "<head>",
-          '<meta charset="UTF-8">',
-          '<meta name="viewport" content="width=device-width, initial-scale=1.0">',
-          `<title>${title}</title>`,
-          "<style>",
-          'body { font-family: "Malgun Gothic", sans-serif; max-width: 794px; margin: 0 auto; padding: 48px 56px; line-height: 1.6; color: #222; }',
-          "table { border-collapse: collapse; width: 100%; margin: 12px 0; }",
-          "td, th { border: 1px solid #ccc; padding: 6px 10px; }",
-          "th { background: #f8f8f8; font-weight: 600; }",
-          "img { max-width: 100%; }",
-          "</style>",
-          "</head>",
-          "<body>",
-          bodyHtml,
-          "</body>",
-          "</html>",
+        const sizeMb = (file.size / 1024 / 1024).toFixed(2);
+        const infoHtml = [
+          `<h2>${fileName}</h2>`,
+          `<p style="color:#666">파일 크기: ${sizeMb} MB | 형식: ${ext.toUpperCase()}</p>`,
+          "<hr>",
+          "<p>이 문서를 변환하려면 MoA 에이전트에게 다음과 같이 요청하세요:</p>",
+          "<br>",
+          "<pre><code>",
+          `vision({ action: "convert", file: "${file.name}", output_format: "html" })`,
+          "</code></pre>",
+          "<br>",
+          "<p>또는 에이전트에게 직접 말씀하세요:</p>",
+          `<p><em>"${file.name} 파일을 HTML로 변환해서 에디터에서 보여줘"</em></p>`,
+          "<br>",
+          "<p>변환 후 이 에디터에서 내용을 수정하고 원하는 형식으로 저장할 수 있습니다.</p>",
         ].join("\n");
-        mimeType = "text/html";
-        ext = ".html";
-        break;
-      }
-      case "md": {
-        // Simple HTML to Markdown conversion
-        let md = editorRef.current.innerHTML;
-        md = md.replace(/<h1[^>]*>([\s\S]*?)<\/h1>/gi, (_, t: string) => `\n# ${t.replace(/<[^>]+>/g, "")}\n`);
-        md = md.replace(/<h2[^>]*>([\s\S]*?)<\/h2>/gi, (_, t: string) => `\n## ${t.replace(/<[^>]+>/g, "")}\n`);
-        md = md.replace(/<h3[^>]*>([\s\S]*?)<\/h3>/gi, (_, t: string) => `\n### ${t.replace(/<[^>]+>/g, "")}\n`);
-        md = md.replace(/<strong[^>]*>([\s\S]*?)<\/strong>/gi, "**$1**");
-        md = md.replace(/<b[^>]*>([\s\S]*?)<\/b>/gi, "**$1**");
-        md = md.replace(/<em[^>]*>([\s\S]*?)<\/em>/gi, "*$1*");
-        md = md.replace(/<i[^>]*>([\s\S]*?)<\/i>/gi, "*$1*");
-        md = md.replace(/<br\s*\/?>/gi, "  \n");
-        md = md.replace(/<p[^>]*>([\s\S]*?)<\/p>/gi, (_, t: string) => `\n${t.replace(/<[^>]+>/g, "")}\n`);
-        md = md.replace(/<[^>]+>/g, "");
-        md = md.replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&quot;/g, '"').replace(/&nbsp;/g, " ");
-        md = md.replace(/\n{3,}/g, "\n\n");
-        exportContent = md.trim() + "\n";
-        mimeType = "text/markdown";
-        ext = ".md";
-        break;
-      }
-      case "txt":
-        exportContent = editorRef.current.innerText ?? "";
-        mimeType = "text/plain";
-        ext = ".txt";
-        break;
-    }
 
-    const blob = new Blob([exportContent], { type: `${mimeType};charset=utf-8` });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = title + ext;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
-  }, [title]);
+        editor.commands.setContent(infoHtml);
+      } catch (err) {
+        setError(`파일 처리 중 오류: ${String(err)}`);
+      } finally {
+        setIsLoading(false);
+      }
+    },
+    [editor],
+  );
+
+  const getHtmlContent = useCallback((): string => {
+    if (!editor) return "";
+    return editor.getHTML();
+  }, [editor]);
+
+  const getTextContent = useCallback((): string => {
+    if (!editor) return "";
+    return editor.getText();
+  }, [editor]);
+
+  const handleExport = useCallback(
+    async (format: string) => {
+      const html = getHtmlContent();
+      const text = getTextContent();
+
+      switch (format) {
+        case "html":
+          exportAsHtml(html, title);
+          break;
+        case "md":
+          exportAsMarkdown(html, title);
+          break;
+        case "txt":
+          exportAsText(text, title);
+          break;
+        case "pdf":
+          exportAsPdf();
+          break;
+        case "docx":
+          await exportAsDocx(html, title);
+          break;
+        case "hwpx":
+          await exportAsHwpx(html, title);
+          break;
+        case "xlsx":
+          await exportAsXlsx(html, title);
+          break;
+        case "pptx":
+          setShowPptxDialog(true);
+          break;
+      }
+    },
+    [title, getHtmlContent, getTextContent],
+  );
+
+  const handlePptxGenerate = useCallback(async () => {
+    setIsGenerating(true);
+    setShowPptxDialog(false);
+    try {
+      const html = getHtmlContent();
+      await exportAsPptx(html, {
+        title,
+        theme: pptxTheme as "blue" | "dark" | "green" | "red" | "purple",
+        maxSlides: pptxMaxSlides,
+        useAi: pptxUseAi,
+      });
+    } catch (err) {
+      setError(`PPTX 생성 중 오류: ${String(err)}`);
+    } finally {
+      setIsGenerating(false);
+    }
+  }, [title, pptxTheme, pptxMaxSlides, pptxUseAi, getHtmlContent]);
 
   return (
     <>
       <Nav />
       <div style={{ paddingTop: 64, height: "100vh", display: "flex", flexDirection: "column" }}>
         {/* Title Bar */}
-        <div
-          style={{
-            background: "var(--bg-card)",
-            borderBottom: "1px solid var(--border)",
-            padding: "8px 16px",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "space-between",
-            flexShrink: 0,
-          }}
-        >
+        <div className="editor-title-bar">
           <input
             type="text"
             value={title}
             onChange={(e) => setTitle(e.target.value)}
             placeholder="제목 없는 문서"
-            style={{
-              background: "none",
-              border: "none",
-              fontSize: "16px",
-              fontWeight: 600,
-              color: "var(--text)",
-              flex: 1,
-              outline: "none",
-            }}
+            className="editor-title-input"
           />
-          <div style={{ display: "flex", gap: 6 }}>
-            <button className="btn btn-sm btn-outline" onClick={() => fileInputRef.current?.click()}>
+          <div className="export-group">
+            <button className="export-btn" onClick={() => fileInputRef.current?.click()}>
               파일 열기
             </button>
             <input
@@ -231,132 +227,39 @@ export default function EditorPage() {
               style={{ display: "none" }}
               onChange={handleFileUpload}
             />
-            <button className="btn btn-sm btn-outline" onClick={() => exportDocument("html")}>
+            <button className="export-btn" onClick={() => handleExport("html")}>
               HTML
             </button>
-            <button className="btn btn-sm btn-outline" onClick={() => exportDocument("md")}>
+            <button className="export-btn" onClick={() => handleExport("md")}>
               MD
             </button>
-            <button className="btn btn-sm btn-outline" onClick={() => exportDocument("txt")}>
+            <button className="export-btn" onClick={() => handleExport("txt")}>
               TXT
             </button>
-            <button className="btn btn-sm btn-primary" onClick={() => window.print()}>
+            <button className="export-btn" onClick={() => handleExport("docx")}>
+              DOCX
+            </button>
+            <button className="export-btn" onClick={() => handleExport("hwpx")}>
+              HWPX
+            </button>
+            <button className="export-btn" onClick={() => handleExport("xlsx")}>
+              XLSX
+            </button>
+            <button
+              className="export-btn export-btn-pptx"
+              onClick={() => handleExport("pptx")}
+              disabled={isGenerating}
+            >
+              {isGenerating ? "생성중..." : "PPTX"}
+            </button>
+            <button className="export-btn export-btn-primary" onClick={() => handleExport("pdf")}>
               PDF
             </button>
           </div>
         </div>
 
         {/* Toolbar */}
-        <div
-          style={{
-            background: "var(--bg-card)",
-            borderBottom: "1px solid var(--border)",
-            padding: "6px 12px",
-            display: "flex",
-            flexWrap: "wrap",
-            gap: 4,
-            alignItems: "center",
-            flexShrink: 0,
-          }}
-        >
-          {/* Undo/Redo */}
-          <div style={{ display: "flex", gap: 2 }}>
-            <ToolbarBtn onClick={() => execCommand("undo")} title="실행취소">&#x21B6;</ToolbarBtn>
-            <ToolbarBtn onClick={() => execCommand("redo")} title="다시실행">&#x21B7;</ToolbarBtn>
-          </div>
-          <Separator />
-
-          {/* Heading */}
-          <select
-            onChange={(e) => applyHeading(e.target.value)}
-            title="제목"
-            style={{
-              background: "var(--bg)",
-              border: "1px solid var(--border)",
-              borderRadius: 4,
-              padding: "4px 6px",
-              color: "var(--text)",
-              fontSize: 12,
-              height: 28,
-            }}
-          >
-            <option value="p">본문</option>
-            <option value="h1">제목 1</option>
-            <option value="h2">제목 2</option>
-            <option value="h3">제목 3</option>
-          </select>
-          <Separator />
-
-          {/* Font */}
-          <select
-            onChange={(e) => execCommand("fontName", e.target.value)}
-            title="글꼴"
-            style={{
-              background: "var(--bg)",
-              border: "1px solid var(--border)",
-              borderRadius: 4,
-              padding: "4px 6px",
-              color: "var(--text)",
-              fontSize: 12,
-              height: 28,
-            }}
-          >
-            <option value="Malgun Gothic">맑은 고딕</option>
-            <option value="Batang">바탕</option>
-            <option value="Gulim">굴림</option>
-            <option value="Nanum Gothic">나눔고딕</option>
-            <option value="Arial">Arial</option>
-            <option value="Times New Roman">Times New Roman</option>
-          </select>
-
-          <select
-            onChange={(e) => execCommand("fontSize", e.target.value)}
-            defaultValue="3"
-            title="글자크기"
-            style={{
-              background: "var(--bg)",
-              border: "1px solid var(--border)",
-              borderRadius: 4,
-              padding: "4px 6px",
-              color: "var(--text)",
-              fontSize: 12,
-              height: 28,
-            }}
-          >
-            <option value="1">8pt</option>
-            <option value="2">10pt</option>
-            <option value="3">12pt</option>
-            <option value="4">14pt</option>
-            <option value="5">18pt</option>
-            <option value="6">24pt</option>
-          </select>
-          <Separator />
-
-          {/* Formatting */}
-          <div style={{ display: "flex", gap: 2 }}>
-            <ToolbarBtn onClick={() => execCommand("bold")} title="굵게"><b>B</b></ToolbarBtn>
-            <ToolbarBtn onClick={() => execCommand("italic")} title="기울임"><i>I</i></ToolbarBtn>
-            <ToolbarBtn onClick={() => execCommand("underline")} title="밑줄"><u>U</u></ToolbarBtn>
-            <ToolbarBtn onClick={() => execCommand("strikeThrough")} title="취소선"><s>S</s></ToolbarBtn>
-          </div>
-          <Separator />
-
-          {/* Alignment */}
-          <div style={{ display: "flex", gap: 2 }}>
-            <ToolbarBtn onClick={() => execCommand("justifyLeft")} title="왼쪽 정렬">&#x2190;</ToolbarBtn>
-            <ToolbarBtn onClick={() => execCommand("justifyCenter")} title="가운데 정렬">&#x2194;</ToolbarBtn>
-            <ToolbarBtn onClick={() => execCommand("justifyRight")} title="오른쪽 정렬">&#x2192;</ToolbarBtn>
-            <ToolbarBtn onClick={() => execCommand("justifyFull")} title="양쪽 정렬">&#x2195;</ToolbarBtn>
-          </div>
-          <Separator />
-
-          {/* Lists & Table */}
-          <div style={{ display: "flex", gap: 2 }}>
-            <ToolbarBtn onClick={() => execCommand("insertUnorderedList")} title="글머리 기호">&#x2022;</ToolbarBtn>
-            <ToolbarBtn onClick={() => execCommand("insertOrderedList")} title="번호 목록">1.</ToolbarBtn>
-            <ToolbarBtn onClick={insertTable} title="표 삽입">&#x25A6;</ToolbarBtn>
-          </div>
-        </div>
+        <EditorToolbar editor={editor} />
 
         {/* Error */}
         {error && (
@@ -387,7 +290,7 @@ export default function EditorPage() {
         )}
 
         {/* Loading */}
-        {isLoading && (
+        {(isLoading || isGenerating) && (
           <div
             style={{
               padding: "12px 16px",
@@ -397,112 +300,108 @@ export default function EditorPage() {
               flexShrink: 0,
             }}
           >
-            문서 변환 중...
+            {isGenerating ? "AI 프레젠테이션 생성 중..." : "문서 변환 중..."}
           </div>
         )}
 
         {/* Editor */}
-        <div
-          style={{
-            flex: 1,
-            overflow: "auto",
-            padding: 24,
-            display: "flex",
-            justifyContent: "center",
-          }}
-        >
-          <div
-            ref={editorRef}
-            contentEditable
-            suppressContentEditableWarning
-            onInput={updateCharCount}
-            style={{
-              width: "100%",
-              maxWidth: 816,
-              minHeight: 1056,
-              background: "white",
-              color: "#222",
-              padding: "56px 64px",
-              boxShadow: "0 2px 8px rgba(0,0,0,0.12)",
-              borderRadius: 4,
-              outline: "none",
-              fontSize: "12pt",
-              lineHeight: 1.6,
-            }}
-            dangerouslySetInnerHTML={content ? { __html: content } : undefined}
-          />
+        <div className="editor-wrapper">
+          <div className="tiptap-editor">
+            <EditorContent editor={editor} />
+          </div>
         </div>
 
         {/* Status Bar */}
-        <div
-          style={{
-            background: "var(--bg-card)",
-            borderTop: "1px solid var(--border)",
-            padding: "4px 16px",
-            display: "flex",
-            justifyContent: "space-between",
-            fontSize: 11,
-            color: "var(--text-muted)",
-            flexShrink: 0,
-          }}
-        >
-          <span>{charCount} 글자</span>
-          <span>MoA Document Editor</span>
+        <div className="editor-status-bar">
+          <span>{charCount} 글자 | {wordCount} 단어</span>
+          <span>MoA Document Editor (TipTap)</span>
         </div>
       </div>
+
+      {/* PPTX Generation Dialog */}
+      {showPptxDialog && (
+        <div className="pptx-dialog-overlay" onClick={() => setShowPptxDialog(false)}>
+          <div className="pptx-dialog" onClick={(e) => e.stopPropagation()}>
+            <h3 className="pptx-dialog-title">AI 프레젠테이션 생성</h3>
+            <p className="pptx-dialog-desc">
+              문서 내용을 요약하여 발표용 PPTX 슬라이드를 생성합니다.
+              핵심 키워드 위주로 스토리 흐름에 맞게 구성됩니다.
+            </p>
+
+            {/* Theme Selection */}
+            <div className="pptx-dialog-section">
+              <label className="pptx-dialog-label">테마 색상</label>
+              <div className="pptx-theme-grid">
+                {PPTX_THEMES.map((t) => (
+                  <button
+                    key={t.value}
+                    className={`pptx-theme-btn ${pptxTheme === t.value ? "active" : ""}`}
+                    onClick={() => setPptxTheme(t.value)}
+                    style={{ "--theme-color": t.color } as React.CSSProperties}
+                  >
+                    <span className="pptx-theme-swatch" style={{ background: t.color }} />
+                    <span>{t.label}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Max Slides */}
+            <div className="pptx-dialog-section">
+              <label className="pptx-dialog-label">
+                최대 슬라이드 수: <strong>{pptxMaxSlides}</strong>
+              </label>
+              <input
+                type="range"
+                min={5}
+                max={30}
+                value={pptxMaxSlides}
+                onChange={(e) => setPptxMaxSlides(parseInt(e.target.value, 10))}
+                className="pptx-slider"
+              />
+              <div className="pptx-slider-labels">
+                <span>5</span>
+                <span>15</span>
+                <span>30</span>
+              </div>
+            </div>
+
+            {/* AI Toggle */}
+            <div className="pptx-dialog-section">
+              <label className="pptx-toggle-label">
+                <input
+                  type="checkbox"
+                  checked={pptxUseAi}
+                  onChange={(e) => setPptxUseAi(e.target.checked)}
+                  className="pptx-toggle"
+                />
+                <span>AI 요약 사용 (LLM API 키 필요)</span>
+              </label>
+              <p className="pptx-dialog-hint">
+                {pptxUseAi
+                  ? "LLM이 문서 내용을 분석하여 최적의 발표 구조를 생성합니다. API 키가 없으면 자동으로 스마트 추출 모드로 전환됩니다."
+                  : "HTML 구조를 분석하여 제목/내용 기반으로 슬라이드를 구성합니다."}
+              </p>
+            </div>
+
+            {/* Actions */}
+            <div className="pptx-dialog-actions">
+              <button
+                className="pptx-dialog-cancel"
+                onClick={() => setShowPptxDialog(false)}
+              >
+                취소
+              </button>
+              <button
+                className="pptx-dialog-generate"
+                onClick={handlePptxGenerate}
+              >
+                프레젠테이션 생성
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </>
-  );
-}
-
-function ToolbarBtn({
-  onClick,
-  title,
-  children,
-}: {
-  onClick: () => void;
-  title: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <button
-      onClick={onClick}
-      title={title}
-      style={{
-        background: "none",
-        border: "1px solid transparent",
-        borderRadius: 4,
-        padding: "4px 8px",
-        cursor: "pointer",
-        color: "var(--text)",
-        fontSize: 14,
-        lineHeight: 1,
-        minWidth: 28,
-        height: 28,
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-      }}
-      onMouseOver={(e) => {
-        (e.target as HTMLElement).style.background = "var(--bg-card-hover)";
-      }}
-      onMouseOut={(e) => {
-        (e.target as HTMLElement).style.background = "none";
-      }}
-    >
-      {children}
-    </button>
-  );
-}
-
-function Separator() {
-  return (
-    <div
-      style={{
-        width: 1,
-        height: 20,
-        background: "var(--border)",
-        margin: "0 4px",
-      }}
-    />
   );
 }
