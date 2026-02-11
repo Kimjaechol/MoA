@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import Link from "next/link";
 import { detectPlatform, PLATFORM_INFO, type Platform } from "../lib/detect-platform";
 
 const PLATFORM_EMOJI: Record<string, string> = {
@@ -143,28 +144,55 @@ export default function DownloadSection() {
               justifyContent: "center",
               flexWrap: "wrap",
               marginBottom: "16px",
+              flexDirection: "column",
+              alignItems: "center",
             }}
           >
-            {info.downloadUrl && (
-              <a
-                href={info.downloadUrl}
-                className="btn btn-primary"
-                onClick={() => setDownloaded(true)}
-                style={{ fontSize: "1.1rem", padding: "14px 32px" }}
-              >
-                원클릭 설치하기
-              </a>
-            )}
-            {info.storeUrl && (
-              <a
-                href={info.storeUrl}
-                className="btn btn-primary"
-                target="_blank"
-                rel="noopener noreferrer"
-                style={{ fontSize: "1.1rem", padding: "14px 32px" }}
-              >
-                {selected === "ios" ? "App Store" : "Google Play"}에서 받기
-              </a>
+            {info.comingSoon ? (
+              <>
+                <span
+                  className="btn btn-outline"
+                  style={{
+                    fontSize: "0.95rem",
+                    padding: "12px 28px",
+                    opacity: 0.6,
+                    cursor: "default",
+                  }}
+                >
+                  {info.downloadUrl ? "데스크톱 앱" : info.storeUrl ? (selected === "ios" ? "App Store" : "Google Play") : ""} (준비 중)
+                </span>
+                <Link
+                  href="/chat"
+                  className="btn btn-primary"
+                  style={{ fontSize: "1.1rem", padding: "14px 32px" }}
+                >
+                  웹에서 바로 사용하기
+                </Link>
+              </>
+            ) : (
+              <>
+                {info.downloadUrl && (
+                  <a
+                    href={info.downloadUrl}
+                    className="btn btn-primary"
+                    onClick={() => setDownloaded(true)}
+                    style={{ fontSize: "1.1rem", padding: "14px 32px" }}
+                  >
+                    원클릭 설치하기
+                  </a>
+                )}
+                {info.storeUrl && (
+                  <a
+                    href={info.storeUrl}
+                    className="btn btn-primary"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    style={{ fontSize: "1.1rem", padding: "14px 32px" }}
+                  >
+                    {selected === "ios" ? "App Store" : "Google Play"}에서 받기
+                  </a>
+                )}
+              </>
             )}
           </div>
 

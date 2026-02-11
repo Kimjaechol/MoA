@@ -5,7 +5,7 @@
 set -euo pipefail
 
 APP_NAME="MoA"
-RELEASES_URL="https://github.com/Kimjaechol/MoA/releases/latest/download"
+RELEASES_URL="https://download.moa.lawith.kr/desktop"
 
 echo ""
 echo "  ============================================"

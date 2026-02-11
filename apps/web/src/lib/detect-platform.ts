@@ -10,8 +10,8 @@ export function detectPlatform(ua: string): Platform {
   return null;
 }
 
-/** GitHub releases base URL */
-const RELEASES_BASE = "https://github.com/Kimjaechol/MoA/releases/latest/download";
+/** GitHub releases page (not direct download - release must exist first) */
+const RELEASES_PAGE = "https://github.com/Kimjaechol/MoA/releases";
 /** MoA website base URL */
 const SITE_BASE = "https://moa.lawith.kr";
 
@@ -24,39 +24,45 @@ export const PLATFORM_INFO: Record<
     downloadUrl?: string;
     storeUrl?: string;
     desc: string;
+    comingSoon?: boolean;
   }
 > = {
   windows: {
     name: "Windows",
     icon: "/icons/windows.svg",
     installCmd: `powershell -c "irm ${SITE_BASE}/install.ps1 | iex"`,
-    downloadUrl: `${RELEASES_BASE}/MoA-Setup-latest.exe`,
+    downloadUrl: RELEASES_PAGE,
     desc: "Windows 10/11 64-bit",
+    comingSoon: true,
   },
   macos: {
     name: "macOS",
     icon: "/icons/apple.svg",
     installCmd: `curl -fsSL ${SITE_BASE}/install.sh | bash`,
-    downloadUrl: `${RELEASES_BASE}/MoA-latest-mac.dmg`,
+    downloadUrl: RELEASES_PAGE,
     desc: "macOS 12+ (Apple Silicon / Intel)",
+    comingSoon: true,
   },
   linux: {
     name: "Linux",
     icon: "/icons/linux.svg",
     installCmd: `curl -fsSL ${SITE_BASE}/install.sh | bash`,
-    downloadUrl: `${RELEASES_BASE}/MoA-latest-linux.AppImage`,
+    downloadUrl: RELEASES_PAGE,
     desc: "Ubuntu 20.04+, Debian 11+, Fedora 35+",
+    comingSoon: true,
   },
   android: {
     name: "Android",
     icon: "/icons/android.svg",
     storeUrl: "https://play.google.com/store/apps/details?id=com.lawith.moa",
     desc: "Android 10+",
+    comingSoon: true,
   },
   ios: {
     name: "iOS",
     icon: "/icons/apple.svg",
     storeUrl: "https://apps.apple.com/app/moa-ai-assistant/id0000000000",
     desc: "iOS 15+",
+    comingSoon: true,
   },
 };

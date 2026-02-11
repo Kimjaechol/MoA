@@ -19,9 +19,8 @@
     "copyright": "Copyright © 2026 MoA Team",
     "publish": [
       {
-        "provider": "github",
-        "owner": "Kimjaechol",
-        "repo": "MoA"
+        "provider": "generic",
+        "url": "https://download.moa.lawith.kr/desktop"
       }
     ],
     "directories": {
