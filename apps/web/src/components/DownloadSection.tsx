@@ -21,11 +21,11 @@ const PLATFORM_ORDER: Exclude<Platform, null>[] = [
 
 const POST_DOWNLOAD_MSG: Record<string, string> = {
   windows:
-    "다운로드된 MoA-Install.bat 파일을 더블클릭하세요. 설치 완료 후 자동으로 열리는 페이지에서 기기를 등록할 수 있습니다.",
+    "다운로드된 MoA-Setup.exe를 더블클릭하면 자동으로 설치되고 MoA가 실행됩니다.",
   macos:
-    "다운로드된 MoA-Install.command 파일을 더블클릭하세요. 설치 완료 후 자동으로 열리는 페이지에서 기기를 등록할 수 있습니다.",
+    "다운로드된 DMG를 열고 MoA 아이콘을 Applications 폴더로 드래그하세요.",
   linux:
-    "다운로드된 install.sh 파일을 터미널에서 bash install.sh 로 실행하세요. 설치 완료 후 자동으로 열리는 페이지에서 기기를 등록할 수 있습니다.",
+    "chmod +x MoA-*.AppImage 로 실행 권한을 부여한 후 더블클릭하세요.",
 };
 
 export default function DownloadSection() {
@@ -152,7 +152,7 @@ export default function DownloadSection() {
                 onClick={() => setDownloaded(true)}
                 style={{ fontSize: "1.1rem", padding: "14px 32px" }}
               >
-                설치하기
+                원클릭 설치하기
               </a>
             )}
             {info.storeUrl && (

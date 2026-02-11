@@ -3,6 +3,8 @@ import type { UserModelStrategyConfig } from "./types.js";
 import {
   DEFAULT_MODEL_STRATEGY,
   MODEL_STRATEGIES,
+  PROVIDER_MODELS,
+  MOA_CREDIT_MODELS,
   resolveModelStrategy,
   explainModelStrategy,
   isValidStrategy,
@@ -16,32 +18,57 @@ describe("Model Strategy System", () => {
       expect(MODEL_STRATEGIES["max-performance"]).toBeDefined();
     });
 
-    it("cost-efficient should have 4 tiers", () => {
-      expect(MODEL_STRATEGIES["cost-efficient"].tiers).toHaveLength(4);
-    });
-
-    it("max-performance should have 2 tiers", () => {
+    it("each strategy should have 2 tiers (API key + MoA credit)", () => {
+      expect(MODEL_STRATEGIES["cost-efficient"].tiers).toHaveLength(2);
       expect(MODEL_STRATEGIES["max-performance"].tiers).toHaveLength(2);
-    });
-
-    it("cost-efficient tiers should start with free options", () => {
-      const tiers = MODEL_STRATEGIES["cost-efficient"].tiers;
-      expect(tiers[0].free).toBe(true);
-      expect(tiers[1].free).toBe(true);
-      expect(tiers[2].free).toBe(false);
-      expect(tiers[3].free).toBe(false);
-    });
-
-    it("max-performance should enable parallel fallback", () => {
-      expect(MODEL_STRATEGIES["max-performance"].parallelFallback).toBe(true);
     });
 
     it("cost-efficient should not enable parallel fallback", () => {
       expect(MODEL_STRATEGIES["cost-efficient"].parallelFallback).toBe(false);
     });
 
+    it("max-performance should not enable parallel fallback", () => {
+      expect(MODEL_STRATEGIES["max-performance"].parallelFallback).toBe(false);
+    });
+
     it("default strategy should be cost-efficient", () => {
       expect(DEFAULT_MODEL_STRATEGY).toBe("cost-efficient");
+    });
+  });
+
+  describe("provider models", () => {
+    it("should have models for all major providers", () => {
+      expect(PROVIDER_MODELS.anthropic).toBeDefined();
+      expect(PROVIDER_MODELS.openai).toBeDefined();
+      expect(PROVIDER_MODELS.gemini).toBeDefined();
+      expect(PROVIDER_MODELS.xai).toBeDefined();
+      expect(PROVIDER_MODELS.deepseek).toBeDefined();
+      expect(PROVIDER_MODELS.groq).toBeDefined();
+      expect(PROVIDER_MODELS.mistral).toBeDefined();
+    });
+
+    it("anthropic max-performance should be claude-opus-4-6", () => {
+      expect(PROVIDER_MODELS.anthropic.maxPerformance).toBe("claude-opus-4-6");
+    });
+
+    it("anthropic cost-efficient should be claude-haiku-4-5", () => {
+      expect(PROVIDER_MODELS.anthropic.costEfficient).toBe("claude-haiku-4-5");
+    });
+  });
+
+  describe("MoA credit models", () => {
+    it("cost-efficient credit model should be Gemini 2.5 Flash Thinking", () => {
+      const model = MOA_CREDIT_MODELS["cost-efficient"];
+      expect(model.provider).toBe("gemini");
+      expect(model.model).toBe("gemini-2.5-flash-thinking");
+      expect(model.thinkingBudget).toBe(-1);
+    });
+
+    it("max-performance credit model should be Claude Opus 4.6", () => {
+      const model = MOA_CREDIT_MODELS["max-performance"];
+      expect(model.provider).toBe("anthropic");
+      expect(model.model).toBe("claude-opus-4-6");
+      expect(model.thinkingBudget).toBeUndefined();
     });
   });
 
@@ -61,129 +88,161 @@ describe("Model Strategy System", () => {
   });
 
   describe("resolveModelStrategy", () => {
-    it("cost-efficient should resolve to free SLM tier first", () => {
-      const config: UserModelStrategyConfig = {
-        strategy: "cost-efficient",
-        subscribedProviders: [],
-      };
-      const result = resolveModelStrategy(config);
-      expect(result.strategy).toBe("cost-efficient");
-      expect(result.tierLabel).toBe("무료 내장 SLM");
-      expect(result.parallel).toBe(false);
-      expect(result.selectedModels).toHaveLength(1);
-      expect(result.selectedModels[0].provider).toBe("local");
+    describe("no API keys (MoA credit mode)", () => {
+      it("cost-efficient should resolve to Gemini 2.5 Flash Thinking", () => {
+        const config: UserModelStrategyConfig = {
+          strategy: "cost-efficient",
+          subscribedProviders: [],
+        };
+        const result = resolveModelStrategy(config);
+        expect(result.strategy).toBe("cost-efficient");
+        expect(result.tierLabel).toBe("MoA 크레딧 (기본)");
+        expect(result.parallel).toBe(false);
+        expect(result.selectedModels).toHaveLength(1);
+        expect(result.selectedModels[0].provider).toBe("gemini");
+        expect(result.selectedModels[0].model).toBe("gemini-2.5-flash-thinking");
+        expect(result.modelConfig?.thinkingBudget).toBe(-1);
+      });
+
+      it("max-performance should resolve to Claude Opus 4.6", () => {
+        const config: UserModelStrategyConfig = {
+          strategy: "max-performance",
+          subscribedProviders: [],
+        };
+        const result = resolveModelStrategy(config);
+        expect(result.strategy).toBe("max-performance");
+        expect(result.tierLabel).toBe("MoA 크레딧 (기본)");
+        expect(result.parallel).toBe(false);
+        expect(result.selectedModels).toHaveLength(1);
+        expect(result.selectedModels[0].provider).toBe("anthropic");
+        expect(result.selectedModels[0].model).toBe("claude-opus-4-6");
+        expect(result.modelConfig).toBeUndefined();
+      });
     });
 
-    it("max-performance should resolve to top-tier model", () => {
-      const config: UserModelStrategyConfig = {
-        strategy: "max-performance",
-        subscribedProviders: [],
-      };
-      const result = resolveModelStrategy(config);
-      expect(result.strategy).toBe("max-performance");
-      expect(result.tierLabel).toBe("최고 성능 단일 모델");
-      expect(result.parallel).toBe(false);
-      expect(result.selectedModels).toHaveLength(1);
+    describe("with API key (subscribed provider)", () => {
+      it("anthropic + cost-efficient should use claude-haiku-4-5", () => {
+        const config: UserModelStrategyConfig = {
+          strategy: "cost-efficient",
+          subscribedProviders: ["anthropic"],
+        };
+        const result = resolveModelStrategy(config);
+        expect(result.tierLabel).toBe("API 키 보유 사용자");
+        expect(result.selectedModels[0].provider).toBe("anthropic");
+        expect(result.selectedModels[0].model).toBe("claude-haiku-4-5");
+        expect(result.explanation).toContain("추가 비용 없음");
+      });
+
+      it("anthropic + max-performance should use claude-opus-4-6", () => {
+        const config: UserModelStrategyConfig = {
+          strategy: "max-performance",
+          subscribedProviders: ["anthropic"],
+        };
+        const result = resolveModelStrategy(config);
+        expect(result.tierLabel).toBe("API 키 보유 사용자");
+        expect(result.selectedModels[0].provider).toBe("anthropic");
+        expect(result.selectedModels[0].model).toBe("claude-opus-4-6");
+      });
+
+      it("openai + cost-efficient should use gpt-4o-mini", () => {
+        const config: UserModelStrategyConfig = {
+          strategy: "cost-efficient",
+          subscribedProviders: ["openai"],
+        };
+        const result = resolveModelStrategy(config);
+        expect(result.selectedModels[0].provider).toBe("openai");
+        expect(result.selectedModels[0].model).toBe("gpt-4o-mini");
+      });
+
+      it("openai + max-performance should use gpt-5.2", () => {
+        const config: UserModelStrategyConfig = {
+          strategy: "max-performance",
+          subscribedProviders: ["openai"],
+        };
+        const result = resolveModelStrategy(config);
+        expect(result.selectedModels[0].provider).toBe("openai");
+        expect(result.selectedModels[0].model).toBe("gpt-5.2");
+      });
+
+      it("gemini + cost-efficient should use gemini-2.5-flash", () => {
+        const config: UserModelStrategyConfig = {
+          strategy: "cost-efficient",
+          subscribedProviders: ["gemini"],
+        };
+        const result = resolveModelStrategy(config);
+        expect(result.selectedModels[0].provider).toBe("gemini");
+        expect(result.selectedModels[0].model).toBe("gemini-2.5-flash");
+      });
+
+      it("should use first provider when multiple API keys are registered", () => {
+        const config: UserModelStrategyConfig = {
+          strategy: "cost-efficient",
+          subscribedProviders: ["openai", "anthropic"],
+        };
+        const result = resolveModelStrategy(config);
+        expect(result.selectedModels[0].provider).toBe("openai");
+      });
     });
 
-    it("max-performance + complex task should use parallel", () => {
-      const config: UserModelStrategyConfig = {
-        strategy: "max-performance",
-        subscribedProviders: [],
-      };
-      const result = resolveModelStrategy(config, "complex");
-      expect(result.parallel).toBe(true);
-      expect(result.tierLabel).toBe("병렬 멀티 모델");
-      expect(result.selectedModels.length).toBeGreaterThan(1);
+    describe("primary override", () => {
+      it("should respect primary override regardless of other settings", () => {
+        const config: UserModelStrategyConfig = {
+          strategy: "cost-efficient",
+          subscribedProviders: ["anthropic"],
+          primaryOverride: "openai/gpt-4o",
+        };
+        const result = resolveModelStrategy(config);
+        expect(result.tierLabel).toBe("사용자 지정 모델");
+        expect(result.selectedModels[0].provider).toBe("openai");
+        expect(result.selectedModels[0].model).toBe("gpt-4o");
+      });
     });
 
-    it("should respect primary override", () => {
-      const config: UserModelStrategyConfig = {
-        strategy: "cost-efficient",
-        primaryOverride: "openai/gpt-4o",
-      };
-      const result = resolveModelStrategy(config);
-      expect(result.tierLabel).toBe("사용자 지정 모델");
-      expect(result.selectedModels[0].provider).toBe("openai");
-      expect(result.selectedModels[0].model).toBe("gpt-4o");
-    });
-
-    it("should prioritize subscribed providers in cost-efficient", () => {
-      const config: UserModelStrategyConfig = {
-        strategy: "cost-efficient",
-        subscribedProviders: ["anthropic"],
-      };
-      const result = resolveModelStrategy(config);
-      // First tier is still free SLM regardless of subscription
-      expect(result.tierLabel).toBe("무료 내장 SLM");
-    });
-
-    it("should fallback to cost-efficient for invalid strategy", () => {
-      const config = {
-        strategy: "invalid-strategy" as "cost-efficient",
-        subscribedProviders: [],
-      };
-      const result = resolveModelStrategy(config);
-      expect(result.strategy).toBe("cost-efficient");
+    describe("fallback behavior", () => {
+      it("should fallback to cost-efficient for invalid strategy", () => {
+        const config = {
+          strategy: "invalid-strategy" as "cost-efficient",
+          subscribedProviders: [],
+        };
+        const result = resolveModelStrategy(config);
+        expect(result.strategy).toBe("cost-efficient");
+      });
     });
   });
 
   describe("explainModelStrategy", () => {
-    it("should produce readable explanation for cost-efficient", () => {
+    it("should show MoA credit info when no API keys", () => {
       const config: UserModelStrategyConfig = {
         strategy: "cost-efficient",
         subscribedProviders: [],
       };
       const text = explainModelStrategy(config);
-      expect(text).toContain("최저비용");
-      expect(text).toContain("가성비");
-      expect(text).toContain("무료 내장 SLM");
-      expect(text).toContain("유료 LLM 무료 한도");
-      expect(text).toContain("유료 LLM 가성비 버전");
-      expect(text).toContain("유료 LLM 최고 버전");
+      expect(text).toContain("가성비 전략");
+      expect(text).toContain("MoA 크레딧");
+      expect(text).toContain("Gemini 2.5 Flash (Thinking)");
+      expect(text).toContain("thinkingBudget");
     });
 
-    it("should produce readable explanation for max-performance", () => {
+    it("should show API key provider info when keys are registered", () => {
+      const config: UserModelStrategyConfig = {
+        strategy: "max-performance",
+        subscribedProviders: ["anthropic"],
+      };
+      const text = explainModelStrategy(config);
+      expect(text).toContain("최고성능 전략");
+      expect(text).toContain("등록된 API 키");
+      expect(text).toContain("claude-opus-4-6");
+      expect(text).toContain("추가 비용 없음");
+    });
+
+    it("should show max-performance MoA credit model when no keys", () => {
       const config: UserModelStrategyConfig = {
         strategy: "max-performance",
         subscribedProviders: [],
       };
       const text = explainModelStrategy(config);
-      expect(text).toContain("최고지능");
-      expect(text).toContain("최대성능");
-      expect(text).toContain("병렬");
-    });
-
-    it("should mention subscribed providers when present", () => {
-      const config: UserModelStrategyConfig = {
-        strategy: "cost-efficient",
-        subscribedProviders: ["openai", "anthropic"],
-      };
-      const text = explainModelStrategy(config);
-      expect(text).toContain("구독 중인 LLM");
-      expect(text).toContain("우선 적용");
-    });
-  });
-
-  describe("tier model ordering", () => {
-    it("cost-efficient tier 3 should have Kimi K2-0905 Groq first, then budget models", () => {
-      const tier3 = MODEL_STRATEGIES["cost-efficient"].tiers[2];
-      expect(tier3.label).toBe("유료 LLM 가성비 버전");
-      expect(tier3.models[0]).toBe("groq/kimi-k2-0905");
-      expect(tier3.models.some((m) => m.includes("deepseek"))).toBe(true);
-      expect(tier3.models.some((m) => m.includes("gemini-2.5-flash"))).toBe(true);
-    });
-
-    it("cost-efficient tier 4 should have top-tier models", () => {
-      const tier4 = MODEL_STRATEGIES["cost-efficient"].tiers[3];
-      expect(tier4.label).toBe("유료 LLM 최고 버전");
-      expect(tier4.models.some((m) => m.includes("opus"))).toBe(true);
-    });
-
-    it("max-performance parallel tier should have 5+ models", () => {
-      const parallelTier = MODEL_STRATEGIES["max-performance"].tiers[1];
-      expect(parallelTier.label).toBe("병렬 멀티 모델");
-      expect(parallelTier.models.length).toBeGreaterThanOrEqual(5);
+      expect(text).toContain("Claude Opus 4.6");
+      expect(text).toContain("크레딧 차감");
     });
   });
 });

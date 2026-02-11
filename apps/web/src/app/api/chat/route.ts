@@ -14,7 +14,7 @@ import { NextRequest, NextResponse } from "next/server";
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { user_id, session_id, content, channel = "web", category = "other" } = body;
+    const { user_id, session_id, content, channel = "web", category = "other", is_desktop = false } = body;
 
     if (!content || typeof content !== "string" || !content.trim()) {
       return NextResponse.json({ error: "메시지를 입력해주세요." }, { status: 400 });
@@ -40,10 +40,23 @@ export async function POST(request: NextRequest) {
       } catch { /* persistence failure — non-fatal */ }
     }
 
-    // 2. Generate AI response (category-aware, always succeeds)
+    // 2. Check for local file access requests from non-desktop browser
+    if (!is_desktop && /([A-Za-z]:\\|내\s*컴퓨터|로컬\s*파일|E\s*드라이브|C\s*드라이브|D\s*드라이브)/.test(content)) {
+      return NextResponse.json({
+        reply: "로컬 파일에 접근하려면 MoA 데스크톱 앱이 필요합니다.\n\n" +
+          "MoA 데스크톱 앱을 설치하면 E드라이브 등 로컬 파일을 직접 관리할 수 있어요.\n\n" +
+          "다운로드 페이지에서 원클릭으로 설치하세요: /download",
+        model: "local/system",
+        category,
+        credits_used: 0,
+        timestamp: new Date().toISOString(),
+      });
+    }
+
+    // 3. Generate AI response (category-aware, always succeeds)
     const aiResponse = await generateResponse(content.trim(), user_id, category, supabase);
 
-    // 3. Deduct credits (best-effort, non-blocking)
+    // 4. Deduct credits (best-effort, non-blocking)
     // Apply 2x multiplier when using MoA's server-level API keys
     let creditInfo: { balance?: number; cost?: number } = {};
     if (supabase && user_id) {
@@ -52,7 +65,7 @@ export async function POST(request: NextRequest) {
       } catch { /* credit deduction failure — non-fatal */ }
     }
 
-    // 4. Save AI response (best-effort, non-blocking)
+    // 5. Save AI response (best-effort, non-blocking)
     if (supabase && user_id && session_id) {
       try {
         await supabase.from("moa_chat_messages").insert({
@@ -458,12 +471,17 @@ function generateSmartResponse(message: string, category: string, model: string,
 
   // Greeting patterns (Korean + English)
   if (/^(안녕|hi|hello|하이|반가|헬로|ㅎㅇ|moa|모아)/.test(lowerMsg)) {
-    return `안녕하세요! MoA AI 에이전트입니다. 반갑습니다! 😊\n\n현재 **${catLabel}** 모드로 대화 중이에요.\n\n💡 이런 것들을 도와드릴 수 있어요:\n${getCategoryExamples(category)}\n\n무엇을 도와드릴까요?`;
+    return `안녕하세요! MoA AI 에이전트입니다. 반갑습니다! 😊\n\n현재 **${catLabel}** 모드로 대화 중이에요.\n\n💡 이런 것들을 도와드릴 수 있어요:\n${getCategoryExamples(category)}\n\n📥 **MoA 데스크톱 앱**을 설치하면 로컬 파일 접근, 자동 업데이트 등 더 강력한 기능을 사용할 수 있어요!\n👉 다운로드: https://moa.lawith.kr/download\n\n무엇을 도와드릴까요?`;
   }
 
   // Help / capabilities
   if (/^(도움|help|뭐 할 수|기능|스킬|할 수 있)/.test(lowerMsg)) {
-    return getCategoryHelp(category, "");
+    return getCategoryHelp(category, "") + "\n\n📥 데스크톱 앱: https://moa.lawith.kr/download";
+  }
+
+  // Download / install
+  if (/다운로드|download|설치|install|앱/.test(lowerMsg)) {
+    return `MoA 앱을 다운로드하세요! 📥\n\n🖥️ **데스크톱 앱** (Windows/macOS/Linux)\n• 로컬 파일 접근 (E드라이브 등)\n• 시스템 트레이 상주\n• 자동 업데이트\n• 원클릭 설치\n\n👉 다운로드: https://moa.lawith.kr/download\n\n📱 모바일은 위 링크에서 Android/iOS도 지원합니다.`;
   }
 
   // Weather

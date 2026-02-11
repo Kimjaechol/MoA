@@ -436,8 +436,8 @@ export default function Home() {
             터미널이 아닌 카카오톡에서. 복잡한 설정 없이. 누구나 바로 시작할 수 있습니다.
           </p>
           <div style={{ display: "flex", gap: "16px", justifyContent: "center", flexWrap: "wrap" }}>
-            <a href="#download" className="btn btn-primary btn-lg">
-              무료로 시작하기
+            <a href="/download" className="btn btn-primary btn-lg">
+              앱 다운로드
             </a>
             <a href="#why-moa" className="btn btn-outline btn-lg">
               왜 MoA인가?
@@ -1006,7 +1006,7 @@ export default function Home() {
                   ))}
                 </ul>
                 <a
-                  href="#download"
+                  href="/download"
                   className={`btn ${tier.highlight ? "btn-primary" : "btn-outline"}`}
                   style={{ width: "100%" }}
                 >

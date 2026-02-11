@@ -16,14 +16,17 @@ import {
   checkMoaSLMStatus,
   healthCheck,
   autoRecover,
+  shouldSkipTier3Device,
   type InstallProgress,
   type ProgressCallback,
 } from "./ollama-installer.js";
 import {
   routeSLM,
   shouldSkipTier2,
+  shouldSkipTier3,
   getSLMInfo,
   preloadTier2,
+  preloadTier3,
   type SLMRequest,
   type SLMRouterResult,
 } from "./slm-router.js";
@@ -38,6 +41,7 @@ export interface MoAAgentConfig {
   enableOfflineMode: boolean;
   enablePrivacyMode: boolean; // Force local processing for sensitive data
   skipTier2Install?: boolean;
+  skipTier3Install?: boolean; // Skip Tier 3 for non-desktop (<16GB RAM)
 }
 
 export interface MoAAgentStatus {
@@ -45,6 +49,7 @@ export interface MoAAgentStatus {
   slmReady: boolean;
   tier1Available: boolean;
   tier2Available: boolean;
+  tier3Available: boolean;
   offlineModeEnabled: boolean;
   lastHealthCheck?: Date;
   error?: string;
@@ -65,6 +70,7 @@ let agentStatus: MoAAgentStatus = {
   slmReady: false,
   tier1Available: false,
   tier2Available: false,
+  tier3Available: false,
   offlineModeEnabled: false,
 };
 
@@ -105,13 +111,16 @@ async function doInitialize(
       message: "MoA 에이전트 초기화 중...",
     });
 
-    // Determine if we should skip Tier 2
+    // Determine which tiers to skip based on device
     const skipTier2 =
       config.skipTier2Install ?? (config.deviceType === "mobile" || shouldSkipTier2());
+    const skipTier3 =
+      config.skipTier3Install ?? (config.deviceType !== "desktop" || shouldSkipTier3Device());
 
     // Install SLM models
     const installSuccess = await installMoaSLM(onProgress, {
       skipTier2,
+      skipTier3,
     });
 
     if (!installSuccess) {
@@ -121,6 +130,7 @@ async function doInitialize(
         slmReady: false,
         tier1Available: false,
         tier2Available: false,
+        tier3Available: false,
         offlineModeEnabled: false,
         error: "로컬 AI 설치 실패",
       };
@@ -135,11 +145,12 @@ async function doInitialize(
     // Check final status
     const slmStatus = await checkMoaSLMStatus();
 
-    // Preload Tier 2 on desktop for faster first response
+    // Preload advanced tiers for faster first response
     if (!skipTier2 && slmStatus.tier2Ready) {
-      preloadTier2().catch(() => {
-        // Ignore preload errors
-      });
+      preloadTier2().catch(() => {});
+    }
+    if (!skipTier3 && slmStatus.tier3Ready) {
+      preloadTier3().catch(() => {});
     }
 
     agentStatus = {
@@ -147,6 +158,7 @@ async function doInitialize(
       slmReady: slmStatus.tier1Ready,
       tier1Available: slmStatus.tier1Ready,
       tier2Available: slmStatus.tier2Ready,
+      tier3Available: slmStatus.tier3Ready,
       offlineModeEnabled: config.enableOfflineMode,
       lastHealthCheck: new Date(),
     };
@@ -156,12 +168,16 @@ async function doInitialize(
       message: "MoA 에이전트 준비 완료",
     });
 
+    const tierMsg = slmStatus.tier3Ready
+      ? "Tier 1 + Tier 2 + Tier 3 (데스크탑 풀 모드)"
+      : slmStatus.tier2Ready
+        ? "Tier 1 + Tier 2 (모바일 모드)"
+        : "Tier 1 전용";
+
     return {
       success: true,
       status: agentStatus,
-      message: slmStatus.tier2Ready
-        ? "MoA 에이전트가 완전히 준비되었습니다. (Tier 1 + Tier 2)"
-        : "MoA 에이전트가 준비되었습니다. (Tier 1 전용)",
+      message: `MoA 에이전트가 준비되었습니다. (${tierMsg})`,
     };
   } catch (error) {
     agentStatus = {
@@ -169,6 +185,7 @@ async function doInitialize(
       slmReady: false,
       tier1Available: false,
       tier2Available: false,
+      tier3Available: false,
       offlineModeEnabled: false,
       error: error instanceof Error ? error.message : "초기화 실패",
     };
@@ -203,6 +220,7 @@ export function initializeMoAAgentBackground(
           slmReady: false,
           tier1Available: false,
           tier2Available: false,
+          tier3Available: false,
           offlineModeEnabled: false,
           error: error instanceof Error ? error.message : "Unknown error",
         },
@@ -233,6 +251,7 @@ export async function performHealthCheck(): Promise<MoAAgentStatus> {
     slmReady: health.healthy,
     tier1Available: health.tier1Loaded,
     tier2Available: health.tier2Available,
+    tier3Available: health.tier3Available,
     lastHealthCheck: new Date(),
   };
 
@@ -270,7 +289,7 @@ export async function processThroughSLM(
   request: SLMRequest,
   options?: {
     forceLocal?: boolean;
-    forceTier?: 1 | 2;
+    forceTier?: 1 | 2 | 3;
   },
 ): Promise<SLMRouterResult> {
   // Check if initialized
@@ -313,25 +332,24 @@ export async function getDisplayInfo(): Promise<{
   status: string;
   tier1: string;
   tier2: string;
+  tier3: string;
   recommendation: string;
 }> {
   const info = await getSLMInfo();
 
   const statusEmoji = info.serverRunning ? "🟢" : "🔴";
-  const tier1Emoji = info.tier1.status === "ready" ? "✅" : "❌";
-  const tier2Emoji =
-    info.tier2.status === "ready" ? "✅" : info.tier2.status === "skipped" ? "⏭️" : "❌";
+  const formatTier = (t: { model: string; status: string }) => {
+    const emoji = t.status === "ready" ? "✅" : t.status === "skipped" ? "⏭️" : "❌";
+    const label =
+      t.status === "ready" ? "준비됨" : t.status === "skipped" ? "건너뜀" : "미설치";
+    return `${emoji} ${t.model} (${label})`;
+  };
 
   return {
     status: `${statusEmoji} ${info.serverRunning ? "실행 중" : "정지됨"}`,
-    tier1: `${tier1Emoji} ${info.tier1.model} (${info.tier1.status === "ready" ? "준비됨" : "미설치"})`,
-    tier2: `${tier2Emoji} ${info.tier2.model} (${
-      info.tier2.status === "ready"
-        ? "준비됨"
-        : info.tier2.status === "skipped"
-          ? "건너뜀 (메모리 부족)"
-          : "미설치"
-    })`,
+    tier1: formatTier(info.tier1),
+    tier2: formatTier(info.tier2),
+    tier3: formatTier(info.tier3),
     recommendation:
       info.tier1.status === "ready"
         ? "로컬 AI가 준비되어 개인정보 보호 및 오프라인 사용이 가능합니다."
@@ -400,8 +418,9 @@ export function getRecommendedConfig(
     case "desktop":
       return {
         deviceType: "desktop",
-        skipTier2Install: false, // Full capability on desktop
-        enableOfflineMode: false, // Cloud preferred for quality
+        skipTier2Install: false,
+        skipTier3Install: shouldSkipTier3Device(), // Tier 3 only if 16GB+ RAM
+        enableOfflineMode: false,
         enablePrivacyMode: true,
       };
   }

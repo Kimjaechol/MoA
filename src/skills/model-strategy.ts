@@ -2,63 +2,126 @@ import type {
   ModelStrategyDefinition,
   ModelStrategyId,
   ModelStrategyResolution,
-  ModelStrategyTier,
   UserModelStrategyConfig,
 } from "./types.js";
 import { getConfiguredLlmProviders, LLM_PROVIDERS } from "./api-key-manager.js";
 
 // =====================================================================
-// Model Strategy Definitions
+// Provider-Specific Model Maps
 // =====================================================================
 
 /**
- * 최저비용 (가성비) 전략
+ * 각 LLM 프로바이더별 전략에 맞는 모델 매핑
  *
- * Resolution order:
- * 1. 무료 내장 SLM
- * 2. 유료 LLM의 무료 사용 한도
- * 3. 유료 LLM 가성비 버전 (or user's subscribed LLM first)
- * 4. 유료 LLM 최고 버전
+ * costEfficient: 충분한 능력을 가진 모델 중 가장 저렴한 모델
+ * maxPerformance: 가장 최신, 최고 성능의 모델
+ */
+export const PROVIDER_MODELS: Record<
+  string,
+  { costEfficient: string; maxPerformance: string; displayName: string }
+> = {
+  anthropic: {
+    costEfficient: "claude-haiku-4-5",
+    maxPerformance: "claude-opus-4-6",
+    displayName: "Anthropic (Claude)",
+  },
+  openai: {
+    costEfficient: "gpt-4o-mini",
+    maxPerformance: "gpt-5.2",
+    displayName: "OpenAI",
+  },
+  gemini: {
+    costEfficient: "gemini-2.5-flash",
+    maxPerformance: "gemini-3-pro",
+    displayName: "Google Gemini",
+  },
+  xai: {
+    costEfficient: "grok-3-mini",
+    maxPerformance: "grok-3",
+    displayName: "xAI (Grok)",
+  },
+  deepseek: {
+    costEfficient: "deepseek-chat",
+    maxPerformance: "deepseek-r1",
+    displayName: "DeepSeek",
+  },
+  groq: {
+    costEfficient: "kimi-k2-0905",
+    maxPerformance: "kimi-k2-0905",
+    displayName: "Groq (Kimi K2)",
+  },
+  mistral: {
+    costEfficient: "mistral-small-latest",
+    maxPerformance: "mistral-large-latest",
+    displayName: "Mistral AI",
+  },
+};
+
+// =====================================================================
+// MoA 크레딧 기본 모델 (API 키 미입력 사용자용)
+// =====================================================================
+
+/**
+ * API 키를 입력하지 않은 사용자에게 적용되는 기본 모델.
+ * 크레딧 차감 방식으로 운영 (최초 가입 시 일정량 무료 크레딧 제공).
+ *
+ * - 가성비: Gemini 2.5 Flash (Thinking) — $0.30/$2.50 per 1M tokens
+ *   Thinking 동적 할당 (thinkingBudget: -1) 적용, 비용 추가 부담 없음
+ * - 최고성능: Claude Opus 4.6 — $5/$25 per 1M tokens
+ *   Terminal-Bench 65.4%, BigLaw 90.2%, SWE-bench 80.8%
+ */
+export const MOA_CREDIT_MODELS: Record<
+  ModelStrategyId,
+  {
+    provider: string;
+    model: string;
+    displayName: string;
+    thinkingBudget?: number;
+  }
+> = {
+  "cost-efficient": {
+    provider: "gemini",
+    model: "gemini-2.5-flash-thinking",
+    displayName: "Gemini 2.5 Flash (Thinking)",
+    thinkingBudget: -1, // 동적 할당 — 비용 추가 없음
+  },
+  "max-performance": {
+    provider: "anthropic",
+    model: "claude-opus-4-6",
+    displayName: "Claude Opus 4.6",
+  },
+};
+
+// =====================================================================
+// Model Strategy Definitions (for display/explanation)
+// =====================================================================
+
+/**
+ * 가성비 전략
+ *
+ * - API 키 보유 → 해당 LLM의 가성비 최적 모델 (추가 비용 없음)
+ * - API 키 없음 → MoA 크레딧으로 Gemini 2.5 Flash (Thinking) 사용
  */
 const COST_EFFICIENT_STRATEGY: ModelStrategyDefinition = {
   id: "cost-efficient",
-  name: "최저비용 (가성비 전략)",
+  name: "가성비 전략",
   description:
-    "무료 SLM부터 시작하여 단계적으로 상위 모델을 사용합니다. 이미 구독 중인 유료 LLM이 있다면 우선 적용됩니다.",
+    "API 키가 있으면 해당 LLM의 가성비 모델을, 없으면 MoA 크레딧으로 Gemini 2.5 Flash (Thinking)를 사용합니다.",
   tiers: [
     {
       priority: 1,
-      label: "무료 내장 SLM",
-      description: "내장된 소형 언어 모델로 무료 처리",
-      models: ["local/slm-default"],
-      free: true,
-    },
-    {
-      priority: 2,
-      label: "유료 LLM 무료 한도",
-      description: "유료 LLM의 무료 사용 한도 내에서 처리",
-      models: ["gemini/gemini-2.5-flash", "openai/gpt-4o-mini", "anthropic/claude-haiku-4-5"],
-      free: true,
-    },
-    {
-      priority: 3,
-      label: "유료 LLM 가성비 버전",
-      description: "비용 대비 성능이 우수한 유료 모델 사용 (Kimi K2 via Groq 우선)",
-      models: [
-        "groq/kimi-k2-0905",
-        "gemini/gemini-2.5-flash",
-        "deepseek/deepseek-chat",
-        "anthropic/claude-sonnet-4-5",
-        "openai/gpt-4o",
-        "gemini/gemini-2.5-pro",
-      ],
+      label: "API 키 보유 사용자",
+      description: "사용자의 LLM 구독에서 가성비 최적 모델 자동 선택 (추가 비용 없음)",
+      models: Object.entries(PROVIDER_MODELS).map(
+        ([provider, m]) => `${provider}/${m.costEfficient}`,
+      ),
       free: false,
     },
     {
-      priority: 4,
-      label: "유료 LLM 최고 버전",
-      description: "최고 성능의 프리미엄 모델 사용",
-      models: ["anthropic/claude-opus-4-5", "openai/gpt-5.2", "gemini/gemini-3-pro"],
+      priority: 2,
+      label: "MoA 크레딧 (기본)",
+      description: "Gemini 2.5 Flash (Thinking) — Thinking 동적 할당, 크레딧 차감",
+      models: ["gemini/gemini-2.5-flash-thinking"],
       free: false,
     },
   ],
@@ -66,40 +129,35 @@ const COST_EFFICIENT_STRATEGY: ModelStrategyDefinition = {
 };
 
 /**
- * 최고지능 (최대성능) 전략
+ * 최고성능 전략
  *
- * Resolution order:
- * 1. 현 시점 최고 성능 유료 LLM
- * 2. 병렬 처리: 여러 최고급 모델을 동시 실행하여 최상의 결과 선택
+ * - API 키 보유 → 해당 LLM의 최고 성능, 최신 모델 (추가 비용 없음)
+ * - API 키 없음 → MoA 크레딧으로 Claude Opus 4.6 사용
  */
 const MAX_PERFORMANCE_STRATEGY: ModelStrategyDefinition = {
   id: "max-performance",
-  name: "최고지능 (최대성능 전략)",
+  name: "최고성능 전략",
   description:
-    "현 시점 최고 성능의 AI 모델을 사용합니다. 1개 모델로 처리가 어려운 경우 여러 최고급 모델을 병렬로 실행합니다.",
+    "API 키가 있으면 해당 LLM의 최고 성능 모델을, 없으면 MoA 크레딧으로 Claude Opus 4.6을 사용합니다.",
   tiers: [
     {
       priority: 1,
-      label: "최고 성능 단일 모델",
-      description: "현 시점 최고 성능의 유료 LLM 단일 실행",
-      models: ["anthropic/claude-opus-4-5", "openai/gpt-5.2", "gemini/gemini-3-pro"],
+      label: "API 키 보유 사용자",
+      description: "사용자의 LLM 구독에서 최고 성능 모델 자동 선택 (추가 비용 없음)",
+      models: Object.entries(PROVIDER_MODELS).map(
+        ([provider, m]) => `${provider}/${m.maxPerformance}`,
+      ),
       free: false,
     },
     {
       priority: 2,
-      label: "병렬 멀티 모델",
-      description: "여러 최고급 LLM을 동시 실행하여 최상의 결과 선택",
-      models: [
-        "anthropic/claude-opus-4-5",
-        "openai/gpt-5.2",
-        "gemini/gemini-3-pro",
-        "xai/grok-3",
-        "deepseek/deepseek-r1",
-      ],
+      label: "MoA 크레딧 (기본)",
+      description: "Claude Opus 4.6 — 코딩/법률/추론 모든 영역 최강",
+      models: ["anthropic/claude-opus-4-6"],
       free: false,
     },
   ],
-  parallelFallback: true,
+  parallelFallback: false,
 };
 
 /** All available strategies indexed by ID. */
@@ -116,36 +174,6 @@ export const DEFAULT_MODEL_STRATEGY: ModelStrategyId = "cost-efficient";
 // =====================================================================
 
 /**
- * Reorder tiers to prioritize the user's already-subscribed LLM providers.
- * Only applies to cost-efficient strategy.
- */
-function reorderForSubscribedProviders(
-  tiers: ModelStrategyTier[],
-  subscribedProviders: string[],
-): ModelStrategyTier[] {
-  if (subscribedProviders.length === 0) return tiers;
-
-  return tiers.map((tier) => {
-    if (tier.free) return tier;
-
-    // Move subscribed provider models to the front of this tier
-    const subscribed: string[] = [];
-    const others: string[] = [];
-
-    for (const model of tier.models) {
-      const provider = model.split("/")[0];
-      if (subscribedProviders.includes(provider)) {
-        subscribed.push(model);
-      } else {
-        others.push(model);
-      }
-    }
-
-    return { ...tier, models: [...subscribed, ...others] };
-  });
-}
-
-/**
  * Detect which LLM providers the user currently has configured
  * (via environment variables / API keys).
  */
@@ -156,48 +184,26 @@ export function detectSubscribedProviders(): string[] {
 /**
  * Resolve the model strategy for the current request.
  *
- * @param config - User's model strategy preferences
- * @param taskComplexity - Optional hint about task complexity ("simple" | "complex")
- * @returns Resolution with selected model(s) and explanation
+ * 핵심 로직:
+ * 1. primaryOverride → 사용자 지정 모델 사용
+ * 2. API 키 등록 프로바이더 있음 → 해당 프로바이더의 모델만 사용
+ *    - cost-efficient → 가성비 모델 (충분한 능력의 가장 저렴한 모델)
+ *    - max-performance → 최고 성능 모델 (최신/최강 모델)
+ * 3. API 키 없음 → MoA 크레딧 차감 기본 모델
+ *    - cost-efficient → Gemini 2.5 Flash (Thinking)
+ *    - max-performance → Claude Opus 4.6
  */
 export function resolveModelStrategy(
   config: UserModelStrategyConfig,
-  taskComplexity: "simple" | "complex" = "simple",
+  _taskComplexity: "simple" | "complex" = "simple",
 ): ModelStrategyResolution {
   const strategyDef = MODEL_STRATEGIES[config.strategy];
   if (!strategyDef) {
     // Fallback to cost-efficient if invalid
-    return resolveModelStrategy({ ...config, strategy: "cost-efficient" }, taskComplexity);
+    return resolveModelStrategy({ ...config, strategy: "cost-efficient" }, _taskComplexity);
   }
 
-  // Detect subscribed providers from environment
-  const subscribedProviders = config.subscribedProviders ?? detectSubscribedProviders();
-
-  // Reorder tiers based on subscribed providers (cost-efficient only)
-  const tiers =
-    config.strategy === "cost-efficient"
-      ? reorderForSubscribedProviders(strategyDef.tiers, subscribedProviders)
-      : strategyDef.tiers;
-
-  // For max-performance + complex task, jump to parallel tier
-  if (config.strategy === "max-performance" && taskComplexity === "complex") {
-    const parallelTier = tiers.find((t) => t.label === "병렬 멀티 모델");
-    if (parallelTier) {
-      const models = parallelTier.models.map((m) => {
-        const [provider, model] = m.split("/");
-        return { provider, model };
-      });
-      return {
-        strategy: config.strategy,
-        tierLabel: parallelTier.label,
-        selectedModels: models,
-        parallel: true,
-        explanation: `최대성능 전략: ${models.length}개 최고급 모델을 병렬 실행하여 최상의 결과를 선택합니다.`,
-      };
-    }
-  }
-
-  // Apply primary override if set
+  // 1. Primary override (사용자 직접 지정)
   if (config.primaryOverride) {
     const [provider, model] = config.primaryOverride.split("/");
     if (provider && model) {
@@ -211,51 +217,54 @@ export function resolveModelStrategy(
     }
   }
 
-  // Walk through tiers in priority order
-  for (const tier of tiers) {
-    if (tier.models.length === 0) continue;
+  // 2. API 키 등록 프로바이더 확인
+  const subscribedProviders = config.subscribedProviders ?? detectSubscribedProviders();
 
-    const firstModel = tier.models[0];
-    const [provider, model] = firstModel.split("/");
+  if (subscribedProviders.length > 0) {
+    // 이미 구독 중인 LLM의 API 키가 있는 사용자
+    // → 해당 프로바이더의 모델만 사용 (추가 비용 없음, 이중 결제 방지)
+    const primaryProvider = subscribedProviders[0];
+    const providerModels = PROVIDER_MODELS[primaryProvider];
 
-    return {
-      strategy: config.strategy,
-      tierLabel: tier.label,
-      selectedModels: [{ provider, model }],
-      parallel: false,
-      explanation: buildExplanation(config.strategy, tier, subscribedProviders),
-    };
+    if (providerModels) {
+      const model =
+        config.strategy === "cost-efficient"
+          ? providerModels.costEfficient
+          : providerModels.maxPerformance;
+
+      const providerName =
+        LLM_PROVIDERS.find((p) => p.id === primaryProvider)?.name ?? providerModels.displayName;
+
+      return {
+        strategy: config.strategy,
+        tierLabel: "API 키 보유 사용자",
+        selectedModels: [{ provider: primaryProvider, model }],
+        parallel: false,
+        explanation:
+          config.strategy === "cost-efficient"
+            ? `${providerName} 구독 → 가성비 모델 ${model} 적용 (추가 비용 없음)`
+            : `${providerName} 구독 → 최고 성능 모델 ${model} 적용 (추가 비용 없음)`,
+      };
+    }
   }
 
-  // Should never reach here, but fallback
+  // 3. API 키 없음 → MoA 크레딧 기본 모델 (크레딧 차감)
+  const creditModel = MOA_CREDIT_MODELS[config.strategy];
+
   return {
     strategy: config.strategy,
-    tierLabel: "기본 모델",
-    selectedModels: [{ provider: "anthropic", model: "claude-sonnet-4-5" }],
+    tierLabel: "MoA 크레딧 (기본)",
+    selectedModels: [{ provider: creditModel.provider, model: creditModel.model }],
     parallel: false,
-    explanation: "기본 모델을 사용합니다.",
+    explanation:
+      config.strategy === "cost-efficient"
+        ? `MoA 크레딧 → ${creditModel.displayName} 적용 (Thinking 동적 할당)`
+        : `MoA 크레딧 → ${creditModel.displayName} 적용 (코딩/법률/추론 최강)`,
+    modelConfig:
+      creditModel.thinkingBudget !== undefined
+        ? { thinkingBudget: creditModel.thinkingBudget }
+        : undefined,
   };
-}
-
-function buildExplanation(
-  strategy: ModelStrategyId,
-  tier: ModelStrategyTier,
-  subscribedProviders: string[],
-): string {
-  const prefix = strategy === "cost-efficient" ? "가성비 전략" : "최대성능 전략";
-
-  if (tier.free) {
-    return `${prefix}: ${tier.label} - ${tier.description} (무료)`;
-  }
-
-  if (subscribedProviders.length > 0 && strategy === "cost-efficient") {
-    const names = subscribedProviders
-      .map((id) => LLM_PROVIDERS.find((p) => p.id === id)?.name ?? id)
-      .join(", ");
-    return `${prefix}: ${tier.label} - 구독 중인 ${names}을(를) 우선 적용합니다.`;
-  }
-
-  return `${prefix}: ${tier.label} - ${tier.description}`;
 }
 
 /**
@@ -273,27 +282,29 @@ export function explainModelStrategy(config: UserModelStrategyConfig): string {
   lines.push("");
 
   if (subscribedProviders.length > 0) {
-    const names = subscribedProviders
-      .map((id) => LLM_PROVIDERS.find((p) => p.id === id)?.name ?? id)
-      .join(", ");
-    lines.push(`🔑 구독 중인 LLM: ${names}`);
-    if (config.strategy === "cost-efficient") {
-      lines.push("   → 유료 단계에서 구독 중인 LLM이 우선 적용됩니다.");
+    // API 키 등록 사용자
+    const providerDetails = subscribedProviders.map((id) => {
+      const models = PROVIDER_MODELS[id];
+      const providerName =
+        models?.displayName ?? LLM_PROVIDERS.find((p) => p.id === id)?.name ?? id;
+      if (!models) return `  • ${providerName} (모델 매핑 없음)`;
+      const selectedModel =
+        config.strategy === "cost-efficient" ? models.costEfficient : models.maxPerformance;
+      return `  • ${providerName} → ${selectedModel}`;
+    });
+
+    lines.push("🔑 등록된 API 키:");
+    lines.push(...providerDetails);
+    lines.push("   → 이미 구독 중인 LLM을 사용하므로 추가 비용 없음");
+  } else {
+    // MoA 크레딧 사용자
+    const creditModel = MOA_CREDIT_MODELS[config.strategy];
+    lines.push("💳 MoA 크레딧 사용 (API 키 미등록)");
+    lines.push(`   → ${creditModel.displayName}`);
+    if (creditModel.thinkingBudget !== undefined) {
+      lines.push(`   → Thinking 동적 할당 (thinkingBudget: ${creditModel.thinkingBudget})`);
     }
-    lines.push("");
-  }
-
-  lines.push("📊 처리 순서:");
-  for (const tier of strategyDef.tiers) {
-    const freeTag = tier.free ? " (무료)" : " (유료)";
-    lines.push(`   ${tier.priority}. ${tier.label}${freeTag}`);
-    lines.push(`      ${tier.description}`);
-    lines.push(`      모델: ${tier.models.join(", ")}`);
-  }
-
-  if (strategyDef.parallelFallback) {
-    lines.push("");
-    lines.push("⚡ 병렬 처리: 1개 모델 실패 시 여러 최고급 모델을 동시 실행");
+    lines.push("   → 크레딧 차감 방식 (최초 가입 시 무료 크레딧 제공)");
   }
 
   return lines.join("\n");

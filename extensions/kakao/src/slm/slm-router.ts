@@ -12,7 +12,7 @@
  * 4. If complex + online → Route to cloud LLM
  */
 
-import { SLM_MODELS, isOllamaRunning, checkMoaSLMStatus, autoRecover } from "./ollama-installer.js";
+import { SLM_MODELS, isOllamaRunning, checkMoaSLMStatus, autoRecover, shouldSkipTier3Device } from "./ollama-installer.js";
 
 // ============================================
 // Types
@@ -33,7 +33,7 @@ export interface SLMRequest {
 export interface SLMResponse {
   content: string;
   model: string;
-  tier: 1 | 2;
+  tier: 1 | 2 | 3;
   thinking?: string; // Thinking output if enabled
   usage: {
     promptTokens: number;
@@ -353,6 +353,53 @@ async function tier2Process(
 }
 
 // ============================================
+// Tier 3: Desktop Deep Reasoning (On-Demand)
+// ============================================
+
+/**
+ * Use Tier 3 for complex desktop-only processing (qwen3:8b)
+ */
+async function tier3Process(
+  messages: SLMMessage[],
+  options?: { maxTokens?: number; temperature?: number; enableThinking?: boolean },
+): Promise<SLMResponse> {
+  const startTime = Date.now();
+  const tier3Model = SLM_MODELS.find((m) => m.tier === 3)!;
+
+  const status = await checkMoaSLMStatus();
+  if (!status.tier3Ready) {
+    throw new Error("Tier 3 model not available");
+  }
+
+  await loadModel(tier3Model.ollamaName);
+
+  const systemPrompt =
+    options?.enableThinking !== false
+      ? TIER2_REASONING_PROMPT
+      : TIER2_REASONING_PROMPT.replace("/think", "/no_think");
+
+  const fullMessages: SLMMessage[] = [{ role: "system", content: systemPrompt }, ...messages];
+
+  const result = await callOllama(tier3Model.ollamaName, fullMessages, {
+    maxTokens: options?.maxTokens ?? 8192,
+    temperature: options?.temperature ?? 0.7,
+  });
+
+  return {
+    content: result.content,
+    thinking: result.thinking,
+    model: tier3Model.ollamaName,
+    tier: 3,
+    usage: {
+      promptTokens: result.promptTokens,
+      completionTokens: result.completionTokens,
+      totalTokens: result.promptTokens + result.completionTokens,
+    },
+    latencyMs: Date.now() - startTime,
+  };
+}
+
+// ============================================
 // Main SLM Router
 // ============================================
 
@@ -373,7 +420,7 @@ export async function routeSLM(
   request: SLMRequest,
   options?: {
     forceLocal?: boolean; // Force local processing (offline mode)
-    forceTier?: 1 | 2; // Force specific tier
+    forceTier?: 1 | 2 | 3; // Force specific tier
     skipRouting?: boolean; // Skip routing, use Tier 1 directly
   },
 ): Promise<SLMRouterResult> {
@@ -425,6 +472,22 @@ export async function routeSLM(
       return { success: true, response };
     }
 
+    if (options?.forceTier === 3) {
+      if (!status.tier3Ready) {
+        return {
+          success: false,
+          error: "Tier 3 모델이 설치되지 않았습니다 (RAM 16GB+ 데스크탑 전용)",
+          shouldRouteToCloud: true,
+        };
+      }
+      const response = await tier3Process(request.messages, {
+        maxTokens: request.maxTokens,
+        temperature: request.temperature,
+        enableThinking: request.enableThinking,
+      });
+      return { success: true, response };
+    }
+
     // Step 1: Tier 1 routing analysis
     const routingDecision = await tier1Route(userMessage);
 
@@ -439,23 +502,32 @@ export async function routeSLM(
       }
 
       case "tier2": {
-        if (!status.tier2Ready) {
-          // Tier 2 not available → route to cloud
+        // 로컬 고급 처리: Tier 3 (데스크탑) > Tier 2 (모바일) 순으로 시도
+        const bestLocalTier = status.tier3Ready ? 3 : status.tier2Ready ? 2 : null;
+
+        if (!bestLocalTier) {
           return {
             success: false,
             routingDecision,
             shouldRouteToCloud: true,
-            cloudTarget: "cheap", // Use cheaper cloud model as fallback
+            cloudTarget: "cheap",
           };
         }
 
         if (options?.forceLocal) {
-          // Offline mode: use Tier 2
-          const response = await tier2Process(request.messages, {
-            maxTokens: request.maxTokens,
-            temperature: request.temperature,
-            enableThinking: request.enableThinking,
-          });
+          // Offline mode: use best available local tier
+          const response =
+            bestLocalTier === 3
+              ? await tier3Process(request.messages, {
+                  maxTokens: request.maxTokens,
+                  temperature: request.temperature,
+                  enableThinking: request.enableThinking,
+                })
+              : await tier2Process(request.messages, {
+                  maxTokens: request.maxTokens,
+                  temperature: request.temperature,
+                  enableThinking: request.enableThinking,
+                });
           return { success: true, response, routingDecision };
         }
 
@@ -515,18 +587,29 @@ export function shouldSkipTier2(): boolean {
 }
 
 /**
+ * Check if device should skip Tier 3 (not enough RAM for desktop model)
+ */
+export function shouldSkipTier3(): boolean {
+  return shouldSkipTier3Device();
+}
+
+/**
  * Get SLM info for display
  */
 export async function getSLMInfo(): Promise<{
   tier1: { model: string; status: "ready" | "not-installed" | "loading" };
   tier2: { model: string; status: "ready" | "not-installed" | "loading" | "skipped" };
+  tier3: { model: string; status: "ready" | "not-installed" | "loading" | "skipped" };
   serverRunning: boolean;
 }> {
   const running = await isOllamaRunning();
-  const status = running ? await checkMoaSLMStatus() : { tier1Ready: false, tier2Ready: false };
+  const status = running
+    ? await checkMoaSLMStatus()
+    : { tier1Ready: false, tier2Ready: false, tier3Ready: false };
 
   const tier1Model = SLM_MODELS.find((m) => m.tier === 1)!;
   const tier2Model = SLM_MODELS.find((m) => m.tier === 2)!;
+  const tier3Model = SLM_MODELS.find((m) => m.tier === 3)!;
 
   return {
     tier1: {
@@ -536,6 +619,10 @@ export async function getSLMInfo(): Promise<{
     tier2: {
       model: tier2Model.ollamaName,
       status: shouldSkipTier2() ? "skipped" : status.tier2Ready ? "ready" : "not-installed",
+    },
+    tier3: {
+      model: tier3Model.ollamaName,
+      status: shouldSkipTier3() ? "skipped" : status.tier3Ready ? "ready" : "not-installed",
     },
     serverRunning: running,
   };
@@ -564,6 +651,31 @@ export async function preloadTier2(): Promise<boolean> {
 export async function unloadTier2(): Promise<boolean> {
   const tier2Model = SLM_MODELS.find((m) => m.tier === 2)!;
   return unloadModel(tier2Model.ollamaName);
+}
+
+/**
+ * Preload Tier 3 model in background (for desktop with 16GB+ RAM)
+ */
+export async function preloadTier3(): Promise<boolean> {
+  if (shouldSkipTier3()) {
+    return false;
+  }
+
+  const status = await checkMoaSLMStatus();
+  if (!status.tier3Ready) {
+    return false;
+  }
+
+  const tier3Model = SLM_MODELS.find((m) => m.tier === 3)!;
+  return loadModel(tier3Model.ollamaName);
+}
+
+/**
+ * Unload Tier 3 to free memory
+ */
+export async function unloadTier3(): Promise<boolean> {
+  const tier3Model = SLM_MODELS.find((m) => m.tier === 3)!;
+  return unloadModel(tier3Model.ollamaName);
 }
 
 // Import os for memory check

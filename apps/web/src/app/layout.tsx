@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -11,6 +11,12 @@ export const metadata: Metadata = {
     description: "모든 기기를 하나의 AI로 연결하세요",
     type: "website",
   },
+};
+
+export const viewport: Viewport = {
+  themeColor: "#667eea",
+  width: "device-width",
+  initialScale: 1,
 };
 
 export default function RootLayout({

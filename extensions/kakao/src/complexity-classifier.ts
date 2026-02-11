@@ -337,9 +337,9 @@ export function buildPremiumModelNotification(
   }
 
   const suggestedModels = [
-    { provider: "anthropic", model: "claude-opus-4-5-20251101", displayName: "Claude Opus 4.5" },
+    { provider: "anthropic", model: "claude-opus-4-6", displayName: "Claude Opus 4.6" },
     { provider: "openai", model: "gpt-5.2", displayName: "OpenAI GPT-5.2" },
-    { provider: "google", model: "gemini-3-pro-preview", displayName: "Gemini 3 Pro" },
+    { provider: "google", model: "gemini-3-pro", displayName: "Gemini 3 Pro" },
   ];
 
   const _modelNames = suggestedModels.map(m => `"${m.displayName}"`).join(", ");
@@ -430,28 +430,28 @@ export function getRecommendedModels(tier: SuggestedModelTier): Array<{
   switch (tier) {
     case "free":
       return [
-        { provider: "google", model: "gemini-2.0-flash", displayName: "Gemini 2.0 Flash", isFree: true },
-        { provider: "groq", model: "llama-3.3-70b-versatile", displayName: "Llama 3.3 70B (Groq)", isFree: true },
+        { provider: "google", model: "gemini-2.5-flash", displayName: "Gemini 2.5 Flash", isFree: true },
+        { provider: "groq", model: "kimi-k2-0905", displayName: "Kimi K2 (Groq)", isFree: true },
       ];
 
     case "cheap":
       return [
-        { provider: "anthropic", model: "claude-3-5-haiku-latest", displayName: "Claude 3.5 Haiku", isFree: false },
+        { provider: "google", model: "gemini-2.5-flash-thinking", displayName: "Gemini 2.5 Flash (Thinking)", isFree: false },
+        { provider: "anthropic", model: "claude-haiku-4-5", displayName: "Claude Haiku 4.5", isFree: false },
         { provider: "openai", model: "gpt-4o-mini", displayName: "GPT-4o Mini", isFree: false },
-        { provider: "google", model: "gemini-1.5-pro", displayName: "Gemini 1.5 Pro", isFree: false },
       ];
 
     case "premium":
       return [
-        { provider: "anthropic", model: "claude-opus-4-5-20251101", displayName: "Claude Opus 4.5", isFree: false },
+        { provider: "anthropic", model: "claude-opus-4-6", displayName: "Claude Opus 4.6", isFree: false },
         { provider: "openai", model: "gpt-5.2", displayName: "GPT-5.2", isFree: false },
-        { provider: "google", model: "gemini-3-pro-preview", displayName: "Gemini 3 Pro", isFree: false },
+        { provider: "google", model: "gemini-3-pro", displayName: "Gemini 3 Pro", isFree: false },
       ];
 
     case "local":
       return [
-        { provider: "local", model: "llama-3.2-3b", displayName: "Llama 3.2 3B (Local)", isFree: true },
-        { provider: "local", model: "mistral-7b", displayName: "Mistral 7B (Local)", isFree: true },
+        { provider: "local", model: "qwen3-4b-instruct-2507", displayName: "Qwen3 4B Instruct 2507 (Local)", isFree: true },
+        { provider: "local", model: "qwen3-8b", displayName: "Qwen3 8B (Local/Desktop)", isFree: true },
       ];
 
     default:
