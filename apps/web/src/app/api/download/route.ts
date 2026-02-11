@@ -7,7 +7,7 @@ import { NextRequest, NextResponse } from "next/server";
  * User-Agent를 분석하여 기기에 맞는 다운로드 페이지로 자동 리다이렉트.
  *
  * 사용법:
- *   - 카카오톡에서: "MoA 앱 다운로드: https://moa.lawith.kr/api/download"
+ *   - 카카오톡에서: "MoA 앱 다운로드: https://mymoa.app/api/download"
  *   - 텔레그램에서: 동일 링크
  *   - 웹사이트에서: 동일 링크
  *   → 사용자의 기기(Windows/macOS/Linux/Android/iOS)를 감지해서 맞는 페이지로 이동
@@ -16,7 +16,7 @@ import { NextRequest, NextResponse } from "next/server";
  * 릴리스가 게시되면 데스크톱 플랫폼은 직접 다운로드로 변경할 수 있습니다.
  */
 
-const DOWNLOAD_PAGE = "https://moa.lawith.kr/download";
+const DOWNLOAD_PAGE = "https://mymoa.app/download";
 
 export async function GET(request: NextRequest) {
   const ua = (request.headers.get("user-agent") ?? "").toLowerCase();

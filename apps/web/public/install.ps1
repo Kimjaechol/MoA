@@ -1,11 +1,11 @@
 # MoA One-Click Installer for Windows
-# Usage: powershell -c "irm https://moa.lawith.kr/install.ps1 | iex"
+# Usage: powershell -c "irm https://mymoa.app/install.ps1 | iex"
 
 $ErrorActionPreference = "Stop"
 $ProgressPreference = "SilentlyContinue"
 
 $APP_NAME = "MoA"
-$RELEASES_URL = "https://download.moa.lawith.kr/desktop"
+$RELEASES_URL = "https://download.mymoa.app/desktop"
 $INSTALLER_NAME = "MoA-Setup-latest.exe"
 $DOWNLOAD_URL = "$RELEASES_URL/$INSTALLER_NAME"
 $TEMP_DIR = [System.IO.Path]::GetTempPath()

@@ -280,7 +280,7 @@ const CHANNELS = [
   { name: "Discord", emoji: "\uD83C\uDFAE", id: "discord", connectUrl: "https://discord.com/oauth2/authorize?client_id=MOA_BOT_ID&permissions=274878023680&scope=bot" },
   { name: "Slack", emoji: "\uD83D\uDCAC", id: "slack", connectUrl: "https://slack.com/oauth/v2/authorize?client_id=MOA_SLACK_ID" },
   { name: "Signal", emoji: "\uD83D\uDD12", id: "signal", connectUrl: "https://signal.me/#eu/MoA_AI" },
-  { name: "iMessage", emoji: "\uD83D\uDCF1", id: "imessage", connectUrl: "imessage://moa@lawith.kr" },
+  { name: "iMessage", emoji: "\uD83D\uDCF1", id: "imessage", connectUrl: "imessage://moa@mymoa.app" },
   { name: "LINE", emoji: "\uD83D\uDFE2", id: "line", connectUrl: "https://line.me/R/ti/p/@moa-ai" },
   { name: "WhatsApp", emoji: "\uD83D\uDCDE", id: "whatsapp", connectUrl: "https://wa.me/MoA_NUMBER" },
   { name: "Matrix", emoji: "\uD83D\uDD35", id: "matrix", connectUrl: "https://matrix.to/#/@moa-ai:matrix.org" },

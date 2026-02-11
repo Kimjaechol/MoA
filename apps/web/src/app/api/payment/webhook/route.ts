@@ -5,7 +5,7 @@ import { NextRequest, NextResponse } from "next/server";
  * PortOne webhook — called by PortOne when payment status changes.
  *
  * Set this URL in PortOne dashboard:
- *   https://moa.lawith.kr/api/payment/webhook
+ *   https://mymoa.app/api/payment/webhook
  */
 export async function POST(request: NextRequest) {
   try {

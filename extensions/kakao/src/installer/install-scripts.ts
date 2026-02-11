@@ -10,7 +10,7 @@
  * Always use the public domain — Vercel proxies to Railway.
  */
 function resolveBaseUrl(_host?: string): string {
-  return "https://moa.lawith.kr";
+  return "https://mymoa.app";
 }
 
 /** GitHub releases base URL for binary downloads */
@@ -319,7 +319,7 @@ function Show-Completion {
 }
 
 function Open-Welcome {
-    Start-Process "https://moa.lawith.kr/welcome"
+    Start-Process "https://mymoa.app/welcome"
 }
 
 function Main {

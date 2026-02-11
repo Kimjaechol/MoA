@@ -1,7 +1,7 @@
 # MoA (Master of AI) Windows Installer
 # PowerShell script for one-click installation
 #
-# Usage: irm https://moa.lawith.kr/install.ps1 | iex
+# Usage: irm https://mymoa.app/install.ps1 | iex
 
 param(
     [string]$PairingCode = "",
@@ -17,7 +17,7 @@ $ErrorActionPreference = "Stop"
 
 $MOA_VERSION = "1.0.0"
 $MOA_DOWNLOAD_URL = "https://github.com/Kimjaechol/MoA/releases/download/v$MOA_VERSION"
-$MOA_API_URL = "https://moa.lawith.kr/api/relay"
+$MOA_API_URL = "https://mymoa.app/api/relay"
 
 # Colors
 function Write-ColorText {
