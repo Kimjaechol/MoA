@@ -41,9 +41,9 @@ export function createVisionTool(options?: {
       "",
       "Actions:",
       '  "snapshot"   — Capture accessibility tree of the active browser page.',
-      '  "document"   — Parse an Office document (.docx/.xlsx/.pptx) and extract text.',
+      '  "document"   — Parse an Office document (.docx/.xlsx/.pptx/.hwpx) and extract text.',
       '  "screenshot" — Capture a smart screenshot with change detection.',
-      '  "pdf"        — Extract text from a PDF file (optionally render page images).',
+      '  "pdf"        — Extract text from a PDF (digital + scanned/image PDF auto-detection).',
       '  "auto"       — Automatically run all relevant layers based on provided params.',
       "",
       "Parameters:",
@@ -54,9 +54,16 @@ export function createVisionTool(options?: {
       "  interactive: only show interactive elements (snapshot action)",
       "  full_page: capture full page screenshot (screenshot action)",
       "  ref: element reference for targeted screenshot",
-      "  render_images: render PDF pages as images (pdf action)",
+      "  render_images: render PDF pages as images (pdf action; auto for scanned PDFs)",
       "  max_pages: max PDF pages to process",
+      "  force_scanned: force scanned/image PDF mode for OCR (pdf action)",
       "  layers: comma-separated layer names for auto action (e.g. accessibility,screenshot)",
+      "",
+      "Supported document types: .docx, .xlsx, .pptx, .hwpx",
+      "  .hwp files are detected with a conversion notice to .hwpx",
+      "",
+      "Scanned PDF: auto-detected and rendered as high-res images for vision model OCR.",
+      "  The result includes layout recognition guidance (headers, tables, columns).",
     ].join("\n"),
     parameters: Type.Object({
       action: Type.String(),
@@ -68,6 +75,7 @@ export function createVisionTool(options?: {
       ref: Type.Optional(Type.String()),
       render_images: Type.Optional(Type.Boolean()),
       max_pages: Type.Optional(Type.Number()),
+      force_scanned: Type.Optional(Type.Boolean()),
       layers: Type.Optional(Type.String()),
     }),
     execute: async (_toolCallId, args) => {
@@ -82,6 +90,8 @@ export function createVisionTool(options?: {
       const renderImages =
         typeof params.render_images === "boolean" ? params.render_images : undefined;
       const maxPages = readNumberParam(params, "max_pages", { integer: true });
+      const forceScanned =
+        typeof params.force_scanned === "boolean" ? params.force_scanned : undefined;
       const layersRaw = readStringParam(params, "layers");
 
       // Resolve file path within sandbox if needed
@@ -121,6 +131,20 @@ export function createVisionTool(options?: {
             throw new Error("file parameter required for document action");
           }
           const result = await parseDocument(resolvedFile);
+
+          // HWP 파일인 경우 변환 안내 포함
+          if (result.warning) {
+            return jsonResult({
+              action: "document",
+              warning: result.warning,
+              type: result.type,
+              text: result.text,
+              pageCount: result.pageCount,
+              metadata: result.metadata,
+              imageCount: result.imageCount,
+            });
+          }
+
           return jsonResult({
             action: "document",
             ...result,
@@ -164,9 +188,47 @@ export function createVisionTool(options?: {
           const result = await renderPdf(resolvedFile, {
             maxPages,
             renderImages,
+            forceScanned,
           });
 
-          // If page images were rendered, include the first one
+          // Scanned PDF: return images with OCR guidance
+          if (result.isScanned && result.pageImages && result.pageImages.length > 0) {
+            const firstPage = result.pageImages[0];
+            const scannedInfo = [
+              `PDF: ${result.pageCount} page(s) — 스캔 문서 감지됨`,
+              "",
+              result.ocrGuidance ?? "",
+              "",
+              result.text.length > 0 ? `추출된 디지털 텍스트 (${result.text.length}자):` : "",
+              result.text.slice(0, 3000),
+              result.text.length > 3000 ? "\n... (텍스트 일부 생략)" : "",
+            ]
+              .filter(Boolean)
+              .join("\n");
+
+            return await imageResult({
+              label: "vision:pdf-ocr",
+              path: resolvedFile,
+              base64: firstPage.base64,
+              mimeType: firstPage.mimeType,
+              extraText: scannedInfo,
+              details: {
+                pageCount: result.pageCount,
+                isScanned: true,
+                scannedPages: result.pageAnalysis?.filter((p) => p.isScanned).map((p) => p.page),
+                digitalTextLength: result.text.length,
+                pagesRendered: result.pageImages.length,
+                pageImages: result.pageImages.map((img) => ({
+                  page: img.page,
+                  width: img.width,
+                  height: img.height,
+                })),
+                layoutRegions: result.layoutRegions,
+              },
+            });
+          }
+
+          // Digital PDF with rendered images
           if (result.pageImages && result.pageImages.length > 0) {
             const firstPage = result.pageImages[0];
             return await imageResult({
@@ -182,16 +244,20 @@ export function createVisionTool(options?: {
               ].join("\n"),
               details: {
                 pageCount: result.pageCount,
+                isScanned: false,
                 textLength: result.text.length,
                 pagesRendered: result.pageImages.length,
               },
             });
           }
 
+          // Digital PDF, text only
           return jsonResult({
             action: "pdf",
             pageCount: result.pageCount,
+            isScanned: result.isScanned,
             text: result.text,
+            ...(result.pageAnalysis ? { pageAnalysis: result.pageAnalysis } : {}),
           });
         }
 
@@ -212,12 +278,15 @@ export function createVisionTool(options?: {
             interactive,
             compact: true,
             documentPath:
-              resolvedFile && /\.(docx|xlsx|pptx)$/i.test(resolvedFile) ? resolvedFile : undefined,
+              resolvedFile && /\.(docx|xlsx|pptx|hwpx|hwp)$/i.test(resolvedFile)
+                ? resolvedFile
+                : undefined,
             fullPage,
             screenshotRef: ref,
             pdfPath: resolvedFile && /\.pdf$/i.test(resolvedFile) ? resolvedFile : undefined,
             maxPdfPages: maxPages,
             renderPdfImages: renderImages,
+            forceScanned,
           });
 
           // If there's a screenshot, include it as image

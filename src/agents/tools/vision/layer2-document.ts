@@ -1,9 +1,16 @@
 /**
- * Layer 2: Document file parser (.docx / .xlsx / .pptx)
+ * Layer 2: Document file parser (.docx / .xlsx / .pptx / .hwpx)
  *
- * Uses JSZip to decompress Office Open XML files and extracts text content
- * by parsing the underlying XML.  No heavy external parser is required — we
- * read only the well-known content parts.
+ * Uses JSZip to decompress Office Open XML and HWPX files and extracts text
+ * content by parsing the underlying XML.  No heavy external parser is
+ * required — we read only the well-known content parts.
+ *
+ * Supported formats:
+ *   - .docx (Word)
+ *   - .xlsx (Excel)
+ *   - .pptx (PowerPoint)
+ *   - .hwpx (한글 — Hancom OWPML format)
+ *   - .hwp  (감지 시 HWPX 변환 안내 제공)
  */
 
 import JSZip from "jszip";
@@ -11,13 +18,48 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import type { DocumentParseResult } from "./types.js";
 
+/** HWP 파일 안내 메시지 */
+export const HWP_CONVERSION_NOTICE = [
+  "[HWP 파일 감지] 이 파일은 HWP(구형 한글 포맷)입니다.",
+  "",
+  "HWP 파일은 바이너리 포맷으로 직접 파싱이 어렵습니다.",
+  "다음 방법으로 HWPX로 변환하면 텍스트를 추출할 수 있습니다:",
+  "",
+  "  1. 한글(한컴오피스)에서 파일 열기",
+  '  2. "다른 이름으로 저장" 선택',
+  '  3. 파일 형식을 "HWPX (*.hwpx)"로 변경',
+  "  4. 저장 후 변환된 .hwpx 파일을 다시 업로드",
+  "",
+  "또는 한글 뷰어(무료)에서도 HWPX로 내보내기가 가능합니다.",
+].join("\n");
+
 /** Detect document type from file extension. */
-function detectDocType(filePath: string): "docx" | "xlsx" | "pptx" | "unknown" {
+function detectDocType(filePath: string): "docx" | "xlsx" | "pptx" | "hwpx" | "hwp" | "unknown" {
   const ext = path.extname(filePath).toLowerCase();
   if (ext === ".docx") return "docx";
   if (ext === ".xlsx") return "xlsx";
   if (ext === ".pptx") return "pptx";
+  if (ext === ".hwpx") return "hwpx";
+  if (ext === ".hwp") return "hwp";
   return "unknown";
+}
+
+/**
+ * Check if a buffer starts with the HWP binary signature (OLE compound document).
+ * HWP files start with the OLE magic bytes: D0 CF 11 E0 A1 B1 1A E1
+ */
+function isHwpBinary(buffer: Buffer): boolean {
+  if (buffer.length < 8) return false;
+  return (
+    buffer[0] === 0xd0 &&
+    buffer[1] === 0xcf &&
+    buffer[2] === 0x11 &&
+    buffer[3] === 0xe0 &&
+    buffer[4] === 0xa1 &&
+    buffer[5] === 0xb1 &&
+    buffer[6] === 0x1a &&
+    buffer[7] === 0xe1
+  );
 }
 
 /** Strip XML tags and decode common XML entities. */
@@ -187,6 +229,134 @@ async function parsePptx(zip: JSZip): Promise<{ text: string; pageCount: number 
   return { text: slides.join("\n\n"), pageCount: slideFiles.length };
 }
 
+// ─── HWPX (한글 OWPML) ─────────────────────────────────
+
+/**
+ * Extract text from HWPX section XML.
+ *
+ * HWPX uses OWPML (Open Word Processor Markup Language) with various
+ * namespace prefixes.  Text content is in <t> or <hp:t> or <hs:t> tags
+ * within paragraph/run elements.  Tables use <tbl>/<tc> structure.
+ */
+function extractHwpxText(xml: string): string {
+  const paragraphs: string[] = [];
+
+  // Match text tags regardless of namespace prefix
+  // Common patterns: <hp:t>, <hs:t>, <t>, <hc:t>, <ha:t>
+  const textPattern = /<(?:[a-z]+:)?t(?:\s[^>]*)?>([^<]*)<\/(?:[a-z]+:)?t>/g;
+  let match: RegExpExecArray | null;
+  let currentParagraph: string[] = [];
+
+  // Split by paragraph boundaries
+  // Common paragraph tags: <hp:p>, <hs:p>, <p>
+  const paraBlocks = xml.split(/<(?:[a-z]+:)?p[\s>]/);
+
+  for (const block of paraBlocks) {
+    currentParagraph = [];
+    // Reset regex for each block
+    const blockTextPattern = /<(?:[a-z]+:)?t(?:\s[^>]*)?>([^<]*)<\/(?:[a-z]+:)?t>/g;
+    while ((match = blockTextPattern.exec(block)) !== null) {
+      const text = match[1]
+        .replace(/&amp;/g, "&")
+        .replace(/&lt;/g, "<")
+        .replace(/&gt;/g, ">")
+        .replace(/&quot;/g, '"')
+        .replace(/&apos;/g, "'")
+        .replace(/&#(\d+);/g, (_m, code) => String.fromCharCode(Number(code)));
+      if (text.trim()) {
+        currentParagraph.push(text);
+      }
+    }
+    if (currentParagraph.length > 0) {
+      paragraphs.push(currentParagraph.join(""));
+    }
+  }
+
+  return paragraphs.join("\n");
+}
+
+/** Extract HWPX metadata from META-INF or version.xml. */
+function extractHwpxMetadata(zip: JSZip): Record<string, string> {
+  const meta: Record<string, string> = {};
+  // HWPX metadata is typically minimal; we try common locations
+  return meta;
+}
+
+async function parseHwpx(
+  zip: JSZip,
+): Promise<{ text: string; pageCount: number; metadata: Record<string, string> }> {
+  // Find all section files (Contents/section0.xml, section1.xml, ...)
+  const sectionFiles: string[] = [];
+  zip.forEach((p) => {
+    if (/^Contents\/section\d+\.xml$/i.test(p)) {
+      sectionFiles.push(p);
+    }
+  });
+  sectionFiles.sort((a, b) => {
+    const numA = parseInt(a.match(/section(\d+)/)?.[1] ?? "0", 10);
+    const numB = parseInt(b.match(/section(\d+)/)?.[1] ?? "0", 10);
+    return numA - numB;
+  });
+
+  // Also check for content.hpf which lists sections
+  const contentHpf = zip.file("Contents/content.hpf");
+  if (sectionFiles.length === 0 && contentHpf) {
+    // Parse content.hpf to find section references
+    const hpfXml = await contentHpf.async("text");
+    const sectionRefs = hpfXml.match(/section\d+\.xml/gi) ?? [];
+    for (const ref of sectionRefs) {
+      const fullPath = `Contents/${ref}`;
+      if (zip.file(fullPath) && !sectionFiles.includes(fullPath)) {
+        sectionFiles.push(fullPath);
+      }
+    }
+    sectionFiles.sort();
+  }
+
+  const sections: string[] = [];
+
+  for (const sectionPath of sectionFiles) {
+    const sectionFile = zip.file(sectionPath);
+    if (!sectionFile) continue;
+    const xml = await sectionFile.async("text");
+    const text = extractHwpxText(xml);
+    if (text.trim()) {
+      sections.push(text.trim());
+    }
+  }
+
+  // Also extract from header/footer if present
+  const headerFooterFiles: string[] = [];
+  zip.forEach((p) => {
+    if (/^Contents\/(header|footer)\d*\.xml$/i.test(p)) {
+      headerFooterFiles.push(p);
+    }
+  });
+
+  // Extract metadata from version.xml or META-INF
+  const metadata = extractHwpxMetadata(zip);
+
+  // Try to get title from first section or header
+  const versionFile = zip.file("version.xml");
+  if (versionFile) {
+    try {
+      const versionXml = await versionFile.async("text");
+      const appMatch = versionXml.match(/<(?:[a-z]+:)?application[^>]*>([^<]+)/i);
+      if (appMatch?.[1]?.trim()) {
+        metadata.application = appMatch[1].trim();
+      }
+    } catch {
+      // version.xml parsing is optional
+    }
+  }
+
+  return {
+    text: sections.join("\n\n"),
+    pageCount: Math.max(1, sectionFiles.length),
+    metadata,
+  };
+}
+
 // ─── Public API ────────────────────────────────────────
 
 export interface DocumentParseOptions {
@@ -195,8 +365,11 @@ export interface DocumentParseOptions {
 }
 
 /**
- * Parse an Office Open XML document (.docx/.xlsx/.pptx) and extract
+ * Parse a document (.docx/.xlsx/.pptx/.hwpx) and extract
  * text content, metadata, and image counts.
+ *
+ * For .hwp (구형 한글 바이너리) files, returns a conversion notice
+ * instead of extracted text.
  */
 export async function parseDocument(
   filePath: string,
@@ -205,16 +378,32 @@ export async function parseDocument(
   const maxChars = opts?.maxChars ?? 200_000;
   const docType = detectDocType(filePath);
 
+  // Handle HWP (binary format) — provide conversion guidance
+  if (docType === "hwp") {
+    const buffer = await fs.readFile(filePath);
+    if (isHwpBinary(buffer)) {
+      return {
+        text: "",
+        type: "unknown",
+        pageCount: 0,
+        metadata: {},
+        imageCount: 0,
+        warning: HWP_CONVERSION_NOTICE,
+      };
+    }
+  }
+
   const buffer = await fs.readFile(filePath);
   const zip = await JSZip.loadAsync(buffer);
 
-  // Core metadata
+  // Core metadata (for OOXML formats)
   const coreFile = zip.file("docProps/core.xml");
   const metadata = coreFile ? extractCoreMetadata(await coreFile.async("text")) : {};
   const imageCount = countImages(zip);
 
   let text: string;
   let pageCount: number;
+  let warning: string | undefined;
 
   switch (docType) {
     case "docx": {
@@ -235,8 +424,26 @@ export async function parseDocument(
       pageCount = result.pageCount;
       break;
     }
+    case "hwpx": {
+      const result = await parseHwpx(zip);
+      text = result.text;
+      pageCount = result.pageCount;
+      // Merge HWPX-specific metadata
+      Object.assign(metadata, result.metadata);
+      break;
+    }
     default: {
-      // Try all parsers, use whichever yields content
+      // Try HWPX detection first (check for Contents/section*.xml)
+      const hasHwpxSections = zip.file("Contents/section0.xml") !== null;
+      if (hasHwpxSections) {
+        const result = await parseHwpx(zip);
+        text = result.text;
+        pageCount = result.pageCount;
+        Object.assign(metadata, result.metadata);
+        break;
+      }
+
+      // Try all OOXML parsers, use whichever yields content
       const docxResult = await parseDocx(zip);
       if (docxResult.text.length > 0) {
         text = docxResult.text;
@@ -263,9 +470,10 @@ export async function parseDocument(
 
   return {
     text,
-    type: docType,
+    type: docType === "hwp" ? "unknown" : docType,
     pageCount,
     metadata,
     imageCount,
+    warning,
   };
 }

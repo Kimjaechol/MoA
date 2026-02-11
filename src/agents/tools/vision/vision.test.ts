@@ -2,9 +2,9 @@ import JSZip from "jszip";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { describe, expect, it, vi, beforeEach, afterEach } from "vitest";
+import { describe, expect, it, beforeEach, afterEach } from "vitest";
 import { createVisionTool } from "./index.js";
-import { parseDocument } from "./layer2-document.js";
+import { parseDocument, HWP_CONVERSION_NOTICE } from "./layer2-document.js";
 
 // ─── Layer 2: Document Parser Tests ─────────────────────
 
@@ -196,6 +196,159 @@ describe("layer2-document: parseDocument", () => {
     const result = await parseDocument(unknownPath);
     expect(result.type).toBe("unknown");
   });
+
+  // ─── HWPX Tests ──────────────────────────────────────
+
+  it("extracts text from a minimal .hwpx", async () => {
+    const zip = new JSZip();
+    zip.file(
+      "Contents/section0.xml",
+      `<?xml version="1.0" encoding="UTF-8"?>
+      <hs:sec xmlns:hs="http://www.hancom.co.kr/hwpml/2011/paragraph">
+        <hs:p>
+          <hs:run>
+            <hs:t>한글 문서 테스트입니다.</hs:t>
+          </hs:run>
+        </hs:p>
+        <hs:p>
+          <hs:run>
+            <hs:t>두 번째 문단입니다.</hs:t>
+          </hs:run>
+        </hs:p>
+      </hs:sec>`,
+    );
+
+    const hwpxPath = path.join(tmpDir, "test.hwpx");
+    const buffer = await zip.generateAsync({ type: "nodebuffer" });
+    await fs.writeFile(hwpxPath, buffer);
+
+    const result = await parseDocument(hwpxPath);
+
+    expect(result.type).toBe("hwpx");
+    expect(result.text).toContain("한글 문서 테스트입니다.");
+    expect(result.text).toContain("두 번째 문단입니다.");
+    expect(result.pageCount).toBeGreaterThanOrEqual(1);
+  });
+
+  it("extracts text from .hwpx with multiple sections", async () => {
+    const zip = new JSZip();
+    zip.file(
+      "Contents/section0.xml",
+      `<?xml version="1.0" encoding="UTF-8"?>
+      <sec xmlns="http://www.hancom.co.kr/hwpml/2011/paragraph">
+        <p><run><t>섹션 1 내용</t></run></p>
+      </sec>`,
+    );
+    zip.file(
+      "Contents/section1.xml",
+      `<?xml version="1.0" encoding="UTF-8"?>
+      <sec xmlns="http://www.hancom.co.kr/hwpml/2011/paragraph">
+        <p><run><t>섹션 2 내용</t></run></p>
+      </sec>`,
+    );
+
+    const hwpxPath = path.join(tmpDir, "multi-section.hwpx");
+    const buffer = await zip.generateAsync({ type: "nodebuffer" });
+    await fs.writeFile(hwpxPath, buffer);
+
+    const result = await parseDocument(hwpxPath);
+
+    expect(result.type).toBe("hwpx");
+    expect(result.text).toContain("섹션 1 내용");
+    expect(result.text).toContain("섹션 2 내용");
+    expect(result.pageCount).toBe(2);
+  });
+
+  it("handles .hwpx with hp: namespace prefix", async () => {
+    const zip = new JSZip();
+    zip.file(
+      "Contents/section0.xml",
+      `<?xml version="1.0" encoding="UTF-8"?>
+      <hp:sec xmlns:hp="http://www.hancom.co.kr/hwpml/2011/paragraph">
+        <hp:p>
+          <hp:run>
+            <hp:t>네임스페이스 접두사 hp 테스트</hp:t>
+          </hp:run>
+        </hp:p>
+      </hp:sec>`,
+    );
+
+    const hwpxPath = path.join(tmpDir, "hp-namespace.hwpx");
+    const buffer = await zip.generateAsync({ type: "nodebuffer" });
+    await fs.writeFile(hwpxPath, buffer);
+
+    const result = await parseDocument(hwpxPath);
+
+    expect(result.type).toBe("hwpx");
+    expect(result.text).toContain("네임스페이스 접두사 hp 테스트");
+  });
+
+  it("auto-detects HWPX format for unknown extension with section files", async () => {
+    const zip = new JSZip();
+    zip.file(
+      "Contents/section0.xml",
+      `<?xml version="1.0" encoding="UTF-8"?>
+      <sec><p><run><t>자동 감지 테스트</t></run></p></sec>`,
+    );
+
+    const unknownPath = path.join(tmpDir, "test.zip");
+    const buffer = await zip.generateAsync({ type: "nodebuffer" });
+    await fs.writeFile(unknownPath, buffer);
+
+    const result = await parseDocument(unknownPath);
+
+    // Should auto-detect as HWPX structure
+    expect(result.text).toContain("자동 감지 테스트");
+  });
+
+  // ─── HWP Notice Test ─────────────────────────────────
+
+  it("returns conversion notice for .hwp binary files", async () => {
+    // Create a fake HWP binary file with OLE compound document signature
+    const oleSignature = Buffer.from([0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1]);
+    const fakeHwp = Buffer.concat([oleSignature, Buffer.alloc(512)]);
+
+    const hwpPath = path.join(tmpDir, "document.hwp");
+    await fs.writeFile(hwpPath, fakeHwp);
+
+    const result = await parseDocument(hwpPath);
+
+    expect(result.text).toBe("");
+    expect(result.warning).toBeDefined();
+    expect(result.warning).toContain("HWP");
+    expect(result.warning).toContain("HWPX");
+    expect(result.warning).toContain("한글");
+  });
+
+  it("HWP_CONVERSION_NOTICE contains conversion instructions", () => {
+    expect(HWP_CONVERSION_NOTICE).toContain("HWP 파일 감지");
+    expect(HWP_CONVERSION_NOTICE).toContain("HWPX");
+    expect(HWP_CONVERSION_NOTICE).toContain("다른 이름으로 저장");
+    expect(HWP_CONVERSION_NOTICE).toContain(".hwpx");
+  });
+
+  // ─── HWPX XML Entity Decoding ─────────────────────────
+
+  it("handles XML entities in .hwpx text", async () => {
+    const zip = new JSZip();
+    zip.file(
+      "Contents/section0.xml",
+      `<?xml version="1.0" encoding="UTF-8"?>
+      <sec>
+        <p>
+          <run><t>A &amp; B &lt; C &gt; D</t></run>
+        </p>
+      </sec>`,
+    );
+
+    const hwpxPath = path.join(tmpDir, "entities.hwpx");
+    const buffer = await zip.generateAsync({ type: "nodebuffer" });
+    await fs.writeFile(hwpxPath, buffer);
+
+    const result = await parseDocument(hwpxPath);
+
+    expect(result.text).toContain("A & B < C > D");
+  });
 });
 
 // ─── Vision Tool Factory Tests ──────────────────────────
@@ -209,7 +362,14 @@ describe("createVisionTool", () => {
     expect(tool!.description).toContain("4-layer vision system");
   });
 
-  it("has correct parameter schema", () => {
+  it("description mentions HWPX and scanned PDF support", () => {
+    const tool = createVisionTool();
+    expect(tool).not.toBeNull();
+    expect(tool!.description).toContain(".hwpx");
+    expect(tool!.description).toContain("scanned");
+  });
+
+  it("has correct parameter schema including force_scanned", () => {
     const tool = createVisionTool();
     expect(tool).not.toBeNull();
     const schema = tool!.parameters;
@@ -222,6 +382,7 @@ describe("createVisionTool", () => {
     expect(schema.properties).toHaveProperty("full_page");
     expect(schema.properties).toHaveProperty("render_images");
     expect(schema.properties).toHaveProperty("max_pages");
+    expect(schema.properties).toHaveProperty("force_scanned");
     expect(schema.properties).toHaveProperty("layers");
   });
 
@@ -253,5 +414,51 @@ describe("createVisionTool", () => {
     const tool = createVisionTool();
     expect(tool).not.toBeNull();
     await expect(tool!.execute("test-call-id", {})).rejects.toThrow(/action required/);
+  });
+
+  it("document action handles .hwpx files via tool", async () => {
+    const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "vision-tool-test-"));
+    try {
+      const zip = new JSZip();
+      zip.file("Contents/section0.xml", `<sec><p><run><t>한글 도구 테스트</t></run></p></sec>`);
+      const hwpxPath = path.join(tmpDir, "tool-test.hwpx");
+      const buffer = await zip.generateAsync({ type: "nodebuffer" });
+      await fs.writeFile(hwpxPath, buffer);
+
+      const tool = createVisionTool();
+      const result = await tool!.execute("test-call-id", {
+        action: "document",
+        file: hwpxPath,
+      });
+
+      expect(result.content).toBeDefined();
+      const text = result.content[0].type === "text" ? result.content[0].text : "";
+      expect(text).toContain("한글 도구 테스트");
+    } finally {
+      await fs.rm(tmpDir, { recursive: true, force: true }).catch(() => {});
+    }
+  });
+
+  it("document action returns HWP warning via tool", async () => {
+    const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "vision-tool-test-"));
+    try {
+      const oleSignature = Buffer.from([0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1]);
+      const fakeHwp = Buffer.concat([oleSignature, Buffer.alloc(512)]);
+      const hwpPath = path.join(tmpDir, "test.hwp");
+      await fs.writeFile(hwpPath, fakeHwp);
+
+      const tool = createVisionTool();
+      const result = await tool!.execute("test-call-id", {
+        action: "document",
+        file: hwpPath,
+      });
+
+      expect(result.content).toBeDefined();
+      const text = result.content[0].type === "text" ? result.content[0].text : "";
+      expect(text).toContain("HWP");
+      expect(text).toContain("warning");
+    } finally {
+      await fs.rm(tmpDir, { recursive: true, force: true }).catch(() => {});
+    }
   });
 });

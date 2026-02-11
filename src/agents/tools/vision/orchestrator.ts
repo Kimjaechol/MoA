@@ -43,6 +43,7 @@ export interface VisionOrchestrationOptions {
   maxPdfPages?: number;
   renderPdfImages?: boolean;
   maxPdfPixels?: number;
+  forceScanned?: boolean;
 }
 
 /** Build a human-readable summary from the collected results. */
@@ -59,10 +60,14 @@ function buildSummary(result: VisionResult): string {
 
   if (result.document) {
     const d = result.document;
-    parts.push(
-      `[Document] ${d.type.toUpperCase()} — ${d.pageCount} page(s), ` +
-        `${d.text.length} chars extracted, ${d.imageCount} image(s)`,
-    );
+    if (d.warning) {
+      parts.push(`[Document] ${d.warning}`);
+    } else {
+      parts.push(
+        `[Document] ${d.type.toUpperCase()} — ${d.pageCount} page(s), ` +
+          `${d.text.length} chars extracted, ${d.imageCount} image(s)`,
+      );
+    }
   }
 
   if (result.screenshot) {
@@ -75,10 +80,14 @@ function buildSummary(result: VisionResult): string {
 
   if (result.pdf) {
     const p = result.pdf;
+    const scannedLabel = p.isScanned ? " (스캔 문서)" : "";
     parts.push(
-      `[PDF] ${p.pageCount} page(s), ${p.text.length} chars extracted` +
-        (p.pageImages ? `, ${p.pageImages.length} page image(s)` : ""),
+      `[PDF${scannedLabel}] ${p.pageCount} page(s), ${p.text.length} chars extracted` +
+        (p.pageImages ? `, ${p.pageImages.length} page image(s) rendered` : ""),
     );
+    if (p.ocrGuidance) {
+      parts.push(p.ocrGuidance);
+    }
   }
 
   if (parts.length === 0) {
@@ -175,6 +184,7 @@ export async function orchestrateVision(opts: VisionOrchestrationOptions): Promi
             maxPages: opts.maxPdfPages,
             renderImages: opts.renderPdfImages,
             maxPixelsPerPage: opts.maxPdfPixels,
+            forceScanned: opts.forceScanned,
           };
           result.pdf = await renderPdf(opts.pdfPath!, pdfOpts);
           result.layers.push("pdf");
