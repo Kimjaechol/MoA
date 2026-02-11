@@ -77,9 +77,26 @@ const MAIN_NAV = [
   { href: "/autocode", icon: "\u{1F916}", label: "AI 자동코딩" },
   { href: "/editor", icon: "\u{1F4DD}", label: "문서 에디터" },
   { href: "/channels", icon: "\u{1F4E1}", label: "채널 허브" },
+  { href: "/download", icon: "\u{1F4E5}", label: "다운로드" },
   { href: "/billing", icon: "\u{1F4B3}", label: "결제" },
   { href: "/mypage", icon: "\u2699\uFE0F", label: "마이페이지" },
 ];
+
+/** Declare moaDesktop type for Electron desktop app integration */
+declare global {
+  interface Window {
+    moaDesktop?: {
+      isDesktopApp: () => Promise<boolean>;
+      systemInfo: () => Promise<{ platform: string; hostname: string; drives: string[] }>;
+      listDirectory: (path: string) => Promise<{ name: string; isDirectory: boolean; size: number }[]>;
+      readFile: (path: string, encoding?: string) => Promise<string>;
+      writeFile: (path: string, content: string) => Promise<boolean>;
+      openDialog: (options: { type: string }) => Promise<string[]>;
+      openExternal: (path: string) => Promise<void>;
+      executeCommand: (cmd: string) => Promise<{ stdout: string; stderr: string }>;
+    };
+  }
+}
 
 export default function ChatPage() {
   const [userId] = useState(() => {
@@ -113,6 +130,7 @@ export default function ChatPage() {
   const [selectedCategory, setSelectedCategory] = useState<CategoryId>("other");
   const [creditBalance, setCreditBalance] = useState<number | null>(null);
   const [expandedCat, setExpandedCat] = useState<string | null>(null);
+  const [isDesktop, setIsDesktop] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
 
@@ -121,6 +139,13 @@ export default function ChatPage() {
   }, []);
 
   useEffect(() => { scrollToBottom(); }, [messages, scrollToBottom]);
+
+  // Detect desktop app (Electron)
+  useEffect(() => {
+    if (typeof window !== "undefined" && window.moaDesktop) {
+      window.moaDesktop.isDesktopApp().then((v) => setIsDesktop(v)).catch(() => {});
+    }
+  }, []);
 
   // Load saved category
   useEffect(() => {
@@ -162,6 +187,39 @@ export default function ChatPage() {
     }
   };
 
+  /** Handle local file operations via desktop app */
+  const handleDesktopFileOp = async (text: string): Promise<string | null> => {
+    if (!isDesktop || !window.moaDesktop) return null;
+
+    const lower = text.toLowerCase();
+
+    // Pattern: list directory / folder contents
+    const listMatch = text.match(/([A-Za-z]:[\\/][^\s]*|\/[^\s]+)\s*(폴더|디렉토리|파일|리스트|목록)/i)
+      || text.match(/(폴더|디렉토리|파일|리스트|목록).+?([A-Za-z]:[\\/][^\s]*|\/[^\s]+)/i)
+      || (lower.includes("리스트") || lower.includes("목록") || lower.includes("파일")) && text.match(/([A-Za-z]:[\\/]?)/i);
+
+    if (listMatch) {
+      const dirPath = typeof listMatch[1] === "string" && listMatch[1].includes(":")
+        ? listMatch[1] : (typeof listMatch[2] === "string" ? listMatch[2] : null);
+      if (dirPath) {
+        try {
+          const items = await window.moaDesktop.listDirectory(dirPath.replace(/\//g, "\\"));
+          const folders = items.filter((i) => i.isDirectory).map((i) => i.name);
+          const files = items.filter((i) => !i.isDirectory).map((i) => i.name);
+          let result = `**${dirPath}** 디렉토리 내용:\n\n`;
+          if (folders.length) result += `**폴더 (${folders.length}개):**\n${folders.map((f) => `- ${f}/`).join("\n")}\n\n`;
+          if (files.length) result += `**파일 (${files.length}개):**\n${files.map((f) => `- ${f}`).join("\n")}`;
+          if (!folders.length && !files.length) result += "(비어있는 디렉토리)";
+          return result;
+        } catch (err) {
+          return `${dirPath} 디렉토리에 접근할 수 없습니다: ${err}`;
+        }
+      }
+    }
+
+    return null;
+  };
+
   const sendMessage = async (text: string) => {
     if (!text.trim() || sending) return;
 
@@ -177,6 +235,20 @@ export default function ChatPage() {
     setSending(true);
 
     try {
+      // Try local file operations first if running in desktop app
+      const localResult = await handleDesktopFileOp(text.trim());
+      if (localResult) {
+        const aiMsg: ChatMessage = {
+          id: `ai_${Date.now()}`,
+          role: "assistant",
+          content: localResult,
+          model_used: "desktop/local",
+          created_at: new Date().toISOString(),
+        };
+        setMessages((prev) => [...prev, aiMsg]);
+        return;
+      }
+
       const res = await fetch("/api/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -185,6 +257,7 @@ export default function ChatPage() {
           session_id: sessionId,
           content: text.trim(),
           category: selectedCategory,
+          is_desktop: isDesktop,
         }),
       });
 
@@ -280,6 +353,11 @@ export default function ChatPage() {
             <h1>MoA AI</h1>
             <span className="chat-header-status">
               {"\u25CF"} 온라인
+              {isDesktop && (
+                <span style={{ marginLeft: "8px", fontSize: "0.7rem", background: "rgba(102,126,234,0.2)", padding: "2px 8px", borderRadius: "8px" }}>
+                  Desktop
+                </span>
+              )}
             </span>
           </div>
           <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>

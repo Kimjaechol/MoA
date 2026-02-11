@@ -1,0 +1,68 @@
+{
+  "name": "moa-desktop",
+  "version": "1.0.0",
+  "description": "MoA (Master of AI) Desktop App - Windows/macOS/Linux",
+  "main": "main.js",
+  "author": "MoA Team <contact@lawith.kr>",
+  "license": "MIT",
+  "scripts": {
+    "start": "electron .",
+    "dev": "electron . --dev",
+    "build:win": "electron-builder --win",
+    "build:mac": "electron-builder --mac",
+    "build:linux": "electron-builder --linux",
+    "build:all": "electron-builder --win --mac --linux"
+  },
+  "build": {
+    "appId": "kr.lawith.moa",
+    "productName": "MoA",
+    "copyright": "Copyright © 2026 MoA Team",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "main.js",
+      "preload.js",
+      "local-api.js",
+      "tray-icon.png",
+      "icons/**/*"
+    ],
+    "win": {
+      "target": [
+        { "target": "nsis", "arch": ["x64", "arm64"] }
+      ],
+      "icon": "icons/icon.ico",
+      "artifactName": "MoA-Setup-${version}.${ext}"
+    },
+    "nsis": {
+      "oneClick": true,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": false,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "MoA",
+      "runAfterFinish": true
+    },
+    "mac": {
+      "target": [
+        { "target": "dmg", "arch": ["x64", "arm64"] }
+      ],
+      "icon": "icons/icon.icns",
+      "artifactName": "MoA-${version}-mac.${ext}",
+      "category": "public.app-category.productivity"
+    },
+    "linux": {
+      "target": ["AppImage", "deb"],
+      "icon": "icons/icon.png",
+      "artifactName": "MoA-${version}-linux.${ext}",
+      "category": "Utility"
+    }
+  },
+  "dependencies": {
+    "electron-updater": "^6.3.0"
+  },
+  "devDependencies": {
+    "electron": "^33.0.0",
+    "electron-builder": "^25.1.0"
+  }
+}

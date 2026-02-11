@@ -14,7 +14,7 @@ import { NextRequest, NextResponse } from "next/server";
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { user_id, session_id, content, channel = "web", category = "other" } = body;
+    const { user_id, session_id, content, channel = "web", category = "other", is_desktop = false } = body;
 
     if (!content || typeof content !== "string" || !content.trim()) {
       return NextResponse.json({ error: "메시지를 입력해주세요." }, { status: 400 });
@@ -40,10 +40,23 @@ export async function POST(request: NextRequest) {
       } catch { /* persistence failure — non-fatal */ }
     }
 
-    // 2. Generate AI response (category-aware, always succeeds)
+    // 2. Check for local file access requests from non-desktop browser
+    if (!is_desktop && /([A-Za-z]:\\|내\s*컴퓨터|로컬\s*파일|E\s*드라이브|C\s*드라이브|D\s*드라이브)/.test(content)) {
+      return NextResponse.json({
+        reply: "로컬 파일에 접근하려면 MoA 데스크톱 앱이 필요합니다.\n\n" +
+          "MoA 데스크톱 앱을 설치하면 E드라이브 등 로컬 파일을 직접 관리할 수 있어요.\n\n" +
+          "다운로드 페이지에서 원클릭으로 설치하세요: /download",
+        model: "local/system",
+        category,
+        credits_used: 0,
+        timestamp: new Date().toISOString(),
+      });
+    }
+
+    // 3. Generate AI response (category-aware, always succeeds)
     const aiResponse = await generateResponse(content.trim(), user_id, category, supabase);
 
-    // 3. Deduct credits (best-effort, non-blocking)
+    // 4. Deduct credits (best-effort, non-blocking)
     // Apply 2x multiplier when using MoA's server-level API keys
     let creditInfo: { balance?: number; cost?: number } = {};
     if (supabase && user_id) {
@@ -52,7 +65,7 @@ export async function POST(request: NextRequest) {
       } catch { /* credit deduction failure — non-fatal */ }
     }
 
-    // 4. Save AI response (best-effort, non-blocking)
+    // 5. Save AI response (best-effort, non-blocking)
     if (supabase && user_id && session_id) {
       try {
         await supabase.from("moa_chat_messages").insert({

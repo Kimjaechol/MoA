@@ -9,6 +9,7 @@ const NAV_LINKS = [
   { href: "/autocode", label: "자동코딩", isAnchor: false },
   { href: "/editor", label: "에디터", isAnchor: false },
   { href: "/channels", label: "채널", isAnchor: false },
+  { href: "/download", label: "다운로드", isAnchor: false },
   { href: "/billing", label: "결제", isAnchor: false },
   { href: "/mypage", label: "마이페이지", isAnchor: false },
 ];
