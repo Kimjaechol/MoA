@@ -156,4 +156,8 @@ export interface ModelStrategyResolution {
   parallel: boolean;
   /** Human-readable explanation */
   explanation: string;
+  /** Optional model-specific configuration (e.g., Gemini thinking budget) */
+  modelConfig?: {
+    thinkingBudget?: number;
+  };
 }

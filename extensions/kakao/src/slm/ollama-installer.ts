@@ -27,10 +27,14 @@ const execAsync = promisify(exec);
 export interface SLMModel {
   name: string;
   ollamaName: string;
-  tier: 1 | 2;
+  tier: 1 | 2 | 3;
   sizeGB: number;
   description: string;
   alwaysLoaded: boolean;
+  /** Minimum RAM in GB required to use this model */
+  minRamGB?: number;
+  /** Target device type */
+  targetDevice?: "all" | "mobile" | "desktop";
 }
 
 export interface InstallProgress {
@@ -54,8 +58,11 @@ export interface OllamaStatus {
 // Constants
 // ============================================
 
-// MoA SLM Models (2-Tier Architecture)
-// Q4_K_M quantization: optimal balance of quality and size
+// MoA SLM Models (3-Tier Architecture)
+//
+// Tier 1: 모든 기기, 상시 로딩 — 라우팅/의도 분류/도구 호출
+// Tier 2: RAM 6GB+, 모바일 온디맨드 — 컨텍스트 256K, 추론/코딩 강화 (2507 버전)
+// Tier 3: RAM 16GB+, 데스크탑 전용 — 최고 로컬 추론 성능
 export const SLM_MODELS: SLMModel[] = [
   {
     name: "moa-core",
@@ -64,14 +71,28 @@ export const SLM_MODELS: SLMModel[] = [
     sizeGB: 0.4,
     description: "Agent core - routing, intent classification, tool calling",
     alwaysLoaded: true,
+    minRamGB: 0,
+    targetDevice: "all",
   },
   {
-    name: "moa-advanced",
-    ollamaName: "qwen3:4b-q4_K_M", // Q4 quantized (~2.6GB)
+    name: "moa-advanced-mobile",
+    ollamaName: "qwen3:4b-instruct-2507", // 2507 릴리스: 컨텍스트 32K→256K, 추론/코딩 대폭 향상
     tier: 2,
     sizeGB: 2.6,
-    description: "Advanced processing - offline deep reasoning",
+    description: "Advanced processing - 256K context, enhanced reasoning/coding (mobile)",
     alwaysLoaded: false,
+    minRamGB: 6,
+    targetDevice: "mobile",
+  },
+  {
+    name: "moa-advanced-desktop",
+    ollamaName: "qwen3:8b", // 데스크탑 전용 고성능 로컬 모델
+    tier: 3,
+    sizeGB: 5.0,
+    description: "Advanced processing - offline deep reasoning (desktop only)",
+    alwaysLoaded: false,
+    minRamGB: 16,
+    targetDevice: "desktop",
   },
 ];
 
@@ -391,25 +412,28 @@ export async function getOllamaStatus(): Promise<OllamaStatus> {
 export async function checkMoaSLMStatus(): Promise<{
   tier1Ready: boolean;
   tier2Ready: boolean;
+  tier3Ready: boolean;
   missingModels: SLMModel[];
 }> {
   const installedModels = await getInstalledModels();
 
   const tier1Model = SLM_MODELS.find((m) => m.tier === 1)!;
   const tier2Model = SLM_MODELS.find((m) => m.tier === 2)!;
+  const tier3Model = SLM_MODELS.find((m) => m.tier === 3)!;
 
-  const tier1Ready = installedModels.some((m) => m.includes(tier1Model.ollamaName.split(":")[0]));
-  const tier2Ready = installedModels.some((m) => m.includes(tier2Model.ollamaName.split(":")[0]));
+  const isInstalled = (model: SLMModel) =>
+    installedModels.some((m) => m.includes(model.ollamaName.split(":")[0]));
+
+  const tier1Ready = isInstalled(tier1Model);
+  const tier2Ready = isInstalled(tier2Model);
+  const tier3Ready = isInstalled(tier3Model);
 
   const missingModels: SLMModel[] = [];
-  if (!tier1Ready) {
-    missingModels.push(tier1Model);
-  }
-  if (!tier2Ready) {
-    missingModels.push(tier2Model);
-  }
+  if (!tier1Ready) missingModels.push(tier1Model);
+  if (!tier2Ready) missingModels.push(tier2Model);
+  if (!tier3Ready) missingModels.push(tier3Model);
 
-  return { tier1Ready, tier2Ready, missingModels };
+  return { tier1Ready, tier2Ready, tier3Ready, missingModels };
 }
 
 /**
@@ -421,7 +445,8 @@ export async function checkMoaSLMStatus(): Promise<{
 export async function installMoaSLM(
   onProgress?: ProgressCallback,
   options?: {
-    skipTier2?: boolean; // Skip Tier 2 for mobile/low-memory devices
+    skipTier2?: boolean; // Skip Tier 2 for low-memory devices (<6GB RAM)
+    skipTier3?: boolean; // Skip Tier 3 for non-desktop devices (<16GB RAM)
     forceReinstall?: boolean;
   },
 ): Promise<boolean> {
@@ -483,7 +508,7 @@ export async function installMoaSLM(
       });
     }
 
-    // Phase 5: Install Tier 2 (optional for mobile)
+    // Phase 5: Install Tier 2 (모바일용, RAM 6GB+)
     if (!skipTier2) {
       const tier2Model = SLM_MODELS.find((m) => m.tier === 2)!;
       if (!slmStatus.tier2Ready || forceReinstall) {
@@ -491,24 +516,48 @@ export async function installMoaSLM(
           phase: "pulling-model",
           model: tier2Model.ollamaName,
           progress: 0,
-          message: `고급 처리 모듈 설치 중 (${tier2Model.sizeGB}GB)...`,
+          message: `고급 모바일 모듈 설치 중 (${tier2Model.sizeGB}GB, 256K 컨텍스트)...`,
         });
 
         const tier2Success = await pullModel(tier2Model.ollamaName, onProgress);
         if (!tier2Success) {
-          // Tier 2 failure is not critical
           console.warn("Tier 2 model installation failed, but continuing...");
         }
       } else {
         onProgress?.({
           phase: "ready",
           model: tier2Model.ollamaName,
-          message: "고급 처리 모듈 준비 완료",
+          message: "고급 모바일 모듈 준비 완료",
         });
       }
     }
 
-    // Phase 6: Final status
+    // Phase 6: Install Tier 3 (데스크탑 전용, RAM 16GB+)
+    const skipTier3 = options?.skipTier3 ?? shouldSkipTier3Device();
+    if (!skipTier3) {
+      const tier3Model = SLM_MODELS.find((m) => m.tier === 3)!;
+      if (!slmStatus.tier3Ready || forceReinstall) {
+        onProgress?.({
+          phase: "pulling-model",
+          model: tier3Model.ollamaName,
+          progress: 0,
+          message: `데스크탑 고급 모듈 설치 중 (${tier3Model.sizeGB}GB)...`,
+        });
+
+        const tier3Success = await pullModel(tier3Model.ollamaName, onProgress);
+        if (!tier3Success) {
+          console.warn("Tier 3 model installation failed, but continuing...");
+        }
+      } else {
+        onProgress?.({
+          phase: "ready",
+          model: tier3Model.ollamaName,
+          message: "데스크탑 고급 모듈 준비 완료",
+        });
+      }
+    }
+
+    // Phase 7: Final status
     onProgress?.({
       phase: "ready",
       message: "MoA 로컬 AI 설치 완료",
@@ -526,12 +575,21 @@ export async function installMoaSLM(
 }
 
 /**
+ * Check if device should skip Tier 3 (not enough RAM for desktop model)
+ */
+export function shouldSkipTier3Device(): boolean {
+  const totalMemoryGB = os.totalmem() / (1024 * 1024 * 1024);
+  return totalMemoryGB < 16;
+}
+
+/**
  * Quick health check for MoA SLM
  */
 export async function healthCheck(): Promise<{
   healthy: boolean;
   tier1Loaded: boolean;
   tier2Available: boolean;
+  tier3Available: boolean;
   message: string;
 }> {
   try {
@@ -541,6 +599,7 @@ export async function healthCheck(): Promise<{
         healthy: false,
         tier1Loaded: false,
         tier2Available: false,
+        tier3Available: false,
         message: "Ollama 서버가 실행되지 않음",
       };
     }
@@ -551,6 +610,7 @@ export async function healthCheck(): Promise<{
       healthy: status.tier1Ready,
       tier1Loaded: status.tier1Ready,
       tier2Available: status.tier2Ready,
+      tier3Available: status.tier3Ready,
       message: status.tier1Ready ? "MoA 로컬 AI 정상 작동 중" : "에이전트 코어 모델 없음",
     };
   } catch (error) {
@@ -558,6 +618,7 @@ export async function healthCheck(): Promise<{
       healthy: false,
       tier1Loaded: false,
       tier2Available: false,
+      tier3Available: false,
       message: error instanceof Error ? error.message : "Unknown error",
     };
   }
