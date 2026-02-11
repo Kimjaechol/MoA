@@ -43,7 +43,15 @@ export async function POST(request: NextRequest) {
     // 2. Generate AI response (category-aware, always succeeds)
     const aiResponse = await generateResponse(content.trim(), user_id, category, supabase);
 
-    // 3. Save AI response (best-effort, non-blocking)
+    // 3. Deduct credits (best-effort, non-blocking)
+    let creditInfo: { balance?: number; cost?: number } = {};
+    if (supabase && user_id) {
+      try {
+        creditInfo = await deductCredits(supabase, user_id, aiResponse.model);
+      } catch { /* credit deduction failure — non-fatal */ }
+    }
+
+    // 4. Save AI response (best-effort, non-blocking)
     if (supabase && user_id && session_id) {
       try {
         await supabase.from("moa_chat_messages").insert({
@@ -58,6 +66,8 @@ export async function POST(request: NextRequest) {
       reply: aiResponse.text,
       model: aiResponse.model,
       category,
+      credits_used: creditInfo.cost ?? 0,
+      credits_remaining: creditInfo.balance,
       timestamp: new Date().toISOString(),
     });
   } catch {
@@ -110,6 +120,68 @@ export async function GET(request: NextRequest) {
   } catch {
     return NextResponse.json({ messages: [] });
   }
+}
+
+/* -----------------------------------------------------------------
+   Credit Deduction
+   ----------------------------------------------------------------- */
+
+const MODEL_CREDIT_COSTS: Record<string, number> = {
+  "local/slm-default": 0, "local/fallback": 0,
+  "groq/kimi-k2-0905": 1, "groq/llama-3.3-70b-versatile": 1,
+  "gemini/gemini-2.5-flash": 2, "gemini/gemini-2.0-flash": 2,
+  "deepseek/deepseek-chat": 3,
+  "openai/gpt-4o": 5, "openai/gpt-4o-mini": 3,
+  "anthropic/claude-sonnet-4-5": 8, "anthropic/claude-haiku-4-5": 4,
+  "openai/gpt-5": 10,
+  "anthropic/claude-opus-4-6": 15,
+};
+
+function getCreditCost(model: string): number {
+  if (MODEL_CREDIT_COSTS[model] !== undefined) return MODEL_CREDIT_COSTS[model];
+  if (model.startsWith("groq/")) return 1;
+  if (model.startsWith("gemini/")) return 2;
+  if (model.startsWith("deepseek/")) return 3;
+  if (model.startsWith("openai/")) return 5;
+  if (model.startsWith("anthropic/")) return 8;
+  return 0;
+}
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+async function deductCredits(supabase: any, userId: string, model: string): Promise<{ balance: number; cost: number }> {
+  const cost = getCreditCost(model);
+  if (cost === 0) return { balance: -1, cost: 0 };
+
+  // Get or initialize credits
+  let { data: credits } = await supabase
+    .from("moa_credits")
+    .select("balance, monthly_used")
+    .eq("user_id", userId)
+    .single();
+
+  if (!credits) {
+    await supabase.from("moa_credits").insert({
+      user_id: userId, balance: 100, monthly_quota: 100, monthly_used: 0, plan: "free",
+      quota_reset_at: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
+    });
+    credits = { balance: 100, monthly_used: 0 };
+  }
+
+  // Allow usage even if balance is low (don't block chat)
+  const newBalance = Math.max(0, credits.balance - cost);
+  const newUsed = (credits.monthly_used ?? 0) + cost;
+
+  await supabase
+    .from("moa_credits")
+    .update({ balance: newBalance, monthly_used: newUsed, updated_at: new Date().toISOString() })
+    .eq("user_id", userId);
+
+  await supabase.from("moa_credit_transactions").insert({
+    user_id: userId, amount: -cost, balance_after: newBalance,
+    tx_type: "usage", description: `채팅 - ${model}`, model_used: model,
+  });
+
+  return { balance: newBalance, cost };
 }
 
 /* -----------------------------------------------------------------
