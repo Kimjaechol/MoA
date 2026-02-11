@@ -1,35 +1,38 @@
 /**
  * MoA Desktop Preload Script
  *
- * Exposes native capabilities to the web app via window.moaDesktop.
- * The web app at moa.lawith.kr can detect this object to enable
- * desktop-only features (file access, system info, etc.).
+ * contextBridge로 안전하게 window.moaDesktop API를 노출.
+ * 웹앱(moa.lawith.kr)이 이 API로 로컬 파일 접근, 시스템 정보,
+ * 업데이트 확인 등을 수행할 수 있다.
  */
 
 const { contextBridge, ipcRenderer } = require("electron");
 
 contextBridge.exposeInMainWorld("moaDesktop", {
-  /** Returns true — web app uses this to detect desktop mode */
+  // ── 앱 상태 ──
   isDesktopApp: () => ipcRenderer.invoke("moa:isDesktopApp"),
+  getVersion: () => ipcRenderer.invoke("moa:getVersion"),
+  checkUpdate: () => ipcRenderer.invoke("moa:checkUpdate"),
 
-  /** Get system information (platform, hostname, drives, etc.) */
+  // ── 시스템 정보 ──
   systemInfo: () => ipcRenderer.invoke("moa:systemInfo"),
+  listDrives: () => ipcRenderer.invoke("moa:listDrives"),
 
-  /** List directory contents (triggers permission dialog for sensitive paths) */
+  // ── 파일 시스템 ──
   listDirectory: (dirPath) => ipcRenderer.invoke("moa:listDirectory", dirPath),
-
-  /** Read file content (max 10MB) */
   readFile: (filePath, encoding) => ipcRenderer.invoke("moa:readFile", filePath, encoding),
-
-  /** Write file (triggers save confirmation dialog) */
   writeFile: (filePath, content) => ipcRenderer.invoke("moa:writeFile", filePath, content),
 
-  /** Open native file/folder picker dialog */
+  // ── 다이얼로그 ──
   openDialog: (options) => ipcRenderer.invoke("moa:openDialog", options),
-
-  /** Open file in system default application */
+  saveDialog: (options) => ipcRenderer.invoke("moa:saveDialog", options),
   openExternal: (filePath) => ipcRenderer.invoke("moa:openExternal", filePath),
 
-  /** Execute a shell command (triggers permission dialog) */
+  // ── 명령 실행 ──
   executeCommand: (command) => ipcRenderer.invoke("moa:executeCommand", command),
+
+  // ── 업데이트 이벤트 수신 ──
+  onUpdateStatus: (callback) => {
+    ipcRenderer.on("moa:updateStatus", (_event, data) => callback(data));
+  },
 });

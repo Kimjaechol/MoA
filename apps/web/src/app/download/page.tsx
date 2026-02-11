@@ -101,7 +101,6 @@ export default function DownloadPage() {
   const [detected, setDetected] = useState<Platform>(null);
   const [selected, setSelected] = useState<Exclude<Platform, null>>("windows");
   const [copied, setCopied] = useState(false);
-  const [showPWA, setShowPWA] = useState(false);
 
   useEffect(() => {
     const p = detectPlatform(navigator.userAgent);
@@ -109,10 +108,6 @@ export default function DownloadPage() {
       setDetected(p);
       setSelected(p);
     }
-    // Check PWA install prompt availability
-    const handler = () => setShowPWA(true);
-    window.addEventListener("beforeinstallprompt", handler);
-    return () => window.removeEventListener("beforeinstallprompt", handler);
   }, []);
 
   const info = DOWNLOADS[selected];
@@ -194,13 +189,6 @@ export default function DownloadPage() {
                 </a>
               )}
             </div>
-
-            {/* PWA Install Option */}
-            {showPWA && (selected === "android" || selected === "ios") && (
-              <p style={{ color: "var(--success)", fontSize: "0.9rem", marginBottom: "16px" }}>
-                또는 브라우저에서 바로 설치: 주소창 옆의 "설치" 아이콘을 클릭하세요
-              </p>
-            )}
 
             {/* Install Steps */}
             <div style={{ textAlign: "left", marginTop: "24px", padding: "16px 20px", background: "rgba(255,255,255,0.03)", borderRadius: "var(--radius)" }}>
