@@ -175,9 +175,17 @@ export default function ChatPage() {
           role: "assistant",
           content: data.reply,
           model_used: data.model,
-          created_at: data.timestamp,
+          created_at: data.timestamp ?? new Date().toISOString(),
         };
         setMessages((prev) => [...prev, aiMsg]);
+      } else if (data.error) {
+        const errorMsg: ChatMessage = {
+          id: `err_${Date.now()}`,
+          role: "system",
+          content: `오류: ${data.error}`,
+          created_at: new Date().toISOString(),
+        };
+        setMessages((prev) => [...prev, errorMsg]);
       }
     } catch {
       const errorMsg: ChatMessage = {
