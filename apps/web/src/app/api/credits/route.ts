@@ -19,7 +19,10 @@ import { NextRequest, NextResponse } from "next/server";
  *   pro:  15,000 credits/month (29,900 KRW)
  */
 
-/** Credit cost per model */
+/** MoA server key multiplier: users pay 2x when using MoA's API keys */
+export const ENV_KEY_MULTIPLIER = 2;
+
+/** Credit cost per model (base rate — multiply by ENV_KEY_MULTIPLIER for MoA key usage) */
 export const MODEL_CREDITS: Record<string, number> = {
   "local/slm-default": 0,
   "local/fallback": 0,
@@ -159,6 +162,7 @@ export async function GET(request: NextRequest) {
       packs: CREDIT_PACKS,
       plans: PLAN_QUOTAS,
       model_costs: MODEL_CREDITS,
+      env_key_multiplier: ENV_KEY_MULTIPLIER,
       history,
     });
   } catch {

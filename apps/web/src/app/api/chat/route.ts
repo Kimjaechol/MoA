@@ -44,10 +44,11 @@ export async function POST(request: NextRequest) {
     const aiResponse = await generateResponse(content.trim(), user_id, category, supabase);
 
     // 3. Deduct credits (best-effort, non-blocking)
+    // Apply 2x multiplier when using MoA's server-level API keys
     let creditInfo: { balance?: number; cost?: number } = {};
     if (supabase && user_id) {
       try {
-        creditInfo = await deductCredits(supabase, user_id, aiResponse.model);
+        creditInfo = await deductCredits(supabase, user_id, aiResponse.model, aiResponse.usedEnvKey);
       } catch { /* credit deduction failure — non-fatal */ }
     }
 
@@ -68,6 +69,7 @@ export async function POST(request: NextRequest) {
       category,
       credits_used: creditInfo.cost ?? 0,
       credits_remaining: creditInfo.balance,
+      key_source: aiResponse.usedEnvKey ? "moa" : "user",
       timestamp: new Date().toISOString(),
     });
   } catch {
@@ -147,9 +149,14 @@ function getCreditCost(model: string): number {
   return 0;
 }
 
+/** MoA server key multiplier: 2x credit cost when users use MoA's API keys */
+const ENV_KEY_MULTIPLIER = 2;
+
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-async function deductCredits(supabase: any, userId: string, model: string): Promise<{ balance: number; cost: number }> {
-  const cost = getCreditCost(model);
+async function deductCredits(supabase: any, userId: string, model: string, usedEnvKey: boolean): Promise<{ balance: number; cost: number }> {
+  const baseCost = getCreditCost(model);
+  // Apply 2x multiplier when using MoA's server-level API keys
+  const cost = usedEnvKey ? baseCost * ENV_KEY_MULTIPLIER : baseCost;
   if (cost === 0) return { balance: -1, cost: 0 };
 
   // Get or initialize credits
@@ -176,9 +183,10 @@ async function deductCredits(supabase: any, userId: string, model: string): Prom
     .update({ balance: newBalance, monthly_used: newUsed, updated_at: new Date().toISOString() })
     .eq("user_id", userId);
 
+  const keyLabel = usedEnvKey ? " (MoA 키 2x)" : "";
   await supabase.from("moa_credit_transactions").insert({
     user_id: userId, amount: -cost, balance_after: newBalance,
-    tx_type: "usage", description: `채팅 - ${model}`, model_used: model,
+    tx_type: "usage", description: `채팅 - ${model}${keyLabel}`, model_used: model,
   });
 
   return { balance: newBalance, cost };
@@ -191,6 +199,7 @@ async function deductCredits(supabase: any, userId: string, model: string): Prom
 interface AIResponse {
   text: string;
   model: string;
+  usedEnvKey: boolean;
 }
 
 /** Category-specific system prompt prefixes for LLM routing */
@@ -250,60 +259,89 @@ async function generateResponse(message: string, userId: string, category: strin
     }
   } catch { /* LLM call failed — fall through to smart response */ }
 
-  // Fallback: always-available smart contextual response
+  // Fallback: always-available smart contextual response (no API key used)
   const modelUsed = selectModelName(strategy, activeKeys);
   const text = generateSmartResponse(message, category, modelUsed, "");
-  return { text, model: modelUsed };
+  return { text, model: modelUsed, usedEnvKey: false };
 }
 
-/** Attempt real LLM API call using user's keys */
+/**
+ * Attempt real LLM API call.
+ * Priority: user's own keys (1x credit) > MoA server keys (2x credit).
+ * Returns usedEnvKey=true when MoA's server-level API key was used.
+ */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 async function tryLlmCall(message: string, category: string, strategy: string, keys: any[]): Promise<AIResponse | null> {
   const systemPrompt = CATEGORY_SYSTEM_PROMPTS[category] ?? CATEGORY_SYSTEM_PROMPTS.other;
   const skills = CATEGORY_SKILLS[category] ?? CATEGORY_SKILLS.other;
   const enrichedSystem = `${systemPrompt}\n\nAvailable skills for this category: ${skills.join(", ")}`;
 
-  // Check env-level keys first (MoA-provided credits)
+  // Server-level env keys (MoA-provided → 2x credit)
   const envAnthropicKey = process.env.ANTHROPIC_API_KEY;
   const envOpenaiKey = process.env.OPENAI_API_KEY;
   const envGeminiKey = process.env.GEMINI_API_KEY;
+  const envGroqKey = process.env.GROQ_API_KEY;
+  const envDeepseekKey = process.env.DEEPSEEK_API_KEY;
 
-  // User-provided keys
+  // User-provided keys (stored in DB → 1x credit)
   const userAnthropicKey = keys.find((k: { provider: string }) => k.provider === "anthropic")?.encrypted_key;
   const userOpenaiKey = keys.find((k: { provider: string }) => k.provider === "openai")?.encrypted_key;
   const userGeminiKey = keys.find((k: { provider: string }) => k.provider === "gemini")?.encrypted_key;
   const userGroqKey = keys.find((k: { provider: string }) => k.provider === "groq")?.encrypted_key;
   const userDeepseekKey = keys.find((k: { provider: string }) => k.provider === "deepseek")?.encrypted_key;
 
+  // Helper: pick user key first (1x), fallback to env key (2x)
+  const pickKey = (userKey?: string, envKey?: string): { key: string; isEnv: boolean } | null => {
+    if (userKey) return { key: userKey, isEnv: false };
+    if (envKey) return { key: envKey, isEnv: true };
+    return null;
+  };
+
   // Max-performance: use the best model available
   if (strategy === "max-performance") {
-    const anthropicKey = userAnthropicKey ?? envAnthropicKey;
-    if (anthropicKey) {
-      const result = await callAnthropic(anthropicKey, enrichedSystem, message, "claude-opus-4-6");
-      if (result) return { text: result, model: "anthropic/claude-opus-4-6" };
+    const anthropicInfo = pickKey(userAnthropicKey, envAnthropicKey);
+    if (anthropicInfo) {
+      const result = await callAnthropic(anthropicInfo.key, enrichedSystem, message, "claude-opus-4-6");
+      if (result) return { text: result, model: "anthropic/claude-opus-4-6", usedEnvKey: anthropicInfo.isEnv };
     }
-    const openaiKey = userOpenaiKey ?? envOpenaiKey;
-    if (openaiKey) {
-      const result = await callOpenAI(openaiKey, enrichedSystem, message, "gpt-5");
-      if (result) return { text: result, model: "openai/gpt-5" };
+    const openaiInfo = pickKey(userOpenaiKey, envOpenaiKey);
+    if (openaiInfo) {
+      const result = await callOpenAI(openaiInfo.key, enrichedSystem, message, "gpt-5");
+      if (result) return { text: result, model: "openai/gpt-5", usedEnvKey: openaiInfo.isEnv };
     }
   }
 
   // Cost-efficient: try cheaper models first
-  if (userGroqKey) {
-    const result = await callGroq(userGroqKey, enrichedSystem, message);
-    if (result) return { text: result, model: "groq/kimi-k2-0905" };
+  const groqInfo = pickKey(userGroqKey, envGroqKey);
+  if (groqInfo) {
+    const result = await callGroq(groqInfo.key, enrichedSystem, message);
+    if (result) return { text: result, model: "groq/kimi-k2-0905", usedEnvKey: groqInfo.isEnv };
   }
 
-  const geminiKey = userGeminiKey ?? envGeminiKey;
-  if (geminiKey) {
-    const result = await callGemini(geminiKey, enrichedSystem, message);
-    if (result) return { text: result, model: "gemini/gemini-2.5-flash" };
+  const geminiInfo = pickKey(userGeminiKey, envGeminiKey);
+  if (geminiInfo) {
+    const result = await callGemini(geminiInfo.key, enrichedSystem, message);
+    if (result) return { text: result, model: "gemini/gemini-2.5-flash", usedEnvKey: geminiInfo.isEnv };
   }
 
-  if (userDeepseekKey) {
-    const result = await callDeepSeek(userDeepseekKey, enrichedSystem, message);
-    if (result) return { text: result, model: "deepseek/deepseek-chat" };
+  const deepseekInfo = pickKey(userDeepseekKey, envDeepseekKey);
+  if (deepseekInfo) {
+    const result = await callDeepSeek(deepseekInfo.key, enrichedSystem, message);
+    if (result) return { text: result, model: "deepseek/deepseek-chat", usedEnvKey: deepseekInfo.isEnv };
+  }
+
+  // Fallback: try remaining env keys for OpenAI/Anthropic in cost-efficient mode
+  if (strategy !== "max-performance") {
+    const openaiInfo = pickKey(userOpenaiKey, envOpenaiKey);
+    if (openaiInfo) {
+      const result = await callOpenAI(openaiInfo.key, enrichedSystem, message, "gpt-4o-mini");
+      if (result) return { text: result, model: "openai/gpt-4o-mini", usedEnvKey: openaiInfo.isEnv };
+    }
+    const anthropicInfo = pickKey(userAnthropicKey, envAnthropicKey);
+    if (anthropicInfo) {
+      const result = await callAnthropic(anthropicInfo.key, enrichedSystem, message, "claude-haiku-4-5");
+      if (result) return { text: result, model: "anthropic/claude-haiku-4-5", usedEnvKey: anthropicInfo.isEnv };
+    }
   }
 
   return null;

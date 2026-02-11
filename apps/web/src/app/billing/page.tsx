@@ -99,17 +99,22 @@ const CREDIT_PACKS = [
   { id: "pack_15000", credits: 15000, price: 90000, priceLabel: "90,000원", perCredit: "6원", badge: "최고 할인" },
 ];
 
-const MODEL_COSTS: Record<string, { name: string; cost: number; provider: string }> = {
-  "local/slm-default": { name: "무료 SLM", cost: 0, provider: "MoA" },
-  "groq/kimi-k2-0905": { name: "Kimi K2 (Groq)", cost: 1, provider: "Groq" },
-  "gemini/gemini-2.5-flash": { name: "Gemini 2.5 Flash", cost: 2, provider: "Google" },
-  "deepseek/deepseek-chat": { name: "DeepSeek Chat", cost: 3, provider: "DeepSeek" },
-  "openai/gpt-4o-mini": { name: "GPT-4o Mini", cost: 3, provider: "OpenAI" },
-  "openai/gpt-4o": { name: "GPT-4o", cost: 5, provider: "OpenAI" },
-  "anthropic/claude-haiku-4-5": { name: "Claude Haiku 4.5", cost: 4, provider: "Anthropic" },
-  "anthropic/claude-sonnet-4-5": { name: "Claude Sonnet 4.5", cost: 8, provider: "Anthropic" },
-  "openai/gpt-5": { name: "GPT-5", cost: 10, provider: "OpenAI" },
-  "anthropic/claude-opus-4-6": { name: "Claude Opus 4.6", cost: 15, provider: "Anthropic" },
+/**
+ * Model cost table:
+ * - ownKeyCost: credit cost when user uses their own API key (1x)
+ * - moaKeyCost: credit cost when using MoA's server key (2x)
+ */
+const MODEL_COSTS: Record<string, { name: string; ownKeyCost: number; moaKeyCost: number; provider: string }> = {
+  "local/slm-default": { name: "무료 SLM", ownKeyCost: 0, moaKeyCost: 0, provider: "MoA" },
+  "groq/kimi-k2-0905": { name: "Kimi K2 (Groq)", ownKeyCost: 1, moaKeyCost: 2, provider: "Groq" },
+  "gemini/gemini-2.5-flash": { name: "Gemini 2.5 Flash", ownKeyCost: 2, moaKeyCost: 4, provider: "Google" },
+  "deepseek/deepseek-chat": { name: "DeepSeek Chat", ownKeyCost: 3, moaKeyCost: 6, provider: "DeepSeek" },
+  "openai/gpt-4o-mini": { name: "GPT-4o Mini", ownKeyCost: 3, moaKeyCost: 6, provider: "OpenAI" },
+  "openai/gpt-4o": { name: "GPT-4o", ownKeyCost: 5, moaKeyCost: 10, provider: "OpenAI" },
+  "anthropic/claude-haiku-4-5": { name: "Claude Haiku 4.5", ownKeyCost: 4, moaKeyCost: 8, provider: "Anthropic" },
+  "anthropic/claude-sonnet-4-5": { name: "Claude Sonnet 4.5", ownKeyCost: 8, moaKeyCost: 16, provider: "Anthropic" },
+  "openai/gpt-5": { name: "GPT-5", ownKeyCost: 10, moaKeyCost: 20, provider: "OpenAI" },
+  "anthropic/claude-opus-4-6": { name: "Claude Opus 4.6", ownKeyCost: 15, moaKeyCost: 30, provider: "Anthropic" },
 };
 
 export default function BillingPage() {
@@ -497,14 +502,18 @@ export default function BillingPage() {
               </div>
 
               {/* Model Cost Table */}
-              <h3 style={{ fontSize: "1.2rem", marginBottom: "16px" }}>모델별 크레딧 비용</h3>
-              <div className="card" style={{ marginBottom: "48px", overflowX: "auto" }}>
+              <h3 style={{ fontSize: "1.2rem", marginBottom: "8px" }}>모델별 크레딧 비용</h3>
+              <p style={{ color: "var(--text-muted)", fontSize: "0.85rem", marginBottom: "16px" }}>
+                자체 API 키를 등록하면 1x 요금, MoA 키를 사용하면 2x 요금이 적용됩니다.
+              </p>
+              <div className="card" style={{ marginBottom: "24px", overflowX: "auto" }}>
                 <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.85rem" }}>
                   <thead>
                     <tr style={{ borderBottom: "1px solid var(--border)" }}>
                       <th style={{ textAlign: "left", padding: "8px 12px", color: "var(--text-muted)" }}>모델</th>
                       <th style={{ textAlign: "left", padding: "8px 12px", color: "var(--text-muted)" }}>제공사</th>
-                      <th style={{ textAlign: "right", padding: "8px 12px", color: "var(--text-muted)" }}>크레딧/요청</th>
+                      <th style={{ textAlign: "right", padding: "8px 12px", color: "var(--text-muted)" }}>자체 키 (1x)</th>
+                      <th style={{ textAlign: "right", padding: "8px 12px", color: "var(--text-muted)" }}>MoA 키 (2x)</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -512,13 +521,36 @@ export default function BillingPage() {
                       <tr key={id} style={{ borderBottom: "1px solid var(--border)" }}>
                         <td style={{ padding: "8px 12px" }}>{info.name}</td>
                         <td style={{ padding: "8px 12px", color: "var(--text-muted)" }}>{info.provider}</td>
-                        <td style={{ padding: "8px 12px", textAlign: "right", fontWeight: 600, color: info.cost === 0 ? "var(--success)" : "inherit" }}>
-                          {info.cost === 0 ? "무료" : `${info.cost} 크레딧`}
+                        <td style={{ padding: "8px 12px", textAlign: "right", fontWeight: 600, color: info.ownKeyCost === 0 ? "var(--success)" : "inherit" }}>
+                          {info.ownKeyCost === 0 ? "무료" : `${info.ownKeyCost} 크레딧`}
+                        </td>
+                        <td style={{ padding: "8px 12px", textAlign: "right", fontWeight: 600, color: info.moaKeyCost === 0 ? "var(--success)" : "var(--text-muted)" }}>
+                          {info.moaKeyCost === 0 ? "무료" : `${info.moaKeyCost} 크레딧`}
                         </td>
                       </tr>
                     ))}
                   </tbody>
                 </table>
+              </div>
+
+              {/* API Key savings tip */}
+              <div className="card" style={{
+                marginBottom: "48px",
+                background: "rgba(72,187,120,0.08)",
+                border: "1px solid rgba(72,187,120,0.3)",
+              }}>
+                <h4 style={{ fontSize: "1rem", marginBottom: "8px" }}>
+                  {"💡"} 크레딧 절약 팁
+                </h4>
+                <p style={{ color: "var(--text-muted)", fontSize: "0.85rem", lineHeight: 1.6 }}>
+                  마이페이지에서 <strong>자체 API 키</strong>를 등록하면 크레딧이 <strong>절반</strong>만 차감됩니다.
+                  Groq, Gemini 등 무료 API 키를 발급받아 등록하면 더 많은 대화를 할 수 있어요!
+                </p>
+                <div style={{ marginTop: "12px" }}>
+                  <Link href="/mypage" style={{ color: "var(--primary)", fontSize: "0.85rem", fontWeight: 600 }}>
+                    마이페이지에서 API 키 등록하기 &rarr;
+                  </Link>
+                </div>
               </div>
             </>
           )}
