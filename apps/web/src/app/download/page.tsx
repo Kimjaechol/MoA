@@ -33,7 +33,7 @@ const DOWNLOADS: Record<Exclude<Platform, null>, PlatformDownload> = {
     desc: "Windows 10/11 (64-bit)",
     primaryAction: "MoA 데스크톱 앱 (준비 중)",
     primaryUrl: RELEASES_PAGE,
-    terminalCmd: `powershell -c "irm https://moa.lawith.kr/install.ps1 | iex"`,
+    terminalCmd: `powershell -c "irm https://mymoa.app/install.ps1 | iex"`,
     comingSoon: true,
     steps: [
       "데스크톱 앱은 현재 준비 중입니다",
@@ -47,7 +47,7 @@ const DOWNLOADS: Record<Exclude<Platform, null>, PlatformDownload> = {
     desc: "macOS 12+ (Apple Silicon / Intel)",
     primaryAction: "MoA 데스크톱 앱 (준비 중)",
     primaryUrl: RELEASES_PAGE,
-    terminalCmd: `curl -fsSL https://moa.lawith.kr/install.sh | bash`,
+    terminalCmd: `curl -fsSL https://mymoa.app/install.sh | bash`,
     comingSoon: true,
     steps: [
       "데스크톱 앱은 현재 준비 중입니다",
@@ -61,7 +61,7 @@ const DOWNLOADS: Record<Exclude<Platform, null>, PlatformDownload> = {
     desc: "Ubuntu 20.04+, Debian 11+, Fedora 35+",
     primaryAction: "MoA 데스크톱 앱 (준비 중)",
     primaryUrl: RELEASES_PAGE,
-    terminalCmd: `curl -fsSL https://moa.lawith.kr/install.sh | bash`,
+    terminalCmd: `curl -fsSL https://mymoa.app/install.sh | bash`,
     comingSoon: true,
     steps: [
       "데스크톱 앱은 현재 준비 중입니다",
@@ -74,7 +74,7 @@ const DOWNLOADS: Record<Exclude<Platform, null>, PlatformDownload> = {
     icon: "\uD83E\uDD16",
     desc: "Android 10+ (스마트폰, 태블릿)",
     primaryAction: "Google Play (준비 중)",
-    primaryUrl: "https://play.google.com/store/apps/details?id=com.lawith.moa",
+    primaryUrl: "https://play.google.com/store/apps/details?id=app.mymoa.android",
     comingSoon: true,
     steps: [
       "모바일 앱은 현재 준비 중입니다",

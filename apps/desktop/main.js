@@ -10,7 +10,7 @@
  *   → 사용자 확인 → 자동 재시작 및 적용
  *
  * Architecture:
- *   Renderer (BrowserWindow) loads moa.lawith.kr
+ *   Renderer (BrowserWindow) loads mymoa.app
  *   + preload.js exposes local APIs (file access, system info)
  *   + electron-updater handles Cloudflare R2 auto-update
  *   + System tray for background persistence
@@ -33,7 +33,7 @@ const os = require("os");
 const { autoUpdater } = require("electron-updater");
 
 // App constants
-const MOA_URL = "https://moa.lawith.kr";
+const MOA_URL = "https://mymoa.app";
 const APP_NAME = "MoA";
 const IS_DEV = process.argv.includes("--dev");
 
@@ -162,7 +162,7 @@ function createWindow() {
 
   // Handle external links in system browser
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
-    if (url.startsWith("http") && !url.includes("moa.lawith.kr")) {
+    if (url.startsWith("http") && !url.includes("mymoa.app")) {
       shell.openExternal(url);
       return { action: "deny" };
     }

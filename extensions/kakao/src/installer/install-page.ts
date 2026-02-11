@@ -558,7 +558,7 @@ function generateWelcomePage(): string {
     </div>
 
     <div class="footer">
-      <a href="https://moa.lawith.kr">moa.lawith.kr</a> &middot; Master of AI
+      <a href="https://mymoa.app">mymoa.app</a> &middot; Master of AI
     </div>
   </div>
 
@@ -1219,7 +1219,7 @@ function generateBackupPage(): string {
     </div>
 
     <div class="footer">
-      <a href="https://moa.lawith.kr">moa.lawith.kr</a> &middot; Master of AI
+      <a href="https://mymoa.app">mymoa.app</a> &middot; Master of AI
     </div>
   </div>
 

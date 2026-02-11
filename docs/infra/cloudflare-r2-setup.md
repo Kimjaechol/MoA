@@ -7,7 +7,7 @@ GitHub Releases 대신 R2를 사용하여, 저장소가 private이어도 사용�
 
 - **다운로드 대역폭 무료** (이그레스 비용 0원)
 - 저장 비용: $0.015/GB/월 (설치 파일 3개 ~1GB = 약 $0.015/월)
-- 커스텀 도메인 연결 가능 (`download.moa.lawith.kr`)
+- 커스텀 도메인 연결 가능 (`download.mymoa.app`)
 
 ## 1단계: Cloudflare R2 버킷 생성
 
@@ -24,12 +24,12 @@ R2 버킷에 커스텀 도메인을 연결하여 공개 다운로드가 가능�
 
 1. 생성된 `moa-releases` 버킷 → **Settings** 탭
 2. **Public access** 섹션 → **Custom Domains** → **Connect Domain**
-3. 도메인 입력: `download.moa.lawith.kr`
+3. 도메인 입력: `download.mymoa.app`
 4. **Connect domain** 클릭
 5. Cloudflare DNS에 CNAME 레코드가 자동 생성됩니다
 
 > 도메인이 이미 Cloudflare DNS에 등록되어 있어야 합니다.
-> `lawith.kr` 도메인의 DNS가 Cloudflare를 사용하고 있다면 자동으로 연결됩니다.
+> `mymoa.app` 도메인의 DNS가 Cloudflare를 사용하고 있다면 자동으로 연결됩니다.
 
 ## 3단계: R2 API 토큰 생성
 
@@ -108,18 +108,18 @@ moa-releases/
 
 | 플랫폼 | URL |
 |---|---|
-| Windows | `https://download.moa.lawith.kr/desktop/MoA-Setup-latest.exe` |
-| macOS | `https://download.moa.lawith.kr/desktop/MoA-latest-mac.dmg` |
-| Linux | `https://download.moa.lawith.kr/desktop/MoA-latest-linux.AppImage` |
+| Windows | `https://download.mymoa.app/desktop/MoA-Setup-latest.exe` |
+| macOS | `https://download.mymoa.app/desktop/MoA-latest-mac.dmg` |
+| Linux | `https://download.mymoa.app/desktop/MoA-latest-linux.AppImage` |
 
 ## 원클릭 설치 명령어 (변경 없음)
 
 ```bash
 # macOS / Linux
-curl -fsSL https://moa.lawith.kr/install.sh | bash
+curl -fsSL https://mymoa.app/install.sh | bash
 
 # Windows
-powershell -c "irm https://moa.lawith.kr/install.ps1 | iex"
+powershell -c "irm https://mymoa.app/install.ps1 | iex"
 ```
 
 설치 스크립트 내부의 다운로드 URL이 R2를 가리키도록 이미 변경되었습니다.

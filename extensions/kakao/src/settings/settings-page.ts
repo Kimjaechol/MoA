@@ -647,7 +647,7 @@ function generateSettingsPage(): string {
           <div class="step-num">4</div>
           <div class="step-content">
             <h4>웹훅 URL 설정</h4>
-            <p>Webhook URL: <code>https://moa.lawith.kr/whatsapp/webhook</code></p>
+            <p>Webhook URL: <code>https://mymoa.app/whatsapp/webhook</code></p>
           </div>
         </div>
       </div>

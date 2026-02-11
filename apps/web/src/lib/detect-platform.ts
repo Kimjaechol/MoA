@@ -13,7 +13,7 @@ export function detectPlatform(ua: string): Platform {
 /** GitHub releases page (not direct download - release must exist first) */
 const RELEASES_PAGE = "https://github.com/Kimjaechol/MoA/releases";
 /** MoA website base URL */
-const SITE_BASE = "https://moa.lawith.kr";
+const SITE_BASE = "https://mymoa.app";
 
 export const PLATFORM_INFO: Record<
   Exclude<Platform, null>,
@@ -54,7 +54,7 @@ export const PLATFORM_INFO: Record<
   android: {
     name: "Android",
     icon: "/icons/android.svg",
-    storeUrl: "https://play.google.com/store/apps/details?id=com.lawith.moa",
+    storeUrl: "https://play.google.com/store/apps/details?id=app.mymoa.android",
     desc: "Android 10+",
     comingSoon: true,
   },

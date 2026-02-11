@@ -147,7 +147,7 @@ const WEBHOOK_PATH = process.env.KAKAO_WEBHOOK_PATH ?? "/kakao/webhook";
 /**
  * MoA install page URL — always use the public-facing domain.
  *
- * Vercel (moa.lawith.kr) proxies /install to Railway via rewrites,
+ * Vercel (mymoa.app) proxies /install to Railway via rewrites,
  * so users always see a single consistent domain regardless of whether
  * they come from KakaoTalk, the website, or a direct link.
  *
@@ -155,7 +155,7 @@ const WEBHOOK_PATH = process.env.KAKAO_WEBHOOK_PATH ?? "/kakao/webhook";
  * it is no longer used to avoid stale/wrong URLs.
  */
 function getInstallUrl(): string {
-  return "https://moa.lawith.kr/install";
+  return "https://mymoa.app/install";
 }
 
 // ============================================
@@ -512,7 +512,7 @@ ${skillsPrompt}
 
 ## 설치 안내 시
 사용자가 설치에 관심을 보이면: "설치"라고 입력해주세요! 간편 설치 안내를 바로 보내드립니다.
-설치 후 https://moa.lawith.kr/welcome 페이지에서 회원가입/로그인으로 기기를 등록할 수 있습니다.
+설치 후 https://mymoa.app/welcome 페이지에서 회원가입/로그인으로 기기를 등록할 수 있습니다.
 카카오톡에서 "사용자 인증" 버튼을 누르면 아이디+비밀번호로 로그인합니다.
 로그인 후 구문번호 설정을 권장합니다 — 기기 제어 등 중요한 작업 시 구문번호로 본인 재확인합니다.
 (제3자가 채팅창에서 기기 제어를 요청하는 위험을 방지합니다)
@@ -953,7 +953,7 @@ async function aiOnMessage(params: {
     if (utterance.match(/^[!!/](?:백업|backup)$/i)) {
       return {
         text: `MoA 백업 안내\n\n아래 페이지에서 백업을 설정하세요.\n\n[백업 흐름]\n1. 로그인 (MoA 계정)\n2. 백업 비밀번호 설정 (백업 전용 별도 비밀번호)\n3. 12단어 복구키 발급 → 종이에 적어두세요\n4. AI 기억이 암호화되어 서버에 보관됩니다\n\n백업 비밀번호 분실 시 복구키(12단어)로 재설정 가능`,
-        buttons: [{ label: "백업 설정하기", url: "https://moa.lawith.kr/backup" }],
+        buttons: [{ label: "백업 설정하기", url: "https://mymoa.app/backup" }],
         quickReplies: ["!복원", "!백업 목록", "도움말"],
       };
     }
@@ -995,7 +995,7 @@ async function aiOnMessage(params: {
     if (utterance.match(/^[!!/](?:복원|restore)$/i)) {
       return {
         text: `MoA 복원 안내\n\n아래 페이지의 "복원" 탭에서 백업을 복원하세요.\n\n필요한 것:\n1. MoA 계정 (아이디 + 비밀번호)\n2. 백업 비밀번호 (백업 시 설정한 비밀번호)\n\n백업 비밀번호를 잊으셨다면 복구키(12단어)로 재설정할 수 있습니다.`,
-        buttons: [{ label: "복원 페이지", url: "https://moa.lawith.kr/backup" }],
+        buttons: [{ label: "복원 페이지", url: "https://mymoa.app/backup" }],
         quickReplies: ["!백업", "!백업 목록", "도움말"],
       };
     }
@@ -1005,7 +1005,7 @@ async function aiOnMessage(params: {
     if (restoreBackupMatch) {
       return {
         text: `백업 복원은 아래 페이지의 "복원" 탭에서 진행해주세요.\n백업 비밀번호가 필요합니다.`,
-        buttons: [{ label: "복원 페이지", url: "https://moa.lawith.kr/backup" }],
+        buttons: [{ label: "복원 페이지", url: "https://mymoa.app/backup" }],
         quickReplies: ["!백업 목록", "도움말"],
       };
     }
@@ -1014,7 +1014,7 @@ async function aiOnMessage(params: {
     if (utterance.match(/^[!!/](?:복구키|복구 키|recovery\s*key)$/i)) {
       return {
         text: `복구키는 첫 백업 시 자동으로 발급됩니다.\n\n복구키(12단어)는 백업 비밀번호를 잊었을 때\n비밀번호를 재설정하기 위한 수단입니다.\n\n복구키로 비밀번호 재설정이 필요하면\n아래 페이지에서 진행하세요.`,
-        buttons: [{ label: "백업 & 복원 페이지", url: "https://moa.lawith.kr/backup" }],
+        buttons: [{ label: "백업 & 복원 페이지", url: "https://mymoa.app/backup" }],
         quickReplies: ["!백업", "!복원", "도움말"],
       };
     }
@@ -1187,10 +1187,10 @@ async function aiOnMessage(params: {
 3. 로그인하면 기기가 자동으로 등록됩니다!
 
 이미 MoA를 설치하셨다면 아래 페이지에서 로그인해주세요:
-https://moa.lawith.kr/welcome`,
+https://mymoa.app/welcome`,
       buttons: [
         { label: "MoA 설치하기", url: getInstallUrl() },
-        { label: "기기 등록 (로그인)", url: "https://moa.lawith.kr/welcome" },
+        { label: "기기 등록 (로그인)", url: "https://mymoa.app/welcome" },
       ],
       quickReplies: ["설치", "도움말"],
     };
@@ -1554,7 +1554,7 @@ async function main() {
       const publicDomain = process.env.RAILWAY_PUBLIC_DOMAIN;
       const publicUrl = publicDomain
         ? `https://${publicDomain}/telegram/webhook`
-        : "https://moa.lawith.kr/telegram/webhook";
+        : "https://mymoa.app/telegram/webhook";
       console.log(`[MoA] Telegram webhook: ${localBase}/telegram/webhook`);
       await registerTelegramWebhook(publicUrl);
     }

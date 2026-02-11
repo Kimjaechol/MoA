@@ -41,12 +41,12 @@ const nextConfig: NextConfig = {
 
   async rewrites() {
     return [
-      // Install HTML page: moa.lawith.kr/install → Railway /install
+      // Install HTML page: mymoa.app/install → Railway /install
       {
         source: "/install",
         destination: `${RAILWAY_BACKEND}/install`,
       },
-      // Install scripts: moa.lawith.kr/install.sh → Railway /install.sh
+      // Install scripts: mymoa.app/install.sh → Railway /install.sh
       {
         source: "/install.sh",
         destination: `${RAILWAY_BACKEND}/install.sh`,
@@ -64,12 +64,12 @@ const nextConfig: NextConfig = {
         source: "/install.command",
         destination: `${RAILWAY_BACKEND}/install.command`,
       },
-      // Relay API: moa.lawith.kr/api/relay/* → Railway /api/relay/*
+      // Relay API: mymoa.app/api/relay/* → Railway /api/relay/*
       {
         source: "/api/relay/:path*",
         destination: `${RAILWAY_BACKEND}/api/relay/:path*`,
       },
-      // Kakao webhook: moa.lawith.kr/kakao/webhook → Railway /kakao/webhook
+      // Kakao webhook: mymoa.app/kakao/webhook → Railway /kakao/webhook
       {
         source: "/kakao/webhook",
         destination: `${RAILWAY_BACKEND}/kakao/webhook`,

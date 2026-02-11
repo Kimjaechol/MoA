@@ -22,11 +22,11 @@ export interface InstallerConfig {
 /**
  * Public-facing base URL.
  *
- * Always use moa.lawith.kr — Vercel proxies /install*, /install.sh,
+ * Always use mymoa.app — Vercel proxies /install*, /install.sh,
  * /install.ps1, /api/* to the Railway backend via rewrites.
  * This keeps a single consistent domain for all user touchpoints.
  */
-const MOA_PUBLIC_URL = "https://moa.lawith.kr";
+const MOA_PUBLIC_URL = "https://mymoa.app";
 
 export const DEFAULT_INSTALLER_CONFIG: InstallerConfig = {
   serverUrl: MOA_PUBLIC_URL,
@@ -87,7 +87,7 @@ function buildPlatformInstallers(): PlatformInstaller[] {
       platform: "android",
       displayName: "Android",
       icon: "🤖",
-      appStoreUrl: "https://play.google.com/store/apps/details?id=com.lawith.moa",
+      appStoreUrl: "https://play.google.com/store/apps/details?id=app.mymoa.android",
       description: "Android 10+ (출시 예정)",
     },
     {

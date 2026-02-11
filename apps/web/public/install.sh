@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
 # MoA One-Click Installer for macOS / Linux
-# Usage: curl -fsSL https://moa.lawith.kr/install.sh | bash
+# Usage: curl -fsSL https://mymoa.app/install.sh | bash
 
 set -euo pipefail
 
 APP_NAME="MoA"
-RELEASES_URL="https://download.moa.lawith.kr/desktop"
+RELEASES_URL="https://download.mymoa.app/desktop"
 
 echo ""
 echo "  ============================================"
@@ -30,7 +30,7 @@ case "$OS" in
     ;;
   *)
     echo "  [!] Unsupported OS: $OS"
-    echo "  For Windows, use: powershell -c \"irm https://moa.lawith.kr/install.ps1 | iex\""
+    echo "  For Windows, use: powershell -c \"irm https://mymoa.app/install.ps1 | iex\""
     exit 1
     ;;
 esac

@@ -8,7 +8,7 @@
  * 1. Create app at https://developers.facebook.com
  * 2. Add WhatsApp product → configure webhook
  * 3. Set env vars: WHATSAPP_TOKEN, WHATSAPP_PHONE_NUMBER_ID, WHATSAPP_VERIFY_TOKEN
- * 4. Webhook URL: https://moa.lawith.kr/whatsapp/webhook
+ * 4. Webhook URL: https://mymoa.app/whatsapp/webhook
  *
  * Environment:
  * - WHATSAPP_TOKEN — Permanent access token from Meta Business

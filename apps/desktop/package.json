@@ -3,7 +3,7 @@
   "version": "1.0.0",
   "description": "MoA (Master of AI) Desktop App - Windows/macOS/Linux",
   "main": "main.js",
-  "author": "MoA Team <contact@lawith.kr>",
+  "author": "MoA Team <contact@mymoa.app>",
   "license": "MIT",
   "scripts": {
     "start": "electron .",
@@ -14,13 +14,13 @@
     "build:all": "electron-builder --win --mac --linux"
   },
   "build": {
-    "appId": "kr.lawith.moa",
+    "appId": "app.mymoa.desktop",
     "productName": "MoA",
     "copyright": "Copyright © 2026 MoA Team",
     "publish": [
       {
         "provider": "generic",
-        "url": "https://download.moa.lawith.kr/desktop"
+        "url": "https://download.mymoa.app/desktop"
       }
     ],
     "directories": {

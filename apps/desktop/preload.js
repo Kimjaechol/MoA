@@ -2,7 +2,7 @@
  * MoA Desktop Preload Script
  *
  * contextBridge로 안전하게 window.moaDesktop API를 노출.
- * 웹앱(moa.lawith.kr)이 이 API로 로컬 파일 접근, 시스템 정보,
+ * 웹앱(mymoa.app)이 이 API로 로컬 파일 접근, 시스템 정보,
  * 업데이트 확인 등을 수행할 수 있다.
  */
 

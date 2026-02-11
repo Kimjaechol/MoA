@@ -8,7 +8,7 @@
  * 1. Create bot via @BotFather on Telegram
  * 2. Set TELEGRAM_BOT_TOKEN env var
  * 3. Register webhook: POST https://api.telegram.org/bot<TOKEN>/setWebhook
- *    body: { "url": "https://moa.lawith.kr/telegram/webhook" }
+ *    body: { "url": "https://mymoa.app/telegram/webhook" }
  *
  * Environment:
  * - TELEGRAM_BOT_TOKEN — Bot token from @BotFather (required)
