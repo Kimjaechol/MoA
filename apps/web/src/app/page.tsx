@@ -1080,15 +1080,32 @@ export default function Home() {
               카카오톡 채널
             </a>
           </div>
-          <p
+          <div
             style={{
               color: "var(--text-muted)",
-              fontSize: "0.85rem",
+              fontSize: "0.8rem",
+              lineHeight: "1.8",
+              marginTop: "8px",
+              borderTop: "1px solid var(--border)",
+              paddingTop: "20px",
             }}
           >
-            &copy; {new Date().getFullYear()} MoA (Master of AI). All rights
-            reserved.
-          </p>
+            <p style={{ marginBottom: "4px" }}>
+              상호: 로콜 &nbsp;|&nbsp; 대표: 김재철 &nbsp;|&nbsp;
+              사업자등록번호: 685-21-02314
+            </p>
+            <p style={{ marginBottom: "4px" }}>
+              업종: 정보통신업 / 포털 및 기타 인터넷 정보 매개 서비스업
+            </p>
+            <p style={{ marginBottom: "4px" }}>
+              소재지: 서울특별시 강동구 동남로75길 19, 제지하2층 제1호
+              (명일동, 명일빌딩)
+            </p>
+            <p style={{ marginTop: "12px" }}>
+              &copy; {new Date().getFullYear()} MoA (Master of AI). All rights
+              reserved.
+            </p>
+          </div>
         </div>
       </footer>
 
