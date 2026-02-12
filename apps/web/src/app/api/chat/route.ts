@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { safeDecrypt } from "@/lib/crypto";
 
 /**
  * POST /api/chat
@@ -14,6 +15,12 @@ import { NextRequest, NextResponse } from "next/server";
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
+
+    // ── web_login action — delegate to /api/auth ──
+    if (body.action === "web_login") {
+      return handleWebLogin(body);
+    }
+
     const { user_id, session_id, content, channel = "web", category = "other", is_desktop = false } = body;
 
     if (!content || typeof content !== "string" || !content.trim()) {
@@ -328,14 +335,18 @@ async function tryLlmCall(message: string, category: string, strategy: string, k
   const envOpenaiKey = process.env.OPENAI_API_KEY;
   const envGeminiKey = process.env.GEMINI_API_KEY;
 
-  // User-provided keys (stored in DB → 1x credit)
-  const userAnthropicKey = keys.find((k: { provider: string }) => k.provider === "anthropic")?.encrypted_key;
-  const userOpenaiKey = keys.find((k: { provider: string }) => k.provider === "openai")?.encrypted_key;
-  const userGeminiKey = keys.find((k: { provider: string }) => k.provider === "gemini")?.encrypted_key;
-  const userMistralKey = keys.find((k: { provider: string }) => k.provider === "mistral")?.encrypted_key;
-  const userXaiKey = keys.find((k: { provider: string }) => k.provider === "xai")?.encrypted_key;
-  const userGroqKey = keys.find((k: { provider: string }) => k.provider === "groq")?.encrypted_key;
-  const userDeepseekKey = keys.find((k: { provider: string }) => k.provider === "deepseek")?.encrypted_key;
+  // User-provided keys (stored encrypted in DB → decrypt, 1x credit)
+  const decryptKey = (provider: string) => {
+    const raw = keys.find((k: { provider: string }) => k.provider === provider)?.encrypted_key;
+    return raw ? safeDecrypt(raw) : undefined;
+  };
+  const userAnthropicKey = decryptKey("anthropic");
+  const userOpenaiKey = decryptKey("openai");
+  const userGeminiKey = decryptKey("gemini");
+  const userMistralKey = decryptKey("mistral");
+  const userXaiKey = decryptKey("xai");
+  const userGroqKey = decryptKey("groq");
+  const userDeepseekKey = decryptKey("deepseek");
 
   const hasUserQualityKeys = !!(userAnthropicKey || userOpenaiKey || userGeminiKey || userMistralKey || userXaiKey);
 
@@ -651,6 +662,96 @@ function getCategoryLabel(category: string): string {
     coding: "코딩작업", image: "이미지작업", music: "음악작업", other: "기타",
   };
   return labels[category] ?? "기타";
+}
+
+/**
+ * Handle web_login action from WebChatPanel.
+ * Proxies to /api/auth login logic directly.
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+async function handleWebLogin(body: any): Promise<NextResponse> {
+  const { username, password } = body;
+
+  if (!username || !password) {
+    return NextResponse.json({ success: false, error: "아이디와 비밀번호를 입력해주세요." }, { status: 400 });
+  }
+
+  try {
+    const { getServiceSupabase } = await import("@/lib/supabase");
+    const { verifyPassword: verify, generateSessionToken: genToken } = await import("@/lib/crypto");
+    const supabase = getServiceSupabase();
+
+    // Find user
+    const { data: user } = await supabase
+      .from("moa_users")
+      .select("*")
+      .eq("username", username.toLowerCase())
+      .single();
+
+    if (!user) {
+      return NextResponse.json({ success: false, error: "아이디 또는 비밀번호가 올바르지 않습니다." });
+    }
+
+    // Check lockout
+    if (user.locked_until && new Date(user.locked_until) > new Date()) {
+      const remainMin = Math.ceil((new Date(user.locked_until).getTime() - Date.now()) / 60000);
+      return NextResponse.json({ success: false, error: `${remainMin}분 후 다시 시도해주세요.` });
+    }
+
+    // Verify password
+    if (!verify(password, user.password_hash)) {
+      // Increment failed attempts
+      const attempts = (user.failed_login_attempts || 0) + 1;
+      const update: Record<string, unknown> = { failed_login_attempts: attempts };
+      if (attempts >= 5) {
+        update.locked_until = new Date(Date.now() + 30 * 60 * 1000).toISOString();
+      }
+      await supabase.from("moa_users").update(update).eq("id", user.id);
+      return NextResponse.json({ success: false, error: "아이디 또는 비밀번호가 올바르지 않습니다." });
+    }
+
+    // Reset attempts & update last login
+    await supabase.from("moa_users").update({
+      failed_login_attempts: 0,
+      locked_until: null,
+      last_login_at: new Date().toISOString(),
+    }).eq("id", user.id);
+
+    // Generate session
+    const token = genToken();
+    const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
+    await supabase.from("moa_sessions").insert({
+      user_id: user.user_id,
+      token,
+      expires_at: expiresAt.toISOString(),
+    });
+
+    // Fetch devices
+    let devices: { deviceName: string; platform: string; status: string }[] = [];
+    try {
+      const { data: devData } = await supabase
+        .from("relay_devices")
+        .select("device_name, platform, is_online")
+        .eq("user_id", user.user_id);
+      devices = (devData ?? []).map((d: { device_name: string; platform: string; is_online: boolean }) => ({
+        deviceName: d.device_name,
+        platform: d.platform,
+        status: d.is_online ? "online" : "offline",
+      }));
+    } catch { /* relay_devices table may not exist */ }
+
+    return NextResponse.json({
+      success: true,
+      user_id: user.user_id,
+      username: user.username,
+      display_name: user.display_name,
+      token,
+      devices,
+    });
+  } catch (err) {
+    console.error("[chat/web_login] Error:", err);
+    return NextResponse.json({ success: false, error: "서버 오류가 발생했습니다." });
+  }
 }
 
 function getCategoryHelp(category: string, prefix: string): string {

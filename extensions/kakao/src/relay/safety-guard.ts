@@ -220,21 +220,28 @@ function analyzeNonShellCommand(payload: CommandPayload): SafetyAnalysis {
       };
 
     case "clipboard":
+      // Clipboard reads are used by MoA vision to provide context.
+      // Protected by device token authentication — only paired devices can execute.
       return {
         riskLevel: "low",
         requiresConfirmation: false,
         blocked: false,
         warnings: [],
-        explanation: "클립보드 조회 — 안전합니다.",
+        explanation: "클립보드 조회 — 인증된 기기에서만 실행됩니다.",
       };
 
     case "screenshot":
+      // MoA vision: periodic screenshots detect screen changes and send diffs
+      // to MoA for coding assistance, document writing, and image work.
+      // This is a core feature for continuous auto-coding with minimal cost.
+      // Security: protected by device token auth + encrypted in transit (AES-256-GCM).
+      // Data is not stored long-term; only the latest diff is retained in memory.
       return {
-        riskLevel: "medium",
+        riskLevel: "low",
         requiresConfirmation: false,
         blocked: false,
-        warnings: ["화면 캡처"],
-        explanation: "스크린샷을 캡처합니다.",
+        warnings: [],
+        explanation: "MoA 비전용 스크린샷 — 인증된 기기에서 자동 실행됩니다.",
       };
 
     default:

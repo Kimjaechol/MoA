@@ -18,6 +18,51 @@ import { getSupabase, isSupabaseConfigured } from "../supabase.js";
 const PAIRING_CODE_TTL_MINUTES = 10;
 const DEVICE_TOKEN_BYTES = 32;
 
+// Brute force protection: max attempts per code and per IP
+const MAX_PAIRING_ATTEMPTS_PER_CODE = 5;
+const MAX_PAIRING_ATTEMPTS_PER_IP = 10;
+const PAIRING_RATE_LIMIT_WINDOW_MS = 30 * 60 * 1000; // 30 minutes
+
+// In-memory rate limiting (cleared on restart; use Redis for multi-instance)
+const pairingAttempts = new Map<string, { count: number; firstAttempt: number }>();
+
+function checkRateLimit(key: string, maxAttempts: number): boolean {
+  const now = Date.now();
+  const entry = pairingAttempts.get(key);
+
+  if (!entry || now - entry.firstAttempt > PAIRING_RATE_LIMIT_WINDOW_MS) {
+    pairingAttempts.set(key, { count: 1, firstAttempt: now });
+    return true; // allowed
+  }
+
+  if (entry.count >= maxAttempts) {
+    return false; // blocked
+  }
+
+  entry.count++;
+  return true; // allowed
+}
+
+function recordFailedAttempt(key: string): void {
+  const now = Date.now();
+  const entry = pairingAttempts.get(key);
+  if (!entry || now - entry.firstAttempt > PAIRING_RATE_LIMIT_WINDOW_MS) {
+    pairingAttempts.set(key, { count: 1, firstAttempt: now });
+  } else {
+    entry.count++;
+  }
+}
+
+// Periodic cleanup of stale rate limit entries (every 5 min)
+setInterval(() => {
+  const now = Date.now();
+  for (const [key, entry] of pairingAttempts) {
+    if (now - entry.firstAttempt > PAIRING_RATE_LIMIT_WINDOW_MS) {
+      pairingAttempts.delete(key);
+    }
+  }
+}, 5 * 60 * 1000);
+
 /**
  * Generate a 6-digit pairing code for a user
  */
@@ -88,9 +133,30 @@ export async function generatePairingCode(
 export async function completePairing(
   code: string,
   device: DeviceRegistration,
+  clientIp?: string,
 ): Promise<PairingResult> {
   if (!isSupabaseConfigured()) {
     return { success: false, error: "Supabase가 설정되지 않았습니다." };
+  }
+
+  // Rate limit check: per-code
+  const codeKey = `code:${code}`;
+  if (!checkRateLimit(codeKey, MAX_PAIRING_ATTEMPTS_PER_CODE)) {
+    return {
+      success: false,
+      error: "페어링 코드 입력 횟수를 초과했습니다. 새 코드를 발급받아 주세요.",
+    };
+  }
+
+  // Rate limit check: per-IP (if available)
+  if (clientIp) {
+    const ipKey = `ip:${clientIp}`;
+    if (!checkRateLimit(ipKey, MAX_PAIRING_ATTEMPTS_PER_IP)) {
+      return {
+        success: false,
+        error: "너무 많은 페어링 시도가 감지되었습니다. 30분 후 다시 시도해주세요.",
+      };
+    }
   }
 
   const supabase = getSupabase();
@@ -105,6 +171,9 @@ export async function completePairing(
     .single();
 
   if (findError || !pairingCode) {
+    // Record failed attempt for rate limiting
+    recordFailedAttempt(codeKey);
+    if (clientIp) recordFailedAttempt(`ip:${clientIp}`);
     return { success: false, error: "유효하지 않거나 만료된 페어링 코드입니다." };
   }
 
@@ -336,20 +405,18 @@ function generateSixDigitCode(): string {
   return num.toString();
 }
 
-let warnedAboutDefaultHmacKey = false;
-
 function generateDeviceToken(): string {
   const token = randomBytes(DEVICE_TOKEN_BYTES).toString("hex");
-  const hmacKey = process.env.LAWCALL_ENCRYPTION_KEY ?? process.env.SUPABASE_SERVICE_KEY;
+  const hmacKey = process.env.LAWCALL_ENCRYPTION_KEY ?? process.env.MOA_ENCRYPTION_KEY ?? process.env.SUPABASE_SERVICE_KEY;
   if (!hmacKey) {
-    if (!warnedAboutDefaultHmacKey) {
-      console.warn(
-        "[relay] WARNING: No LAWCALL_ENCRYPTION_KEY or SUPABASE_SERVICE_KEY set for device token HMAC. Using insecure fallback — NOT safe for production!",
-      );
-      warnedAboutDefaultHmacKey = true;
-    }
+    throw new Error(
+      "[relay] FATAL: No HMAC key configured for device tokens. " +
+      "Set LAWCALL_ENCRYPTION_KEY, MOA_ENCRYPTION_KEY, or SUPABASE_SERVICE_KEY. " +
+      "Refusing to generate tokens with a hardcoded default.",
+    );
   }
-  const hmac = createHmac("sha256", hmacKey ?? "moa-relay-default-dev-only");
+  const hmac = createHmac("sha256", hmacKey);
   hmac.update(token);
-  return `moa_${token}_${hmac.digest("hex").slice(0, 8)}`;
+  // Use full 32-char HMAC digest (128 bits) instead of 8-char truncation
+  return `moa_${token}_${hmac.digest("hex").slice(0, 32)}`;
 }

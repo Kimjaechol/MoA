@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getServiceSupabase } from "@/lib/supabase";
+import { encryptAES256 } from "@/lib/crypto";
 import {
   sendAlimtalkWithLog,
   hasAlreadySent,
@@ -113,6 +114,15 @@ export async function POST(request: NextRequest) {
             ? `${trimmedKey.slice(0, 4)}...${trimmedKey.slice(-4)}`
             : "****";
 
+        // Encrypt the key with AES-256-GCM before storing
+        let encryptedKey: string;
+        try {
+          encryptedKey = encryptAES256(trimmedKey);
+        } catch (encErr) {
+          console.error("[mypage] Encryption failed:", encErr);
+          return NextResponse.json({ error: "API key encryption failed. Check MOA_ENCRYPTION_KEY." }, { status: 500 });
+        }
+
         // Upsert: insert or update if user+provider already exists
         const { error } = await supabase
           .from("moa_user_api_keys")
@@ -120,7 +130,7 @@ export async function POST(request: NextRequest) {
             {
               user_id,
               provider,
-              encrypted_key: trimmedKey, // TODO: encrypt with AES-256 in production
+              encrypted_key: encryptedKey,
               key_hint: keyHint,
               is_active: true,
               updated_at: new Date().toISOString(),
