@@ -159,7 +159,7 @@ export default function DownloadSection() {
                     cursor: "default",
                   }}
                 >
-                  {info.downloadUrl ? "데스크톱 앱" : info.storeUrl ? (selected === "ios" ? "App Store" : "Google Play") : ""} (준비 중)
+                  {info.downloadUrl ? "데스크톱 앱 다운로드" : info.storeUrl ? (selected === "ios" ? "App Store" : "Google Play") : ""} (준비 중)
                 </span>
                 <Link
                   href="/chat"

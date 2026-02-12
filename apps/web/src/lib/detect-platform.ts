@@ -33,7 +33,6 @@ export const PLATFORM_INFO: Record<
     installCmd: `powershell -c "irm ${SITE_BASE}/install.ps1 | iex"`,
     downloadUrl: RELEASES_PAGE,
     desc: "Windows 10/11 64-bit",
-    comingSoon: true,
   },
   macos: {
     name: "macOS",
@@ -41,7 +40,6 @@ export const PLATFORM_INFO: Record<
     installCmd: `curl -fsSL ${SITE_BASE}/install.sh | bash`,
     downloadUrl: RELEASES_PAGE,
     desc: "macOS 12+ (Apple Silicon / Intel)",
-    comingSoon: true,
   },
   linux: {
     name: "Linux",
@@ -49,7 +47,6 @@ export const PLATFORM_INFO: Record<
     installCmd: `curl -fsSL ${SITE_BASE}/install.sh | bash`,
     downloadUrl: RELEASES_PAGE,
     desc: "Ubuntu 20.04+, Debian 11+, Fedora 35+",
-    comingSoon: true,
   },
   android: {
     name: "Android",

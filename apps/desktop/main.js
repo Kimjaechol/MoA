@@ -216,7 +216,7 @@ function createTray() {
       },
     },
     {
-      label: "종합문서",
+      label: "문서작업",
       click: () => {
         if (mainWindow) {
           mainWindow.loadURL(`${MOA_URL}/synthesis`);
@@ -225,7 +225,7 @@ function createTray() {
       },
     },
     {
-      label: "자동코딩",
+      label: "코딩작업",
       click: () => {
         if (mainWindow) {
           mainWindow.loadURL(`${MOA_URL}/autocode`);
