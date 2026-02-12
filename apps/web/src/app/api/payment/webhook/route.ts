@@ -38,6 +38,10 @@ export async function POST(request: NextRequest) {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ imp_key: key, imp_secret: secret }),
     });
+    if (!tokenRes.ok) {
+      console.error("[payment/webhook] Token request failed:", tokenRes.status);
+      return NextResponse.json({ error: "Failed to get payment token" }, { status: 500 });
+    }
     const tokenData = await tokenRes.json();
     const token = tokenData.response?.access_token;
 
@@ -46,9 +50,13 @@ export async function POST(request: NextRequest) {
     }
 
     // Verify payment with PortOne
-    const payRes = await fetch(`https://api.iamport.kr/payments/${imp_uid}`, {
+    const payRes = await fetch(`https://api.iamport.kr/payments/${encodeURIComponent(imp_uid)}`, {
       headers: { Authorization: `Bearer ${token}` },
     });
+    if (!payRes.ok) {
+      console.error("[payment/webhook] Payment verification failed:", payRes.status);
+      return NextResponse.json({ error: "Failed to verify payment" }, { status: 500 });
+    }
     const payData = await payRes.json();
     const portonePayment = payData.response;
 

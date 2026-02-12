@@ -267,6 +267,10 @@ export async function POST(request: NextRequest) {
       case "change_password": {
         const { token, current_password, new_password } = body;
 
+        if (!token || !current_password) {
+          return NextResponse.json({ error: "토큰과 현재 비밀번호가 필요합니다." }, { status: 400 });
+        }
+
         const session = await validateSession(supabase, token);
         if (!session) {
           return NextResponse.json({ error: "로그인이 필요합니다." }, { status: 401 });
@@ -298,6 +302,10 @@ export async function POST(request: NextRequest) {
       // ── Change Passphrase ──────────────────────────────
       case "change_passphrase": {
         const { token, current_password, new_passphrase } = body;
+
+        if (!token || !current_password) {
+          return NextResponse.json({ error: "토큰과 현재 비밀번호가 필요합니다." }, { status: 400 });
+        }
 
         const session = await validateSession(supabase, token);
         if (!session) {

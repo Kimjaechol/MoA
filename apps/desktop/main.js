@@ -453,8 +453,26 @@ function setupIPC() {
     }
   });
 
-  // Execute shell command (with permission)
+  // Execute shell command (with permission + sanitization)
   ipcMain.handle("moa:executeCommand", async (_event, command) => {
+    if (typeof command !== "string" || !command.trim()) {
+      return { error: "유효한 명령이 필요합니다." };
+    }
+
+    // Block critical dangerous patterns
+    const blocked = [
+      /rm\s+(-[a-zA-Z]*[rf]){2,}\s+\/(?!\S)/i,
+      /mkfs\./i,
+      /dd\s+if=.*of=\/dev\//i,
+      /:(){ :\|:& };:/,
+      />\s*\/dev\/sd/i,
+      /chmod\s+-R\s+777\s+\//i,
+      /shutdown|poweroff|init\s+[06]/i,
+    ];
+    if (blocked.some((p) => p.test(command))) {
+      return { error: "이 명령은 보안상 실행할 수 없습니다." };
+    }
+
     const result = await dialog.showMessageBox(mainWindow, {
       type: "warning",
       buttons: ["실행", "취소"],
@@ -468,8 +486,11 @@ function setupIPC() {
     }
 
     return new Promise((resolve) => {
-      const { exec } = require("child_process");
-      exec(command, { timeout: 30000, maxBuffer: 5 * 1024 * 1024 }, (err, stdout, stderr) => {
+      const { execFile } = require("child_process");
+      // Use shell with explicit quoting via execFile for safer execution
+      const shellCmd = process.platform === "win32" ? "cmd.exe" : "/bin/sh";
+      const shellArgs = process.platform === "win32" ? ["/c", command] : ["-c", command];
+      execFile(shellCmd, shellArgs, { timeout: 30000, maxBuffer: 5 * 1024 * 1024 }, (err, stdout, stderr) => {
         if (err) {
           resolve({ error: err.message, stderr });
         } else {
@@ -485,19 +506,27 @@ function setupIPC() {
    ----------------------------------------------------------------- */
 
 function resolvePath(inputPath) {
+  if (typeof inputPath !== "string") return os.homedir();
   // Expand ~ to home directory
   if (inputPath.startsWith("~")) {
-    return path.join(os.homedir(), inputPath.slice(1));
+    return path.resolve(path.join(os.homedir(), inputPath.slice(1)));
   }
-  return path.resolve(inputPath);
+  const resolved = path.resolve(inputPath);
+  // Block null bytes (path injection)
+  if (resolved.includes("\0")) {
+    throw new Error("Invalid path: null byte detected");
+  }
+  return resolved;
 }
 
 function isSensitivePath(p) {
-  const lower = p.toLowerCase();
+  const lower = p.toLowerCase().replace(/\\/g, "/");
   const sensitive = [
-    "system32", "windows\\system", "/etc", "/usr",
-    "appdata\\roaming", ".ssh", ".gnupg",
-    "program files", "programdata",
+    "system32", "windows/system", "/etc/shadow", "/etc/passwd",
+    "appdata/roaming", ".ssh", ".gnupg", ".aws", ".env",
+    "program files", "programdata", "/usr/sbin",
+    "/root", "/var/log", "/proc", "/sys",
+    "application support/keychain",
   ];
   return sensitive.some((s) => lower.includes(s));
 }

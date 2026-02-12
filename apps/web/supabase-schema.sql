@@ -95,6 +95,7 @@ CREATE TABLE IF NOT EXISTS moa_community_posts (
 ALTER TABLE moa_community_posts ENABLE ROW LEVEL SECURITY;
 
 -- Public board: anon reads OK
+DROP POLICY IF EXISTS "Public read access" ON moa_community_posts;
 CREATE POLICY "Public read access" ON moa_community_posts
   FOR SELECT USING (true);
 
@@ -109,6 +110,7 @@ CREATE TABLE IF NOT EXISTS moa_community_likes (
 
 ALTER TABLE moa_community_likes ENABLE ROW LEVEL SECURITY;
 
+DROP POLICY IF EXISTS "Public read access" ON moa_community_likes;
 CREATE POLICY "Public read access" ON moa_community_likes
   FOR SELECT USING (true);
 
@@ -123,6 +125,7 @@ CREATE TABLE IF NOT EXISTS moa_community_comments (
 
 ALTER TABLE moa_community_comments ENABLE ROW LEVEL SECURITY;
 
+DROP POLICY IF EXISTS "Public read access" ON moa_community_comments;
 CREATE POLICY "Public read access" ON moa_community_comments
   FOR SELECT USING (true);
 
@@ -148,6 +151,7 @@ CREATE TABLE IF NOT EXISTS moa_usecase_posts (
 
 ALTER TABLE moa_usecase_posts ENABLE ROW LEVEL SECURITY;
 
+DROP POLICY IF EXISTS "Public read access" ON moa_usecase_posts;
 CREATE POLICY "Public read access" ON moa_usecase_posts
   FOR SELECT USING (true);
 
@@ -162,6 +166,7 @@ CREATE TABLE IF NOT EXISTS moa_usecase_likes (
 
 ALTER TABLE moa_usecase_likes ENABLE ROW LEVEL SECURITY;
 
+DROP POLICY IF EXISTS "Public read access" ON moa_usecase_likes;
 CREATE POLICY "Public read access" ON moa_usecase_likes
   FOR SELECT USING (true);
 
@@ -176,6 +181,7 @@ CREATE TABLE IF NOT EXISTS moa_usecase_comments (
 
 ALTER TABLE moa_usecase_comments ENABLE ROW LEVEL SECURITY;
 
+DROP POLICY IF EXISTS "Public read access" ON moa_usecase_comments;
 CREATE POLICY "Public read access" ON moa_usecase_comments
   FOR SELECT USING (true);
 

@@ -275,21 +275,21 @@ const USE_CASES = [
 ];
 
 const CHANNELS = [
-  { name: "KakaoTalk", emoji: "\uD83D\uDFE1", id: "kakaotalk", connectUrl: "https://pf.kakao.com/moa-ai" },
-  { name: "Telegram", emoji: "\u2708\uFE0F", id: "telegram", connectUrl: "https://t.me/MoA_AI_Bot" },
-  { name: "Discord", emoji: "\uD83C\uDFAE", id: "discord", connectUrl: "https://discord.com/oauth2/authorize?client_id=MOA_BOT_ID&permissions=274878023680&scope=bot" },
-  { name: "Slack", emoji: "\uD83D\uDCAC", id: "slack", connectUrl: "https://slack.com/oauth/v2/authorize?client_id=MOA_SLACK_ID" },
-  { name: "Signal", emoji: "\uD83D\uDD12", id: "signal", connectUrl: "https://signal.me/#eu/MoA_AI" },
-  { name: "iMessage", emoji: "\uD83D\uDCF1", id: "imessage", connectUrl: "imessage://moa@mymoa.app" },
-  { name: "LINE", emoji: "\uD83D\uDFE2", id: "line", connectUrl: "https://line.me/R/ti/p/@moa-ai" },
-  { name: "WhatsApp", emoji: "\uD83D\uDCDE", id: "whatsapp", connectUrl: "https://wa.me/MoA_NUMBER" },
-  { name: "Matrix", emoji: "\uD83D\uDD35", id: "matrix", connectUrl: "https://matrix.to/#/@moa-ai:matrix.org" },
-  { name: "MS Teams", emoji: "\uD83C\uDFE2", id: "msteams", connectUrl: "https://teams.microsoft.com/l/app/MOA_TEAMS_ID" },
-  { name: "Google Chat", emoji: "\uD83D\uDCAC", id: "googlechat", connectUrl: "https://chat.google.com" },
-  { name: "Mattermost", emoji: "\uD83D\uDD37", id: "mattermost", connectUrl: "#" },
-  { name: "Twitch", emoji: "\uD83D\uDFE3", id: "twitch", connectUrl: "#" },
-  { name: "Nostr", emoji: "\uD83E\uDD18", id: "nostr", connectUrl: "#" },
-  { name: "Zalo", emoji: "\uD83D\uDFE6", id: "zalo", connectUrl: "#" },
+  { name: "KakaoTalk", emoji: "\uD83D\uDFE1", id: "kakaotalk" },
+  { name: "Telegram", emoji: "\u2708\uFE0F", id: "telegram" },
+  { name: "Discord", emoji: "\uD83C\uDFAE", id: "discord" },
+  { name: "Slack", emoji: "\uD83D\uDCAC", id: "slack" },
+  { name: "Signal", emoji: "\uD83D\uDD12", id: "signal" },
+  { name: "iMessage", emoji: "\uD83D\uDCF1", id: "imessage" },
+  { name: "LINE", emoji: "\uD83D\uDFE2", id: "line" },
+  { name: "WhatsApp", emoji: "\uD83D\uDCDE", id: "whatsapp" },
+  { name: "Matrix", emoji: "\uD83D\uDD35", id: "matrix" },
+  { name: "MS Teams", emoji: "\uD83C\uDFE2", id: "msteams" },
+  { name: "Google Chat", emoji: "\uD83D\uDCAC", id: "googlechat" },
+  { name: "Mattermost", emoji: "\uD83D\uDD37", id: "mattermost" },
+  { name: "Twitch", emoji: "\uD83D\uDFE3", id: "twitch" },
+  { name: "Nostr", emoji: "\uD83E\uDD18", id: "nostr" },
+  { name: "Zalo", emoji: "\uD83D\uDFE6", id: "zalo" },
 ];
 
 const VOICE_MODES = [
@@ -401,7 +401,7 @@ export default function Home() {
               lineHeight: 1.2,
             }}
           >
-            {"클로드봇의 한계를 넘어, "}
+            {"클로드봇(OpenClaw)의 한계를 넘어, "}
             <span
               style={{
                 background: "var(--gradient)",
@@ -414,58 +414,53 @@ export default function Home() {
           </h1>
           <p
             style={{
-              fontSize: "clamp(1.02rem, 2vw, 1.22rem)",
+              fontSize: "clamp(1.05rem, 2vw, 1.25rem)",
               color: "var(--text-muted)",
               maxWidth: "760px",
-              margin: "0 auto 16px",
-              lineHeight: 1.85,
+              margin: "0 auto 28px",
+              lineHeight: 1.8,
             }}
           >
-            전 세계 15만명이 열광한 클로드봇(OpenClaw) &mdash;
-            그 막강한 AI 성능에도 불구하고, 설치가 너무 어렵고 보안이 취약해서
-            사용을 포기하셨나요?
+            전 세계 <strong>15만명</strong>이 열광한 클로드봇!
+            설치가 어렵고 보안이 취약해서 포기하셨나요?
           </p>
-          <p
+          <ul
             style={{
-              fontSize: "clamp(1rem, 2vw, 1.18rem)",
-              color: "var(--text)",
+              listStyle: "none",
+              padding: 0,
               maxWidth: "760px",
-              margin: "0 auto 16px",
-              lineHeight: 1.85,
-              fontWeight: 500,
+              margin: "0 auto 36px",
+              textAlign: "left",
+              display: "flex",
+              flexDirection: "column",
+              gap: "14px",
             }}
           >
-            <strong>MoA(Master of AI)</strong>는 클로드봇의 취약한 보안을 AES-256 암호화와
-            3중 인증으로 완전히 보강하고, 모든 기기의 MoA 에이전트가
-            성능과 장기기억을 실시간 동기화하는 &mdash; 차원이 다른 업그레이드입니다.
-          </p>
-          <p
-            style={{
-              fontSize: "clamp(0.97rem, 1.8vw, 1.13rem)",
-              color: "var(--text-muted)",
-              maxWidth: "760px",
-              margin: "0 auto 16px",
-              lineHeight: 1.85,
-            }}
-          >
-            Windows, Mac, 휴대폰에서 <strong>클릭 한 번으로 설치 완료</strong>.
-            바로 거의 모든 LLM을 사용해서 날씨, 여행계획, 길안내 등 일상업무부터
-            직장 문서작업, 자동 코딩까지 즉시 시작할 수 있습니다.
-          </p>
-          <p
-            style={{
-              fontSize: "clamp(0.97rem, 1.8vw, 1.13rem)",
-              color: "var(--text-muted)",
-              maxWidth: "760px",
-              margin: "0 auto 32px",
-              lineHeight: 1.85,
-            }}
-          >
-            기존 클로드봇에는 없었던 <strong>카카오톡 연동</strong> &mdash;
-            앱 설치 여부와 관계없이 카카오톡 메시지만으로 MoA와 대화하고,
-            글과 음성으로 업무를 지시할 수 있습니다.
-            한번 사용해보시고 그 무궁무진한 성능과 자유를 경험하세요.
-          </p>
+            <li style={{ fontSize: "clamp(0.98rem, 1.8vw, 1.13rem)", color: "var(--text)", lineHeight: 1.7 }}>
+              <span style={{ marginRight: "10px", fontSize: "1.15em" }}>&#x1F512;</span>
+              <strong>철통 보안</strong> &mdash; 클로드봇의 취약한 보안을 AES-256 암호화 + 3중 인증으로 철저하게 보강
+            </li>
+            <li style={{ fontSize: "clamp(0.98rem, 1.8vw, 1.13rem)", color: "var(--text)", lineHeight: 1.7 }}>
+              <span style={{ marginRight: "10px", fontSize: "1.15em" }}>&#x26A1;</span>
+              <strong>원클릭 설치</strong> &mdash; Windows, Mac, 휴대폰에서 클릭 한 번으로 설치 완료
+            </li>
+            <li style={{ fontSize: "clamp(0.98rem, 1.8vw, 1.13rem)", color: "var(--text)", lineHeight: 1.7 }}>
+              <span style={{ marginRight: "10px", fontSize: "1.15em" }}>&#x1F4F1;</span>
+              <strong>최소 1대면 OK</strong> &mdash; 여러 기기에 설치 가능하지만, 원하지 않으면 1대만 설치해도 나머지 기기에서 설치 없이 사용 가능
+            </li>
+            <li style={{ fontSize: "clamp(0.98rem, 1.8vw, 1.13rem)", color: "var(--text)", lineHeight: 1.7 }}>
+              <span style={{ marginRight: "10px", fontSize: "1.15em" }}>&#x1F504;</span>
+              <strong>실시간 동기화</strong> &mdash; 나의 모든 기기(노트북, 휴대폰 등) 사이에서 성능과 장기기억이 실시간 동기화
+            </li>
+            <li style={{ fontSize: "clamp(0.98rem, 1.8vw, 1.13rem)", color: "var(--text)", lineHeight: 1.7 }}>
+              <span style={{ marginRight: "10px", fontSize: "1.15em" }}>&#x1F3AF;</span>
+              <strong>무한 활용</strong> &mdash; 날씨, 여행, 길안내, 문서작업, 자동코딩, 컴퓨터 내 파일 수정 등 엄격한 보안 내에서 어떠한 지시도 가능
+            </li>
+            <li style={{ fontSize: "clamp(0.98rem, 1.8vw, 1.13rem)", color: "var(--text)", lineHeight: 1.7 }}>
+              <span style={{ marginRight: "10px", fontSize: "1.15em" }}>&#x1F4AC;</span>
+              <strong>카카오톡 연동</strong> &mdash; 클로드봇에 없던 기능! 휴대폰에 MoA 앱 설치 없이도 카톡 메시지만으로 AI와 무제한 대화 및 지시 가능
+            </li>
+          </ul>
           <div style={{ display: "flex", gap: "16px", justifyContent: "center", flexWrap: "wrap" }}>
             <a href="/download" className="btn btn-primary btn-lg">
               지금 바로 설치하기

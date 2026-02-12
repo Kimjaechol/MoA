@@ -68,7 +68,13 @@ export default function ChatWidget() {
           content: text,
         }),
       });
+      if (!res.ok) {
+        throw new Error(`HTTP ${res.status}`);
+      }
       const data = await res.json();
+      if (data.error) {
+        throw new Error(data.error);
+      }
       if (data.reply) {
         setMessages((prev) => [
           ...prev,
