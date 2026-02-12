@@ -62,6 +62,15 @@ import {
   sendWelcomeAfterPairing,
   isProactiveMessagingConfigured,
 } from "./src/proactive-messaging.js";
+import { createNotificationService } from "./src/notification-service.js";
+import { listAlimTalkTemplateCodes } from "./src/alimtalk-templates.js";
+import {
+  markAsChannelFriend,
+  startWeatherScheduler,
+  generateShareContent,
+  getOrCreateReferralCode,
+  checkDeviceControlRedirection,
+} from "./src/channel-engagement.js";
 import { handleRelayRequest } from "./src/relay/index.js";
 import { isSupabaseConfigured } from "./src/supabase.js";
 import { startKakaoWebhook } from "./src/webhook.js";
@@ -500,6 +509,10 @@ MoA는 카카오톡, 텔레그램, WhatsApp, Discord 등 여러 메신저에서 
 - !백업 목록 : 저장된 백업 목록 조회
 - !복구키 : 복구키 안내 (백업 비밀번호 분실 시 재설정용)
 - !복구키 검증 [12단어] : 복구 키 검증
+- /날씨 : 현재 날씨 확인
+- /날씨알림 해제 : 아침 날씨 알림 끄기
+- /날씨알림 설정 : 아침 날씨 알림 켜기
+- 친구초대 : 카카오톡으로 MoA 친구에게 공유하기
 ${skillsPrompt}
 ## 응답 규칙
 - 한국어로 친절하고 자연스럽게 대화합니다
@@ -509,6 +522,8 @@ ${skillsPrompt}
 - MoA가 아직 설치되지 않은 사용자에게는 대화 마무리에 설치를 부드럽게 권유하세요
 - 확실하지 않은 정보는 그렇다고 솔직히 말씀하세요
 - 스킬 관련 질문이 오면 해당 스킬의 기능을 안내하고, MoA를 설치하면 기기에서 직접 사용할 수 있다고 안내하세요
+- 대화가 잘 이루어지고 있을 때, 가끔 자연스럽게 "친구초대"를 언급하세요. 예: "MoA가 마음에 드시면 '친구초대'를 입력해서 친구에게도 알려주세요!"
+- 매일 아침 날씨 알림 기능이 있다고 알려주세요. 채널 친구에게 매일 아침 7:30에 날씨를 알려줍니다.
 
 ## 설치 안내 시
 사용자가 설치에 관심을 보이면: "설치"라고 입력해주세요! 간편 설치 안내를 바로 보내드립니다.
@@ -598,6 +613,11 @@ async function aiOnMessage(params: {
   const utterance = params.text.trim();
   const channelId = params.channel?.channelId ?? "kakao";
   const maxLen = params.channel?.maxMessageLength ?? 950;
+
+  // Mark user as channel friend on first KakaoTalk interaction (async, non-blocking)
+  if (channelId === "kakao") {
+    markAsChannelFriend(params.userId).catch(() => {});
+  }
 
   // ── Pending Auth 처리 ("사용자 인증" 또는 구문 인증 대기 중) ──
   const pendingKey = `${channelId}:${params.userId}`;
@@ -1155,6 +1175,109 @@ async function aiOnMessage(params: {
     }
   }
 
+  // 0.5) Help command (/도움말)
+  if (utterance.match(/^[/!]?도움말$/i) || utterance === "/help") {
+    return {
+      text: `MoA 전체 명령어 안내
+
+[기본 명령]
+- 설치 : MoA 간편 설치 안내
+- 사용자 인증 : 아이디+비밀번호 로그인
+- 기능 소개 : MoA 기능 안내
+- 스킬 목록 : 사용 가능한 스킬 보기
+
+[기기 제어] (인증 필요)
+- /기기 : 연결된 기기 목록
+- @기기명 명령 : 기기에 원격 명령
+
+[보안]
+- !구문번호 [문구] : 구문번호 설정
+- !비상정지 : 모든 명령 취소 + 잠금
+
+[작업 관리] (인증 필요)
+- !작업내역 : 최근 작업 기록
+- !체크포인트 [이름] : 현재 시점 저장
+- !되돌리기 [ID] : 작업 되돌리기
+- !백업 : 백업 설정
+
+[날씨 & 알림]
+- /날씨 : 현재 날씨 확인
+- /날씨알림 해제 : 아침 날씨 알림 끄기
+- /날씨알림 설정 : 아침 날씨 알림 켜기
+
+[공유]
+- 친구초대 : 카카오톡으로 MoA 공유하기`,
+      quickReplies: ["설치", "기능 소개", "스킬 목록"],
+    };
+  }
+
+  // 0.6) Weather command (/날씨)
+  if (utterance.match(/^[/!]?날씨$/i) || utterance === "/weather") {
+    try {
+      const weatherResp = await fetch("https://wttr.in/Seoul?format=j1", {
+        signal: AbortSignal.timeout(5000),
+      });
+      if (weatherResp.ok) {
+        const weatherJson = (await weatherResp.json()) as {
+          current_condition?: Array<{
+            temp_C: string;
+            FeelsLikeC: string;
+            humidity: string;
+            weatherCode: string;
+          }>;
+          weather?: Array<{
+            maxtempC: string;
+            mintempC: string;
+          }>;
+        };
+        const cur = weatherJson.current_condition?.[0];
+        const forecast = weatherJson.weather?.[0];
+        if (cur) {
+          const now = new Date();
+          const dateStr = `${now.getMonth() + 1}월 ${now.getDate()}일`;
+          return {
+            text: `${dateStr} 서울 날씨\n\n현재: ${cur.temp_C}°C (체감 ${cur.FeelsLikeC}°C)\n습도: ${cur.humidity}%${forecast ? `\n최저 ${forecast.mintempC}°C / 최고 ${forecast.maxtempC}°C` : ""}`,
+            quickReplies: ["도움말"],
+          };
+        }
+      }
+    } catch {
+      // Fall through to error message
+    }
+    return {
+      text: "날씨 정보를 가져오지 못했습니다. 잠시 후 다시 시도해주세요.",
+      quickReplies: ["도움말"],
+    };
+  }
+
+  // 0.7) Weather notification opt-in/out
+  if (utterance.match(/^[/!]?날씨알림\s*(해제|끄기|off)$/i)) {
+    if (isSupabaseConfigured()) {
+      const supabase = (await import("./src/supabase.js")).getSupabase();
+      await supabase
+        .from("lawcall_users")
+        .update({ weather_opt_out: true })
+        .eq("kakao_user_id", params.userId);
+    }
+    return {
+      text: "매일 아침 날씨 알림이 해제되었습니다.\n\n다시 받으시려면 '/날씨알림 설정'을 입력하세요.",
+      quickReplies: ["도움말"],
+    };
+  }
+  if (utterance.match(/^[/!]?날씨알림\s*(설정|켜기|on)$/i)) {
+    if (isSupabaseConfigured()) {
+      const supabase = (await import("./src/supabase.js")).getSupabase();
+      await supabase
+        .from("lawcall_users")
+        .update({ weather_opt_out: false })
+        .eq("kakao_user_id", params.userId);
+    }
+    return {
+      text: "매일 아침 7:30에 날씨 알림을 보내드립니다!\n\n해제하시려면 '/날씨알림 해제'를 입력하세요.",
+      quickReplies: ["도움말"],
+    };
+  }
+
   // 1) Greeting → Return welcome message with install button
   if (isGreeting(utterance)) {
     const quickReplies = hasAnyAccount()
@@ -1282,7 +1405,45 @@ MoA를 설치하면 이 모든 것이 가능합니다!
     };
   }
 
-  // 7) General AI chat — use LLM with MoA-optimized system prompt
+  // 7) Sharing / referral command
+  const shareKeywords = ["공유", "추천", "친구초대", "친구 초대", "share", "invite", "홍보"];
+  if (shareKeywords.some((k) => utterance.toLowerCase().includes(k))) {
+    const supabaseReady = isSupabaseConfigured();
+    let referralCode = `moa-share`;
+    if (supabaseReady) {
+      const supabase = (await import("./src/supabase.js")).getSupabase();
+      const { data: shareUser } = await supabase
+        .from("lawcall_users")
+        .select("id")
+        .eq("kakao_user_id", params.userId)
+        .single();
+      if (shareUser) {
+        referralCode = await getOrCreateReferralCode(shareUser.id);
+      }
+    }
+    const linkedAccount = findAccountByChannel(channelId, params.userId);
+    const shareContent = generateShareContent({
+      referrerName: linkedAccount?.username,
+      referralCode,
+    });
+    return {
+      text: shareContent.text,
+      quickReplies: shareContent.quickReplies,
+    };
+  }
+
+  // 7.5) Device control redirection for unauthenticated users
+  if (utterance.startsWith("@") && auth.role === "guest") {
+    const redirect = checkDeviceControlRedirection(utterance, false);
+    if (redirect.shouldRedirect) {
+      return {
+        text: redirect.message ?? "인증이 필요합니다.",
+        quickReplies: ["사용자 인증", "설치", "도움말"],
+      };
+    }
+  }
+
+  // 8) General AI chat — use LLM with MoA-optimized system prompt
   const llm = detectLlmProvider();
 
   if (!llm) {
@@ -1405,9 +1566,12 @@ async function main() {
     console.log("[MoA] Supabase: not configured (billing & sync disabled, AI chat still works)");
   }
 
-  // Check proactive messaging (Friend Talk)
-  if (isProactiveMessagingConfigured(account)) {
-    console.log("[MoA] Proactive messaging: configured (Friend Talk enabled)");
+  // Check proactive messaging (Friend Talk / Alim Talk)
+  const notificationService = createNotificationService(account);
+  if (notificationService.isConfigured()) {
+    const templateCodes = listAlimTalkTemplateCodes();
+    console.log(`[MoA] Proactive messaging: configured (Friend Talk + AlimTalk enabled)`);
+    console.log(`[MoA] AlimTalk templates: ${templateCodes.length} defined (${templateCodes.join(", ")})`);
   } else {
     console.log(
       "[MoA] Proactive messaging: not configured (set TOAST_APP_KEY, TOAST_SECRET_KEY, KAKAO_SENDER_KEY)",
@@ -1473,7 +1637,18 @@ async function main() {
   const relayCallbacks: RelayCallbacks = {
     onPairingComplete: async ({ userId, deviceId, deviceName }) => {
       console.log(`[MoA] Device paired: ${deviceName} (${deviceId}) for user ${userId}`);
-      if (isProactiveMessagingConfigured(account)) {
+      if (notificationService.isConfigured()) {
+        // Try AlimTalk first (works even for non-friends), fallback to FriendTalk
+        const { getUserPhoneNumberById } = await import("./src/proactive-messaging.js");
+        const phone = await getUserPhoneNumberById(userId);
+        if (phone) {
+          const result = await notificationService.notifyDevicePaired(phone, deviceName);
+          console.log(`[MoA] Device paired notification: ${result.method} ${result.success ? "OK" : result.error}`);
+        } else {
+          console.log("[MoA] No phone number for device paired notification — skipping");
+        }
+      } else if (isProactiveMessagingConfigured(account)) {
+        // Legacy: FriendTalk only
         await sendWelcomeAfterPairing(userId, deviceName, account);
       }
     },
@@ -1569,9 +1744,18 @@ async function main() {
       }
     }
 
+    // Start daily weather greeting scheduler
+    let weatherScheduler: { stop: () => void } | null = null;
+    if (notificationService.isConfigured()) {
+      weatherScheduler = startWeatherScheduler(account);
+    } else {
+      console.log("[MoA] Weather scheduler: disabled (proactive messaging not configured)");
+    }
+
     // Graceful shutdown
     const shutdown = async (signal: string) => {
       console.log(`[MoA] Received ${signal}, shutting down...`);
+      weatherScheduler?.stop();
       stopDiscordGateway();
       await webhook.stop();
       process.exit(0);
