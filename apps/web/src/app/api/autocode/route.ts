@@ -179,7 +179,8 @@ async function callCodeLlm(systemPrompt: string, userPrompt: string, preferredMo
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            contents: [{ parts: [{ text: `${systemPrompt}\n\n${userPrompt}` }] }],
+            systemInstruction: { parts: [{ text: systemPrompt }] },
+            contents: [{ role: "user", parts: [{ text: userPrompt }] }],
             generationConfig: { maxOutputTokens: 8192, temperature: 0.3 },
           }),
         },

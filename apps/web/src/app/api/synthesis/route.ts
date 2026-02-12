@@ -174,7 +174,8 @@ async function callSynthesisLlm(systemPrompt: string, userPrompt: string): Promi
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            contents: [{ parts: [{ text: `${systemPrompt}\n\n${userPrompt}` }] }],
+            systemInstruction: { parts: [{ text: systemPrompt }] },
+            contents: [{ role: "user", parts: [{ text: userPrompt }] }],
             generationConfig: { maxOutputTokens: 8192, temperature: 0.7 },
           }),
         },
