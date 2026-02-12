@@ -13,19 +13,43 @@ const VALID_PROVIDERS = ["openai", "anthropic", "gemini", "groq", "deepseek", "m
 const VALID_STRATEGIES = ["cost-efficient", "max-performance"];
 
 /**
- * GET /api/mypage?user_id=xxx
+ * Validate session token and return user_id.
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+async function authenticateRequest(supabase: any, token: string | undefined): Promise<{ user_id: string } | null> {
+  if (!token || typeof token !== "string") return null;
+  const { data, error } = await supabase
+    .from("moa_sessions")
+    .select("user_id, expires_at")
+    .eq("token", token)
+    .single();
+  if (error || !data) return null;
+  if (new Date(data.expires_at) < new Date()) return null;
+  return { user_id: data.user_id };
+}
+
+/**
+ * GET /api/mypage?user_id=xxx&token=yyy
  * Fetch user's API keys (hints only) and model strategy settings.
+ * Requires valid session token.
  */
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
     const userId = searchParams.get("user_id");
+    const token = searchParams.get("token");
 
     if (!userId) {
       return NextResponse.json({ error: "user_id is required" }, { status: 400 });
     }
 
     const supabase = getServiceSupabase();
+
+    // Authenticate: verify session token matches user_id
+    const session = await authenticateRequest(supabase, token ?? undefined);
+    if (!session || session.user_id !== userId) {
+      return NextResponse.json({ error: "인증이 필요합니다." }, { status: 401 });
+    }
 
     // Fetch API keys (only hints, not actual keys)
     const { data: keys, error: keysError } = await supabase
@@ -94,6 +118,12 @@ export async function POST(request: NextRequest) {
     }
 
     const supabase = getServiceSupabase();
+
+    // Authenticate: verify session token matches user_id
+    const session = await authenticateRequest(supabase, body.token);
+    if (!session || session.user_id !== user_id) {
+      return NextResponse.json({ error: "인증이 필요합니다." }, { status: 401 });
+    }
 
     switch (action) {
       // --- Save/Update API Key ---

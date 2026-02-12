@@ -59,13 +59,32 @@ async function verifyPayment(impUid: string, token: string) {
 }
 
 /**
+ * Validate session token and return user_id.
+ * Used to ensure all payment operations are authenticated.
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+async function authenticateRequest(supabase: any, token: string | undefined): Promise<{ user_id: string } | null> {
+  if (!token || typeof token !== "string") return null;
+  const { data, error } = await supabase
+    .from("moa_sessions")
+    .select("user_id, expires_at")
+    .eq("token", token)
+    .single();
+  if (error || !data) return null;
+  if (new Date(data.expires_at) < new Date()) return null;
+  return { user_id: data.user_id };
+}
+
+/**
  * POST /api/payment
  * Actions: prepare, verify, history, cancel
+ *
+ * All actions require a valid session token for authentication.
  */
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { action, user_id } = body;
+    const { action, user_id, token } = body;
 
     if (!user_id) {
       return NextResponse.json({ error: "user_id required" }, { status: 400 });
@@ -77,6 +96,12 @@ export async function POST(request: NextRequest) {
       supabase = getServiceSupabase();
     } catch {
       return NextResponse.json({ error: "Database not configured" }, { status: 503 });
+    }
+
+    // Authenticate: verify session token matches user_id
+    const session = await authenticateRequest(supabase, token);
+    if (!session || session.user_id !== user_id) {
+      return NextResponse.json({ error: "인증이 필요합니다. 다시 로그인해주세요." }, { status: 401 });
     }
 
     switch (action) {
