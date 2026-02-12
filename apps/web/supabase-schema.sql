@@ -31,6 +31,21 @@ CREATE TABLE IF NOT EXISTS moa_users (
 
 ALTER TABLE moa_users ENABLE ROW LEVEL SECURITY;
 
+-- Migration: ensure all columns exist (safe to re-run)
+ALTER TABLE moa_users ADD COLUMN IF NOT EXISTS user_id TEXT;
+ALTER TABLE moa_users ADD COLUMN IF NOT EXISTS username TEXT;
+ALTER TABLE moa_users ADD COLUMN IF NOT EXISTS display_name TEXT;
+ALTER TABLE moa_users ADD COLUMN IF NOT EXISTS password_hash TEXT;
+ALTER TABLE moa_users ADD COLUMN IF NOT EXISTS passphrase_hash TEXT;
+ALTER TABLE moa_users ADD COLUMN IF NOT EXISTS phone TEXT;
+ALTER TABLE moa_users ADD COLUMN IF NOT EXISTS email TEXT;
+ALTER TABLE moa_users ADD COLUMN IF NOT EXISTS is_active BOOLEAN DEFAULT true;
+ALTER TABLE moa_users ADD COLUMN IF NOT EXISTS failed_login_attempts INTEGER DEFAULT 0;
+ALTER TABLE moa_users ADD COLUMN IF NOT EXISTS locked_until TIMESTAMPTZ;
+ALTER TABLE moa_users ADD COLUMN IF NOT EXISTS last_login_at TIMESTAMPTZ;
+ALTER TABLE moa_users ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ DEFAULT now();
+ALTER TABLE moa_users ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT now();
+
 -- No anon access to users table (service key only)
 -- No USING(true) policy — any anon query returns zero rows
 
@@ -49,6 +64,13 @@ CREATE TABLE IF NOT EXISTS moa_sessions (
 );
 
 ALTER TABLE moa_sessions ENABLE ROW LEVEL SECURITY;
+
+ALTER TABLE moa_sessions ADD COLUMN IF NOT EXISTS user_id TEXT;
+ALTER TABLE moa_sessions ADD COLUMN IF NOT EXISTS token TEXT;
+ALTER TABLE moa_sessions ADD COLUMN IF NOT EXISTS expires_at TIMESTAMPTZ;
+ALTER TABLE moa_sessions ADD COLUMN IF NOT EXISTS ip_address TEXT;
+ALTER TABLE moa_sessions ADD COLUMN IF NOT EXISTS user_agent TEXT;
+ALTER TABLE moa_sessions ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ DEFAULT now();
 
 -- No anon access to sessions table (service key only)
 
@@ -74,6 +96,14 @@ CREATE TABLE IF NOT EXISTS moa_feedback (
 -- RLS: No anon access (service key only)
 ALTER TABLE moa_feedback ENABLE ROW LEVEL SECURITY;
 
+ALTER TABLE moa_feedback ADD COLUMN IF NOT EXISTS type TEXT;
+ALTER TABLE moa_feedback ADD COLUMN IF NOT EXISTS email TEXT;
+ALTER TABLE moa_feedback ADD COLUMN IF NOT EXISTS content TEXT;
+ALTER TABLE moa_feedback ADD COLUMN IF NOT EXISTS user_agent TEXT;
+ALTER TABLE moa_feedback ADD COLUMN IF NOT EXISTS status TEXT DEFAULT 'pending';
+ALTER TABLE moa_feedback ADD COLUMN IF NOT EXISTS admin_note TEXT;
+ALTER TABLE moa_feedback ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ DEFAULT now();
+
 CREATE INDEX IF NOT EXISTS idx_feedback_email ON moa_feedback(email);
 CREATE INDEX IF NOT EXISTS idx_feedback_status ON moa_feedback(status);
 CREATE INDEX IF NOT EXISTS idx_feedback_created ON moa_feedback(created_at DESC);
@@ -94,6 +124,13 @@ CREATE TABLE IF NOT EXISTS moa_community_posts (
 
 ALTER TABLE moa_community_posts ENABLE ROW LEVEL SECURITY;
 
+ALTER TABLE moa_community_posts ADD COLUMN IF NOT EXISTS nickname TEXT;
+ALTER TABLE moa_community_posts ADD COLUMN IF NOT EXISTS email TEXT;
+ALTER TABLE moa_community_posts ADD COLUMN IF NOT EXISTS title TEXT;
+ALTER TABLE moa_community_posts ADD COLUMN IF NOT EXISTS content TEXT;
+ALTER TABLE moa_community_posts ADD COLUMN IF NOT EXISTS like_count INTEGER DEFAULT 0;
+ALTER TABLE moa_community_posts ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ DEFAULT now();
+
 -- Public board: anon reads OK
 DROP POLICY IF EXISTS "Public read access" ON moa_community_posts;
 CREATE POLICY "Public read access" ON moa_community_posts
@@ -110,6 +147,10 @@ CREATE TABLE IF NOT EXISTS moa_community_likes (
 
 ALTER TABLE moa_community_likes ENABLE ROW LEVEL SECURITY;
 
+ALTER TABLE moa_community_likes ADD COLUMN IF NOT EXISTS post_id UUID;
+ALTER TABLE moa_community_likes ADD COLUMN IF NOT EXISTS visitor_id TEXT;
+ALTER TABLE moa_community_likes ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ DEFAULT now();
+
 DROP POLICY IF EXISTS "Public read access" ON moa_community_likes;
 CREATE POLICY "Public read access" ON moa_community_likes
   FOR SELECT USING (true);
@@ -124,6 +165,11 @@ CREATE TABLE IF NOT EXISTS moa_community_comments (
 );
 
 ALTER TABLE moa_community_comments ENABLE ROW LEVEL SECURITY;
+
+ALTER TABLE moa_community_comments ADD COLUMN IF NOT EXISTS post_id UUID;
+ALTER TABLE moa_community_comments ADD COLUMN IF NOT EXISTS nickname TEXT;
+ALTER TABLE moa_community_comments ADD COLUMN IF NOT EXISTS content TEXT;
+ALTER TABLE moa_community_comments ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ DEFAULT now();
 
 DROP POLICY IF EXISTS "Public read access" ON moa_community_comments;
 CREATE POLICY "Public read access" ON moa_community_comments
@@ -151,6 +197,13 @@ CREATE TABLE IF NOT EXISTS moa_usecase_posts (
 
 ALTER TABLE moa_usecase_posts ENABLE ROW LEVEL SECURITY;
 
+ALTER TABLE moa_usecase_posts ADD COLUMN IF NOT EXISTS nickname TEXT;
+ALTER TABLE moa_usecase_posts ADD COLUMN IF NOT EXISTS email TEXT;
+ALTER TABLE moa_usecase_posts ADD COLUMN IF NOT EXISTS title TEXT;
+ALTER TABLE moa_usecase_posts ADD COLUMN IF NOT EXISTS content TEXT;
+ALTER TABLE moa_usecase_posts ADD COLUMN IF NOT EXISTS like_count INTEGER DEFAULT 0;
+ALTER TABLE moa_usecase_posts ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ DEFAULT now();
+
 DROP POLICY IF EXISTS "Public read access" ON moa_usecase_posts;
 CREATE POLICY "Public read access" ON moa_usecase_posts
   FOR SELECT USING (true);
@@ -166,6 +219,10 @@ CREATE TABLE IF NOT EXISTS moa_usecase_likes (
 
 ALTER TABLE moa_usecase_likes ENABLE ROW LEVEL SECURITY;
 
+ALTER TABLE moa_usecase_likes ADD COLUMN IF NOT EXISTS post_id UUID;
+ALTER TABLE moa_usecase_likes ADD COLUMN IF NOT EXISTS visitor_id TEXT;
+ALTER TABLE moa_usecase_likes ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ DEFAULT now();
+
 DROP POLICY IF EXISTS "Public read access" ON moa_usecase_likes;
 CREATE POLICY "Public read access" ON moa_usecase_likes
   FOR SELECT USING (true);
@@ -180,6 +237,11 @@ CREATE TABLE IF NOT EXISTS moa_usecase_comments (
 );
 
 ALTER TABLE moa_usecase_comments ENABLE ROW LEVEL SECURITY;
+
+ALTER TABLE moa_usecase_comments ADD COLUMN IF NOT EXISTS post_id UUID;
+ALTER TABLE moa_usecase_comments ADD COLUMN IF NOT EXISTS nickname TEXT;
+ALTER TABLE moa_usecase_comments ADD COLUMN IF NOT EXISTS content TEXT;
+ALTER TABLE moa_usecase_comments ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ DEFAULT now();
 
 DROP POLICY IF EXISTS "Public read access" ON moa_usecase_comments;
 CREATE POLICY "Public read access" ON moa_usecase_comments
@@ -214,6 +276,14 @@ CREATE TABLE IF NOT EXISTS moa_user_api_keys (
 
 ALTER TABLE moa_user_api_keys ENABLE ROW LEVEL SECURITY;
 
+ALTER TABLE moa_user_api_keys ADD COLUMN IF NOT EXISTS user_id TEXT;
+ALTER TABLE moa_user_api_keys ADD COLUMN IF NOT EXISTS provider TEXT;
+ALTER TABLE moa_user_api_keys ADD COLUMN IF NOT EXISTS encrypted_key TEXT;
+ALTER TABLE moa_user_api_keys ADD COLUMN IF NOT EXISTS key_hint TEXT;
+ALTER TABLE moa_user_api_keys ADD COLUMN IF NOT EXISTS is_active BOOLEAN DEFAULT true;
+ALTER TABLE moa_user_api_keys ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ DEFAULT now();
+ALTER TABLE moa_user_api_keys ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT now();
+
 -- No anon access — API keys are sensitive (service key only)
 
 CREATE INDEX IF NOT EXISTS idx_user_api_keys_user ON moa_user_api_keys(user_id);
@@ -241,6 +311,17 @@ CREATE TABLE IF NOT EXISTS moa_user_settings (
 
 ALTER TABLE moa_user_settings ENABLE ROW LEVEL SECURITY;
 
+ALTER TABLE moa_user_settings ADD COLUMN IF NOT EXISTS user_id TEXT;
+ALTER TABLE moa_user_settings ADD COLUMN IF NOT EXISTS model_strategy TEXT DEFAULT 'cost-efficient';
+ALTER TABLE moa_user_settings ADD COLUMN IF NOT EXISTS phone TEXT;
+ALTER TABLE moa_user_settings ADD COLUMN IF NOT EXISTS phone_verified BOOLEAN DEFAULT false;
+ALTER TABLE moa_user_settings ADD COLUMN IF NOT EXISTS kakao_channel_added BOOLEAN DEFAULT false;
+ALTER TABLE moa_user_settings ADD COLUMN IF NOT EXISTS trial_started_at TIMESTAMPTZ DEFAULT now();
+ALTER TABLE moa_user_settings ADD COLUMN IF NOT EXISTS trial_days INTEGER DEFAULT 30;
+ALTER TABLE moa_user_settings ADD COLUMN IF NOT EXISTS is_premium BOOLEAN DEFAULT false;
+ALTER TABLE moa_user_settings ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ DEFAULT now();
+ALTER TABLE moa_user_settings ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT now();
+
 -- No anon access — settings contain phone numbers (service key only)
 
 CREATE INDEX IF NOT EXISTS idx_user_settings_user ON moa_user_settings(user_id);
@@ -263,6 +344,16 @@ CREATE TABLE IF NOT EXISTS moa_chat_messages (
 );
 
 ALTER TABLE moa_chat_messages ENABLE ROW LEVEL SECURITY;
+
+ALTER TABLE moa_chat_messages ADD COLUMN IF NOT EXISTS user_id TEXT;
+ALTER TABLE moa_chat_messages ADD COLUMN IF NOT EXISTS session_id TEXT;
+ALTER TABLE moa_chat_messages ADD COLUMN IF NOT EXISTS role TEXT;
+ALTER TABLE moa_chat_messages ADD COLUMN IF NOT EXISTS content TEXT;
+ALTER TABLE moa_chat_messages ADD COLUMN IF NOT EXISTS channel TEXT DEFAULT 'web';
+ALTER TABLE moa_chat_messages ADD COLUMN IF NOT EXISTS category TEXT DEFAULT 'other';
+ALTER TABLE moa_chat_messages ADD COLUMN IF NOT EXISTS model_used TEXT;
+ALTER TABLE moa_chat_messages ADD COLUMN IF NOT EXISTS token_count INTEGER;
+ALTER TABLE moa_chat_messages ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ DEFAULT now();
 
 -- No anon access — chat messages are private (service key only)
 
@@ -289,6 +380,14 @@ CREATE TABLE IF NOT EXISTS moa_channel_connections (
 
 ALTER TABLE moa_channel_connections ENABLE ROW LEVEL SECURITY;
 
+ALTER TABLE moa_channel_connections ADD COLUMN IF NOT EXISTS user_id TEXT;
+ALTER TABLE moa_channel_connections ADD COLUMN IF NOT EXISTS channel TEXT;
+ALTER TABLE moa_channel_connections ADD COLUMN IF NOT EXISTS channel_user_id TEXT;
+ALTER TABLE moa_channel_connections ADD COLUMN IF NOT EXISTS display_name TEXT;
+ALTER TABLE moa_channel_connections ADD COLUMN IF NOT EXISTS is_active BOOLEAN DEFAULT true;
+ALTER TABLE moa_channel_connections ADD COLUMN IF NOT EXISTS connected_at TIMESTAMPTZ DEFAULT now();
+ALTER TABLE moa_channel_connections ADD COLUMN IF NOT EXISTS last_message_at TIMESTAMPTZ;
+
 -- No anon access (service key only)
 
 CREATE INDEX IF NOT EXISTS idx_channel_conn_user ON moa_channel_connections(user_id);
@@ -314,6 +413,18 @@ CREATE TABLE IF NOT EXISTS moa_synthesis_jobs (
 );
 
 ALTER TABLE moa_synthesis_jobs ENABLE ROW LEVEL SECURITY;
+
+ALTER TABLE moa_synthesis_jobs ADD COLUMN IF NOT EXISTS user_id TEXT;
+ALTER TABLE moa_synthesis_jobs ADD COLUMN IF NOT EXISTS title TEXT;
+ALTER TABLE moa_synthesis_jobs ADD COLUMN IF NOT EXISTS source_count INTEGER DEFAULT 0;
+ALTER TABLE moa_synthesis_jobs ADD COLUMN IF NOT EXISTS output_format TEXT DEFAULT 'report';
+ALTER TABLE moa_synthesis_jobs ADD COLUMN IF NOT EXISTS output_length TEXT DEFAULT 'medium';
+ALTER TABLE moa_synthesis_jobs ADD COLUMN IF NOT EXISTS language TEXT DEFAULT 'ko';
+ALTER TABLE moa_synthesis_jobs ADD COLUMN IF NOT EXISTS model_used TEXT;
+ALTER TABLE moa_synthesis_jobs ADD COLUMN IF NOT EXISTS status TEXT DEFAULT 'pending';
+ALTER TABLE moa_synthesis_jobs ADD COLUMN IF NOT EXISTS result_content TEXT;
+ALTER TABLE moa_synthesis_jobs ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ DEFAULT now();
+ALTER TABLE moa_synthesis_jobs ADD COLUMN IF NOT EXISTS completed_at TIMESTAMPTZ;
 
 -- No anon access (service key only)
 
@@ -342,6 +453,19 @@ CREATE TABLE IF NOT EXISTS moa_autocode_sessions (
 
 ALTER TABLE moa_autocode_sessions ENABLE ROW LEVEL SECURITY;
 
+ALTER TABLE moa_autocode_sessions ADD COLUMN IF NOT EXISTS user_id TEXT;
+ALTER TABLE moa_autocode_sessions ADD COLUMN IF NOT EXISTS goal TEXT;
+ALTER TABLE moa_autocode_sessions ADD COLUMN IF NOT EXISTS framework TEXT DEFAULT 'nextjs';
+ALTER TABLE moa_autocode_sessions ADD COLUMN IF NOT EXISTS model_used TEXT;
+ALTER TABLE moa_autocode_sessions ADD COLUMN IF NOT EXISTS max_iterations INTEGER DEFAULT 10;
+ALTER TABLE moa_autocode_sessions ADD COLUMN IF NOT EXISTS completed_iterations INTEGER DEFAULT 0;
+ALTER TABLE moa_autocode_sessions ADD COLUMN IF NOT EXISTS error_count INTEGER DEFAULT 0;
+ALTER TABLE moa_autocode_sessions ADD COLUMN IF NOT EXISTS fix_count INTEGER DEFAULT 0;
+ALTER TABLE moa_autocode_sessions ADD COLUMN IF NOT EXISTS status TEXT DEFAULT 'idle';
+ALTER TABLE moa_autocode_sessions ADD COLUMN IF NOT EXISTS final_code TEXT;
+ALTER TABLE moa_autocode_sessions ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ DEFAULT now();
+ALTER TABLE moa_autocode_sessions ADD COLUMN IF NOT EXISTS completed_at TIMESTAMPTZ;
+
 -- No anon access (service key only)
 
 CREATE INDEX IF NOT EXISTS idx_autocode_user ON moa_autocode_sessions(user_id);
@@ -364,6 +488,15 @@ CREATE TABLE IF NOT EXISTS moa_credits (
 );
 
 ALTER TABLE moa_credits ENABLE ROW LEVEL SECURITY;
+
+ALTER TABLE moa_credits ADD COLUMN IF NOT EXISTS user_id TEXT;
+ALTER TABLE moa_credits ADD COLUMN IF NOT EXISTS balance INTEGER DEFAULT 100;
+ALTER TABLE moa_credits ADD COLUMN IF NOT EXISTS monthly_quota INTEGER DEFAULT 100;
+ALTER TABLE moa_credits ADD COLUMN IF NOT EXISTS monthly_used INTEGER DEFAULT 0;
+ALTER TABLE moa_credits ADD COLUMN IF NOT EXISTS plan TEXT DEFAULT 'free';
+ALTER TABLE moa_credits ADD COLUMN IF NOT EXISTS quota_reset_at TIMESTAMPTZ DEFAULT (now() + INTERVAL '30 days');
+ALTER TABLE moa_credits ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ DEFAULT now();
+ALTER TABLE moa_credits ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT now();
 
 -- No anon access (service key only)
 
@@ -388,6 +521,15 @@ CREATE TABLE IF NOT EXISTS moa_credit_transactions (
 );
 
 ALTER TABLE moa_credit_transactions ENABLE ROW LEVEL SECURITY;
+
+ALTER TABLE moa_credit_transactions ADD COLUMN IF NOT EXISTS user_id TEXT;
+ALTER TABLE moa_credit_transactions ADD COLUMN IF NOT EXISTS amount INTEGER;
+ALTER TABLE moa_credit_transactions ADD COLUMN IF NOT EXISTS balance_after INTEGER;
+ALTER TABLE moa_credit_transactions ADD COLUMN IF NOT EXISTS tx_type TEXT;
+ALTER TABLE moa_credit_transactions ADD COLUMN IF NOT EXISTS description TEXT;
+ALTER TABLE moa_credit_transactions ADD COLUMN IF NOT EXISTS model_used TEXT;
+ALTER TABLE moa_credit_transactions ADD COLUMN IF NOT EXISTS reference_id TEXT;
+ALTER TABLE moa_credit_transactions ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ DEFAULT now();
 
 -- No anon access (service key only)
 
@@ -416,6 +558,19 @@ CREATE TABLE IF NOT EXISTS moa_subscriptions (
 );
 
 ALTER TABLE moa_subscriptions ENABLE ROW LEVEL SECURITY;
+
+ALTER TABLE moa_subscriptions ADD COLUMN IF NOT EXISTS user_id TEXT;
+ALTER TABLE moa_subscriptions ADD COLUMN IF NOT EXISTS plan TEXT;
+ALTER TABLE moa_subscriptions ADD COLUMN IF NOT EXISTS status TEXT DEFAULT 'active';
+ALTER TABLE moa_subscriptions ADD COLUMN IF NOT EXISTS amount INTEGER;
+ALTER TABLE moa_subscriptions ADD COLUMN IF NOT EXISTS billing_cycle TEXT DEFAULT 'monthly';
+ALTER TABLE moa_subscriptions ADD COLUMN IF NOT EXISTS current_period_start TIMESTAMPTZ DEFAULT now();
+ALTER TABLE moa_subscriptions ADD COLUMN IF NOT EXISTS current_period_end TIMESTAMPTZ DEFAULT (now() + INTERVAL '30 days');
+ALTER TABLE moa_subscriptions ADD COLUMN IF NOT EXISTS canceled_at TIMESTAMPTZ;
+ALTER TABLE moa_subscriptions ADD COLUMN IF NOT EXISTS payment_method TEXT;
+ALTER TABLE moa_subscriptions ADD COLUMN IF NOT EXISTS portone_billing_key TEXT;
+ALTER TABLE moa_subscriptions ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ DEFAULT now();
+ALTER TABLE moa_subscriptions ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT now();
 
 -- No anon access (service key only)
 
@@ -447,6 +602,21 @@ CREATE TABLE IF NOT EXISTS moa_payments (
 );
 
 ALTER TABLE moa_payments ENABLE ROW LEVEL SECURITY;
+
+ALTER TABLE moa_payments ADD COLUMN IF NOT EXISTS user_id TEXT;
+ALTER TABLE moa_payments ADD COLUMN IF NOT EXISTS payment_id TEXT;
+ALTER TABLE moa_payments ADD COLUMN IF NOT EXISTS imp_uid TEXT;
+ALTER TABLE moa_payments ADD COLUMN IF NOT EXISTS pay_method TEXT;
+ALTER TABLE moa_payments ADD COLUMN IF NOT EXISTS amount INTEGER;
+ALTER TABLE moa_payments ADD COLUMN IF NOT EXISTS status TEXT DEFAULT 'pending';
+ALTER TABLE moa_payments ADD COLUMN IF NOT EXISTS product_type TEXT;
+ALTER TABLE moa_payments ADD COLUMN IF NOT EXISTS product_name TEXT;
+ALTER TABLE moa_payments ADD COLUMN IF NOT EXISTS credits_granted INTEGER DEFAULT 0;
+ALTER TABLE moa_payments ADD COLUMN IF NOT EXISTS card_name TEXT;
+ALTER TABLE moa_payments ADD COLUMN IF NOT EXISTS card_number TEXT;
+ALTER TABLE moa_payments ADD COLUMN IF NOT EXISTS receipt_url TEXT;
+ALTER TABLE moa_payments ADD COLUMN IF NOT EXISTS paid_at TIMESTAMPTZ;
+ALTER TABLE moa_payments ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ DEFAULT now();
 
 -- No anon access (service key only)
 
