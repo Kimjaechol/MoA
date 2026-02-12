@@ -47,32 +47,49 @@ export async function POST(request: NextRequest) {
     let newLikeCount: number;
 
     if (existingLike) {
-      // Unlike: remove the like and decrement count
+      // Unlike: remove the like and recount
       await supabase
         .from("moa_community_likes")
         .delete()
         .eq("id", existingLike.id);
 
-      newLikeCount = Math.max(0, (post.like_count ?? 0) - 1);
+      // Recount from source of truth to avoid race conditions
+      const { count: actualCount } = await supabase
+        .from("moa_community_likes")
+        .select("id", { count: "exact", head: true })
+        .eq("post_id", postId);
+
+      newLikeCount = actualCount ?? 0;
 
       await supabase
         .from("moa_community_posts")
         .update({ like_count: newLikeCount })
         .eq("id", postId);
     } else {
-      // Like: insert the like and increment count
+      // Like: insert the like and recount
       const { error: insertError } = await supabase
         .from("moa_community_likes")
         .insert({ post_id: postId, visitor_id: visitorId });
 
       if (insertError) {
-        return NextResponse.json(
-          { error: "Failed to toggle like" },
-          { status: 500 }
-        );
+        // Likely a duplicate; re-fetch current count
+        const { count: actualCount } = await supabase
+          .from("moa_community_likes")
+          .select("id", { count: "exact", head: true })
+          .eq("post_id", postId);
+        return NextResponse.json({
+          liked: true,
+          likeCount: actualCount ?? (post.like_count ?? 0),
+        });
       }
 
-      newLikeCount = (post.like_count ?? 0) + 1;
+      // Recount from source of truth to avoid race conditions
+      const { count: actualCount } = await supabase
+        .from("moa_community_likes")
+        .select("id", { count: "exact", head: true })
+        .eq("post_id", postId);
+
+      newLikeCount = actualCount ?? ((post.like_count ?? 0) + 1);
 
       await supabase
         .from("moa_community_posts")
