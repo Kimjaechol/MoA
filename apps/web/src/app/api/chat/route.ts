@@ -473,12 +473,19 @@ async function callOpenAI(key: string, system: string, message: string, model: s
   return null;
 }
 
+/** Gemini model — extract to constant so it's easy to update when preview expires */
+const GEMINI_MODEL = "gemini-2.5-flash-preview-05-20";
+
 async function callGemini(key: string, system: string, message: string): Promise<string | null> {
   try {
-    const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-05-20:generateContent?key=${key}`, {
+    const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${key}`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ contents: [{ parts: [{ text: `${system}\n\n${message}` }] }], generationConfig: { maxOutputTokens: 4096 } }),
+      body: JSON.stringify({
+        systemInstruction: { parts: [{ text: system }] },
+        contents: [{ role: "user", parts: [{ text: message }] }],
+        generationConfig: { maxOutputTokens: 4096 },
+      }),
     });
     if (res.ok) {
       const data = await res.json();
