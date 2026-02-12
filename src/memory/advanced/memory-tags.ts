@@ -168,7 +168,7 @@ export function getTagsForChunk(db: DatabaseSync, chunkId: string): ProactiveTag
     .prepare(
       `SELECT * FROM proactive_tags WHERE chunk_id = ? AND active = 1 ORDER BY category, name`,
     )
-    .all(chunkId) as ProactiveTagRow[];
+    .all(chunkId) as unknown as ProactiveTagRow[];
 
   return rows.map(rowToTag);
 }
@@ -208,7 +208,7 @@ export function findChunksWithTriggerTags(
     values.push(options.limit);
   }
 
-  const rows = db.prepare(query).all(...values) as ProactiveTagRow[];
+  const rows = db.prepare(query).all(...values) as unknown as ProactiveTagRow[];
 
   // Group by chunk
   const grouped = new Map<string, ProactiveTag[]>();
