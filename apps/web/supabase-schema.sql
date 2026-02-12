@@ -552,7 +552,8 @@ CREATE TABLE IF NOT EXISTS moa_subscriptions (
   current_period_end TIMESTAMPTZ NOT NULL DEFAULT (now() + INTERVAL '30 days'),
   canceled_at TIMESTAMPTZ,
   payment_method TEXT,               -- card_last4 or method label
-  portone_billing_key TEXT,          -- for recurring billing
+  portone_billing_key TEXT,          -- for PortOne recurring billing
+  stripe_subscription_id TEXT,       -- Stripe subscription ID
   created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
@@ -569,6 +570,7 @@ ALTER TABLE moa_subscriptions ADD COLUMN IF NOT EXISTS current_period_end TIMEST
 ALTER TABLE moa_subscriptions ADD COLUMN IF NOT EXISTS canceled_at TIMESTAMPTZ;
 ALTER TABLE moa_subscriptions ADD COLUMN IF NOT EXISTS payment_method TEXT;
 ALTER TABLE moa_subscriptions ADD COLUMN IF NOT EXISTS portone_billing_key TEXT;
+ALTER TABLE moa_subscriptions ADD COLUMN IF NOT EXISTS stripe_subscription_id TEXT;
 ALTER TABLE moa_subscriptions ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ DEFAULT now();
 ALTER TABLE moa_subscriptions ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT now();
 
@@ -584,15 +586,18 @@ CREATE INDEX IF NOT EXISTS idx_sub_status ON moa_subscriptions(user_id, status);
 CREATE TABLE IF NOT EXISTS moa_payments (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   user_id TEXT NOT NULL,
-  payment_id TEXT NOT NULL UNIQUE,     -- PortOne merchant_uid
+  payment_id TEXT NOT NULL UNIQUE,     -- PortOne merchant_uid or Stripe ref
   imp_uid TEXT,                        -- PortOne imp_uid
+  stripe_session_id TEXT,              -- Stripe Checkout Session ID
   pay_method TEXT,                     -- card, kakao, naverpay, tosspay, etc.
-  amount INTEGER NOT NULL,             -- KRW
+  amount INTEGER NOT NULL,             -- KRW or USD cents
+  currency TEXT DEFAULT 'krw',         -- 'krw' or 'usd'
+  payment_gateway TEXT DEFAULT 'portone', -- 'portone' or 'stripe'
   status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN (
     'pending', 'paid', 'failed', 'canceled', 'refunded'
   )),
   product_type TEXT NOT NULL CHECK (product_type IN ('credit_pack', 'subscription')),
-  product_name TEXT NOT NULL,          -- e.g. "크레딧 500", "Basic 월간 구독"
+  product_name TEXT NOT NULL,          -- e.g. "크레딧 500", "Basic Monthly"
   credits_granted INTEGER DEFAULT 0,   -- credits added on success
   card_name TEXT,
   card_number TEXT,                    -- masked: ****-****-****-1234
@@ -606,8 +611,11 @@ ALTER TABLE moa_payments ENABLE ROW LEVEL SECURITY;
 ALTER TABLE moa_payments ADD COLUMN IF NOT EXISTS user_id TEXT;
 ALTER TABLE moa_payments ADD COLUMN IF NOT EXISTS payment_id TEXT;
 ALTER TABLE moa_payments ADD COLUMN IF NOT EXISTS imp_uid TEXT;
+ALTER TABLE moa_payments ADD COLUMN IF NOT EXISTS stripe_session_id TEXT;
 ALTER TABLE moa_payments ADD COLUMN IF NOT EXISTS pay_method TEXT;
 ALTER TABLE moa_payments ADD COLUMN IF NOT EXISTS amount INTEGER;
+ALTER TABLE moa_payments ADD COLUMN IF NOT EXISTS currency TEXT DEFAULT 'krw';
+ALTER TABLE moa_payments ADD COLUMN IF NOT EXISTS payment_gateway TEXT DEFAULT 'portone';
 ALTER TABLE moa_payments ADD COLUMN IF NOT EXISTS status TEXT DEFAULT 'pending';
 ALTER TABLE moa_payments ADD COLUMN IF NOT EXISTS product_type TEXT;
 ALTER TABLE moa_payments ADD COLUMN IF NOT EXISTS product_name TEXT;
@@ -622,6 +630,8 @@ ALTER TABLE moa_payments ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ DEFAULT
 
 CREATE INDEX IF NOT EXISTS idx_payments_user ON moa_payments(user_id);
 CREATE INDEX IF NOT EXISTS idx_payments_pid ON moa_payments(payment_id);
+CREATE INDEX IF NOT EXISTS idx_payments_gateway ON moa_payments(payment_gateway);
+CREATE INDEX IF NOT EXISTS idx_payments_stripe ON moa_payments(stripe_session_id);
 CREATE INDEX IF NOT EXISTS idx_payments_created ON moa_payments(created_at DESC);
 
 -- ============================================
