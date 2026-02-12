@@ -221,15 +221,17 @@ interface AIResponse {
  */
 const LANGUAGE_RULE = `
 
-[CRITICAL LANGUAGE RULE]
+[CRITICAL LANGUAGE RULE / 언어 규칙 - 최우선 적용]
 You MUST respond in the SAME language as the user's message.
-- If the user writes in Korean, respond ONLY in Korean. Never mix Japanese, Chinese, or any other language.
-- If the user writes in Japanese, respond ONLY in Japanese.
+사용자가 한국어로 말하면, 반드시 한국어로만 대답하세요.
+
+- 한국어 응답 시: 일본어(ありません, ちょっと 등), 중국어(的, 是, 了 등), 러시아어(Привет 등)를 절대 섞지 마세요.
+- 한자(漢字)를 한국어 응답에 사용하지 마세요. 한국어 단어만 사용하세요.
+- If the user writes in Korean, respond ONLY in pure Korean. NEVER mix Chinese characters (漢字), Japanese, Russian, or any other language.
 - If the user writes in English, respond ONLY in English.
-- If the user writes in Chinese, respond ONLY in Chinese.
 - If the user explicitly requests a different language (e.g. "영어로 답해줘"), follow that instruction.
 - English technical terms (API, URL, code snippets) are acceptable in any language.
-- ABSOLUTELY DO NOT mix different Asian languages. For example, never use Japanese words (ありません, ちょっと, etc.) in a Korean response. This is strictly forbidden.
+- ABSOLUTELY DO NOT mix different languages in a single response. This is strictly forbidden.
 `;
 
 /** Category-specific system prompt prefixes for LLM routing */
@@ -299,6 +301,14 @@ async function generateResponse(message: string, userId: string, category: strin
  * Attempt real LLM API call.
  * Priority: user's own keys (1x credit) > MoA server keys (2x credit).
  * Returns usedEnvKey=true when MoA's server-level API key was used.
+ *
+ * Strategy defaults (when user has no API key):
+ *   - cost-efficient → Gemini 2.5 Flash
+ *   - max-performance → Claude Opus 4.6
+ *
+ * NOTE: Groq Llama and DeepSeek are excluded from the default chain
+ * because they mix CJK languages (Korean/Chinese/Japanese) in responses.
+ * They are only used when the user explicitly provides their own API key.
  */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 async function tryLlmCall(message: string, category: string, strategy: string, keys: any[]): Promise<AIResponse | null> {
@@ -310,8 +320,6 @@ async function tryLlmCall(message: string, category: string, strategy: string, k
   const envAnthropicKey = process.env.ANTHROPIC_API_KEY;
   const envOpenaiKey = process.env.OPENAI_API_KEY;
   const envGeminiKey = process.env.GEMINI_API_KEY;
-  const envGroqKey = process.env.GROQ_API_KEY;
-  const envDeepseekKey = process.env.DEEPSEEK_API_KEY;
 
   // User-provided keys (stored in DB → 1x credit)
   const userAnthropicKey = keys.find((k: { provider: string }) => k.provider === "anthropic")?.encrypted_key;
@@ -326,8 +334,13 @@ async function tryLlmCall(message: string, category: string, strategy: string, k
     if (envKey) return { key: envKey, isEnv: true };
     return null;
   };
+  // User key only — no env fallback (for providers with poor CJK language handling)
+  const pickUserKeyOnly = (userKey?: string): { key: string; isEnv: boolean } | null => {
+    if (userKey) return { key: userKey, isEnv: false };
+    return null;
+  };
 
-  // Max-performance: use the best model available
+  // === Max-performance strategy: Claude Opus 4.6 → GPT-5 → Gemini 2.5 Flash ===
   if (strategy === "max-performance") {
     const anthropicInfo = pickKey(userAnthropicKey, envAnthropicKey);
     if (anthropicInfo) {
@@ -339,39 +352,46 @@ async function tryLlmCall(message: string, category: string, strategy: string, k
       const result = await callOpenAI(openaiInfo.key, enrichedSystem, message, "gpt-5");
       if (result) return { text: result, model: "openai/gpt-5", usedEnvKey: openaiInfo.isEnv };
     }
+    // Fallback to Gemini 2.5 Flash if premium models are unavailable
+    const geminiInfo = pickKey(userGeminiKey, envGeminiKey);
+    if (geminiInfo) {
+      const result = await callGemini(geminiInfo.key, enrichedSystem, message);
+      if (result) return { text: result, model: "gemini/gemini-2.5-flash", usedEnvKey: geminiInfo.isEnv };
+    }
+    return null;
   }
 
-  // Cost-efficient: try cheaper models first
-  const groqInfo = pickKey(userGroqKey, envGroqKey);
-  if (groqInfo) {
-    const result = await callGroq(groqInfo.key, enrichedSystem, message);
-    if (result) return { text: result, model: "groq/llama-3.3-70b-versatile", usedEnvKey: groqInfo.isEnv };
-  }
-
+  // === Cost-efficient strategy: Gemini 2.5 Flash → GPT-4o-mini → Claude Haiku ===
   const geminiInfo = pickKey(userGeminiKey, envGeminiKey);
   if (geminiInfo) {
     const result = await callGemini(geminiInfo.key, enrichedSystem, message);
     if (result) return { text: result, model: "gemini/gemini-2.5-flash", usedEnvKey: geminiInfo.isEnv };
   }
 
-  const deepseekInfo = pickKey(userDeepseekKey, envDeepseekKey);
-  if (deepseekInfo) {
-    const result = await callDeepSeek(deepseekInfo.key, enrichedSystem, message);
-    if (result) return { text: result, model: "deepseek/deepseek-chat", usedEnvKey: deepseekInfo.isEnv };
+  const openaiInfo = pickKey(userOpenaiKey, envOpenaiKey);
+  if (openaiInfo) {
+    const result = await callOpenAI(openaiInfo.key, enrichedSystem, message, "gpt-4o-mini");
+    if (result) return { text: result, model: "openai/gpt-4o-mini", usedEnvKey: openaiInfo.isEnv };
   }
 
-  // Fallback: try remaining env keys for OpenAI/Anthropic in cost-efficient mode
-  if (strategy !== "max-performance") {
-    const openaiInfo = pickKey(userOpenaiKey, envOpenaiKey);
-    if (openaiInfo) {
-      const result = await callOpenAI(openaiInfo.key, enrichedSystem, message, "gpt-4o-mini");
-      if (result) return { text: result, model: "openai/gpt-4o-mini", usedEnvKey: openaiInfo.isEnv };
-    }
-    const anthropicInfo = pickKey(userAnthropicKey, envAnthropicKey);
-    if (anthropicInfo) {
-      const result = await callAnthropic(anthropicInfo.key, enrichedSystem, message, "claude-haiku-4-5");
-      if (result) return { text: result, model: "anthropic/claude-haiku-4-5", usedEnvKey: anthropicInfo.isEnv };
-    }
+  const anthropicInfo = pickKey(userAnthropicKey, envAnthropicKey);
+  if (anthropicInfo) {
+    const result = await callAnthropic(anthropicInfo.key, enrichedSystem, message, "claude-haiku-4-5");
+    if (result) return { text: result, model: "anthropic/claude-haiku-4-5", usedEnvKey: anthropicInfo.isEnv };
+  }
+
+  // Groq/DeepSeek: only when user explicitly provides their own API key
+  // (excluded from env-key fallback due to CJK language mixing issues)
+  const groqInfo = pickUserKeyOnly(userGroqKey);
+  if (groqInfo) {
+    const result = await callGroq(groqInfo.key, enrichedSystem, message);
+    if (result) return { text: result, model: "groq/llama-3.3-70b-versatile", usedEnvKey: false };
+  }
+
+  const deepseekInfo = pickUserKeyOnly(userDeepseekKey);
+  if (deepseekInfo) {
+    const result = await callDeepSeek(deepseekInfo.key, enrichedSystem, message);
+    if (result) return { text: result, model: "deepseek/deepseek-chat", usedEnvKey: false };
   }
 
   return null;
@@ -409,7 +429,7 @@ async function callOpenAI(key: string, system: string, message: string, model: s
 
 async function callGemini(key: string, system: string, message: string): Promise<string | null> {
   try {
-    const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${key}`, {
+    const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-05-20:generateContent?key=${key}`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ contents: [{ parts: [{ text: `${system}\n\n${message}` }] }], generationConfig: { maxOutputTokens: 4096 } }),
@@ -457,11 +477,14 @@ function selectModelName(strategy: string, keys: any[]): string {
   if (strategy === "max-performance") {
     if (keys.some((k: { provider: string }) => k.provider === "anthropic")) return "anthropic/claude-opus-4-6";
     if (keys.some((k: { provider: string }) => k.provider === "openai")) return "openai/gpt-5";
+    return "anthropic/claude-opus-4-6"; // default for max-performance
   }
-  if (keys.some((k: { provider: string }) => k.provider === "groq")) return "groq/llama-3.3-70b-versatile";
+  // Cost-efficient: Gemini 2.5 Flash is the default
   if (keys.some((k: { provider: string }) => k.provider === "gemini")) return "gemini/gemini-2.5-flash";
-  if (keys.some((k: { provider: string }) => k.provider === "deepseek")) return "deepseek/deepseek-chat";
-  return "local/slm-default";
+  if (keys.some((k: { provider: string }) => k.provider === "openai")) return "openai/gpt-4o-mini";
+  if (keys.some((k: { provider: string }) => k.provider === "anthropic")) return "anthropic/claude-haiku-4-5";
+  if (keys.some((k: { provider: string }) => k.provider === "groq")) return "groq/llama-3.3-70b-versatile";
+  return "gemini/gemini-2.5-flash"; // default for cost-efficient
 }
 
 function generateSmartResponse(message: string, category: string, model: string, _prefix: string): string {

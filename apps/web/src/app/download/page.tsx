@@ -10,8 +10,8 @@ import { detectPlatform, type Platform } from "../../lib/detect-platform";
    One-click install for all platforms.
    ============================================ */
 
-/** GitHub releases page */
-const RELEASES_PAGE = "https://github.com/Kimjaechol/MoA/releases";
+/** Cloudflare R2 download base URL */
+const DOWNLOAD_BASE = "https://download.mymoa.app/desktop";
 
 interface PlatformDownload {
   name: string;
@@ -32,11 +32,11 @@ const DOWNLOADS: Record<Exclude<Platform, null>, PlatformDownload> = {
     icon: "\uD83E\uDE9F",
     desc: "Windows 10/11 (64-bit)",
     primaryAction: "데스크톱 앱 다운로드",
-    primaryUrl: RELEASES_PAGE,
+    primaryUrl: `${DOWNLOAD_BASE}/MoA-Setup-latest.exe`,
     terminalCmd: `powershell -c "irm https://mymoa.app/install.ps1 | iex"`,
     steps: [
-      "위 버튼을 클릭하면 GitHub Releases 페이지로 이동합니다",
-      "MoA-Setup.exe를 다운로드하여 더블클릭하면 자동 설치됩니다",
+      "위 버튼을 클릭하면 MoA-Setup.exe가 다운로드됩니다",
+      "다운로드된 파일을 더블클릭하면 자동으로 설치됩니다",
       "설치 후 MoA가 자동 실행됩니다",
     ],
   },
@@ -45,11 +45,11 @@ const DOWNLOADS: Record<Exclude<Platform, null>, PlatformDownload> = {
     icon: "\uD83C\uDF4E",
     desc: "macOS 12+ (Apple Silicon / Intel)",
     primaryAction: "데스크톱 앱 다운로드",
-    primaryUrl: RELEASES_PAGE,
+    primaryUrl: `${DOWNLOAD_BASE}/MoA-latest-mac.dmg`,
     terminalCmd: `curl -fsSL https://mymoa.app/install.sh | bash`,
     steps: [
-      "위 버튼을 클릭하면 GitHub Releases 페이지로 이동합니다",
-      "DMG 파일을 다운로드하여 MoA 아이콘을 Applications 폴더로 드래그하세요",
+      "위 버튼을 클릭하면 DMG 파일이 다운로드됩니다",
+      "다운로드된 DMG를 열고 MoA 아이콘을 Applications 폴더로 드래그하세요",
       "Launchpad에서 MoA를 실행하세요",
     ],
   },
@@ -58,12 +58,12 @@ const DOWNLOADS: Record<Exclude<Platform, null>, PlatformDownload> = {
     icon: "\uD83D\uDC27",
     desc: "Ubuntu 20.04+, Debian 11+, Fedora 35+",
     primaryAction: "데스크톱 앱 다운로드",
-    primaryUrl: RELEASES_PAGE,
+    primaryUrl: `${DOWNLOAD_BASE}/MoA-latest-linux.AppImage`,
     terminalCmd: `curl -fsSL https://mymoa.app/install.sh | bash`,
     steps: [
-      "위 버튼을 클릭하면 GitHub Releases 페이지로 이동합니다",
-      "AppImage 파일을 다운로드하세요",
-      "chmod +x MoA-*.AppImage 로 실행 권한을 부여한 후 실행하세요",
+      "위 버튼을 클릭하면 AppImage 파일이 다운로드됩니다",
+      "chmod +x MoA-*.AppImage 로 실행 권한을 부여하세요",
+      "더블클릭하여 실행하세요",
     ],
   },
   android: {
