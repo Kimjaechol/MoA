@@ -137,23 +137,23 @@ export async function POST(request: NextRequest) {
     const body = await request.json();
     const { nickname, email, title, content } = body;
 
-    if (!nickname || typeof nickname !== "string" || !nickname.trim()) {
+    if (!nickname || typeof nickname !== "string" || !nickname.trim() || nickname.trim().length > 50) {
       return NextResponse.json(
-        { error: "Nickname is required" },
+        { error: "닉네임은 1~50자 이내로 입력해주세요." },
         { status: 400 }
       );
     }
 
-    if (!title || typeof title !== "string" || !title.trim()) {
+    if (!title || typeof title !== "string" || !title.trim() || title.trim().length > 200) {
       return NextResponse.json(
-        { error: "Title is required" },
+        { error: "제목은 1~200자 이내로 입력해주세요." },
         { status: 400 }
       );
     }
 
-    if (!content || typeof content !== "string" || !content.trim()) {
+    if (!content || typeof content !== "string" || !content.trim() || content.trim().length > 10000) {
       return NextResponse.json(
-        { error: "Content is required" },
+        { error: "내용은 1~10,000자 이내로 입력해주세요." },
         { status: 400 }
       );
     }

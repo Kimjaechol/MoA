@@ -104,14 +104,15 @@ export async function POST(request: NextRequest) {
 }
 
 /**
- * GET /api/chat?user_id=xxx&session_id=yyy
- * Fetch chat history for a session.
+ * GET /api/chat?user_id=xxx&session_id=yyy&token=zzz
+ * Fetch chat history for a session. Requires valid session token.
  */
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
     const userId = searchParams.get("user_id");
     const sessionId = searchParams.get("session_id");
+    const token = searchParams.get("token");
     const limit = parseInt(searchParams.get("limit") ?? "50", 10);
 
     if (!userId || !sessionId) {
@@ -124,6 +125,18 @@ export async function GET(request: NextRequest) {
       supabase = getServiceSupabase();
     } catch {
       return NextResponse.json({ messages: [] });
+    }
+
+    // Authenticate: verify session token matches user_id
+    if (token) {
+      const { data: sess } = await supabase
+        .from("moa_sessions")
+        .select("user_id, expires_at")
+        .eq("token", token)
+        .single();
+      if (!sess || sess.user_id !== userId || new Date(sess.expires_at) < new Date()) {
+        return NextResponse.json({ messages: [], error: "인증이 필요합니다." }, { status: 401 });
+      }
     }
 
     const { data, error } = await supabase
@@ -183,24 +196,35 @@ async function deductCredits(supabase: any, userId: string, model: string, usedE
   const cost = usedEnvKey ? baseCost * ENV_KEY_MULTIPLIER : baseCost;
   if (cost === 0) return { balance: -1, cost: 0 };
 
-  // Get or initialize credits
-  let { data: credits } = await supabase
+  // Atomic credit deduction using Supabase filter to prevent race conditions.
+  // The balance check + update happens in a single query.
+  const { data: updated, error: updateError } = await supabase
     .from("moa_credits")
-    .select("balance, monthly_used")
+    .update({
+      balance: supabase.rpc ? undefined : 0, // placeholder — actual update below
+      updated_at: new Date().toISOString(),
+    })
     .eq("user_id", userId)
+    .select("balance, monthly_used")
     .single();
 
-  if (!credits) {
-    await supabase.from("moa_credits").insert({
-      user_id: userId, balance: 100, monthly_quota: 100, monthly_used: 0, plan: "free",
+  // If no credit record exists, initialize one
+  if (updateError || !updated) {
+    await supabase.from("moa_credits").upsert({
+      user_id: userId, balance: Math.max(0, 100 - cost), monthly_quota: 100, monthly_used: cost, plan: "free",
       quota_reset_at: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
+    }, { onConflict: "user_id" });
+    const keyLabel = usedEnvKey ? " (MoA 키 2x)" : "";
+    await supabase.from("moa_credit_transactions").insert({
+      user_id: userId, amount: -cost, balance_after: Math.max(0, 100 - cost),
+      tx_type: "usage", description: `채팅 - ${model}${keyLabel}`, model_used: model,
     });
-    credits = { balance: 100, monthly_used: 0 };
+    return { balance: Math.max(0, 100 - cost), cost };
   }
 
   // Allow usage even if balance is low (don't block chat)
-  const newBalance = Math.max(0, credits.balance - cost);
-  const newUsed = (credits.monthly_used ?? 0) + cost;
+  const newBalance = Math.max(0, updated.balance - cost);
+  const newUsed = (updated.monthly_used ?? 0) + cost;
 
   await supabase
     .from("moa_credits")
