@@ -89,10 +89,10 @@ MoA 서버 → NHN Cloud Toast API → 카카오톡 알림톡/친구톡 → 사�
 
 1. 좌측 메뉴 **앱 설정** > **플랫폼**
 2. **Web 플랫폼 등록** 클릭
-3. **사이트 도메인** 입력:
-   - Railway: `https://YOUR-APP.up.railway.app`
-   - Vercel: `https://mymoa.app` (또는 커스텀 도메인)
+3. **사이트 도메인** 입력: `https://mymoa.app`
 4. **저장**
+
+> `https://mymoa.app`은 Vercel 프론트엔드 도메인이며, Railway 백엔드로 프록시됩니다. Railway의 내부 도메인(`*.up.railway.app`)이 아닌 공개 도메인을 등록하세요.
 
 ### 1.5 카카오 로그인 활성화 (선택)
 
@@ -100,7 +100,7 @@ MoA 서버 → NHN Cloud Toast API → 카카오톡 알림톡/친구톡 → 사�
 
 1. 좌측 **제품 설정** > **카카오 로그인**
 2. **활성화 설정** ON
-3. **Redirect URI** 추가: `https://YOUR-APP.up.railway.app/auth/kakao/callback`
+3. **Redirect URI** 추가: `https://mymoa.app/auth/kakao/callback`
 
 ---
 
@@ -178,7 +178,7 @@ MoA 서버 → NHN Cloud Toast API → 카카오톡 알림톡/친구톡 → 사�
    - **스킬명**: `MoA AI`
    - **설명**: MoA AI 어시스턴트 응답 스킬
    - **URL**: (STEP 4 배포 후 입력 — 아래에서 안내)
-     - 형식: `https://YOUR-APP.up.railway.app/kakao/webhook`
+     - 형식: `https://mymoa.app/kakao/webhook`
    - **헤더값**: (비워두거나 필요시 인증 토큰 입력)
    - **기본 스킬**: 체크
 4. **저장**
@@ -245,7 +245,7 @@ MoA 서버 → NHN Cloud Toast API → 카카오톡 알림톡/친구톡 → 사�
 2. **Generate Domain** 클릭
 3. 생성된 도메인을 **메모**: `YOUR-APP.up.railway.app`
 
-> 또는 **Custom Domain** 에서 본인 도메인 연결 가능
+> 이 Railway 도메인은 내부 백엔드 주소입니다. Vercel `vercel.json`의 rewrite 대상으로 사용하며, 카카오 개발자 콘솔이나 오픈빌더에는 공개 도메인 `https://mymoa.app`을 입력합니다.
 
 #### 4A.5 환경변수 입력
 
@@ -264,8 +264,11 @@ KAKAO_ADMIN_KEY=여기에_REST_API_키_붙여넣기
 #### 4A.6 배포 확인
 
 ```bash
-# Health Check
+# Health Check (Railway 내부 도메인으로 직접 확인)
 curl https://YOUR-APP.up.railway.app/health
+
+# 또는 공개 도메인으로 확인 (Vercel rewrite 경유)
+curl https://mymoa.app/health
 # 결과: {"status":"ok","kakao":true,...}
 ```
 
@@ -302,9 +305,8 @@ Railway 배포가 완료되면 스킬 URL을 입력합니다.
 2. STEP 3.4에서 만든 `MoA AI` 스킬 클릭
 3. **URL** 필드에 입력:
    ```
-   https://YOUR-APP.up.railway.app/kakao/webhook
+   https://mymoa.app/kakao/webhook
    ```
-   (YOUR-APP은 Railway에서 생성된 도메인으로 교체)
 4. **저장**
 
 ### 5.2 스킬 테스트
@@ -635,7 +637,7 @@ Vercel 자체에는 프록시 설정만 필요합니다.
 ### 8.2 Health Check
 
 ```bash
-curl https://YOUR-APP.up.railway.app/health
+curl https://mymoa.app/health
 ```
 
 정상 응답 예시:
@@ -733,7 +735,7 @@ curl https://YOUR-APP.up.railway.app/health
 
 1. **Health Check 확인**:
    ```bash
-   curl https://YOUR-APP.up.railway.app/health
+   curl https://mymoa.app/health
    ```
    `{"status":"ok"}` 이 아니면 Railway 배포 상태 확인
 
