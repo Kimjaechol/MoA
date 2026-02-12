@@ -391,7 +391,7 @@ export default function Home() {
       >
         <div className="container animate-in">
           <span className="section-badge" style={{ marginBottom: "24px" }}>
-            Next-Gen AI Agent &middot; 100+ Skills
+            Next-Gen AI Agent &middot; 100+ Skills &middot; 15+ Channels
           </span>
           <h1
             style={{
@@ -401,7 +401,7 @@ export default function Home() {
               lineHeight: 1.2,
             }}
           >
-            {"카카오톡으로 "}
+            {"클로드봇의 한계를 넘어, "}
             <span
               style={{
                 background: "var(--gradient)",
@@ -409,38 +409,72 @@ export default function Home() {
                 WebkitTextFillColor: "transparent",
               }}
             >
-              AI를 부르세요
+              MoA가 왔습니다
             </span>
           </h1>
           <p
             style={{
-              fontSize: "clamp(1rem, 2vw, 1.25rem)",
+              fontSize: "clamp(1.02rem, 2vw, 1.22rem)",
               color: "var(--text-muted)",
-              maxWidth: "700px",
-              margin: "0 auto 20px",
+              maxWidth: "760px",
+              margin: "0 auto 16px",
+              lineHeight: 1.85,
             }}
           >
-            MoA는 카카오톡 한 줄로 AI를 제어하는 차세대 에이전트입니다.
-            마이페이지에서 API 키를 관리하고, Kimi K2-0905 Groq 등 가성비 모델부터 최고급 LLM까지.
-            100개 이상의 전문 스킬과 2가지 모델 전략으로 항상 최적의 결과를 제공합니다.
+            전 세계 15만명이 열광한 클로드봇(OpenClaw) &mdash;
+            그 막강한 AI 성능에도 불구하고, 설치가 너무 어렵고 보안이 취약해서
+            사용을 포기하셨나요?
           </p>
           <p
             style={{
-              fontSize: "0.95rem",
-              color: "var(--text-muted)",
-              maxWidth: "600px",
-              margin: "0 auto 40px",
-              opacity: 0.8,
+              fontSize: "clamp(1rem, 2vw, 1.18rem)",
+              color: "var(--text)",
+              maxWidth: "760px",
+              margin: "0 auto 16px",
+              lineHeight: 1.85,
+              fontWeight: 500,
             }}
           >
-            터미널이 아닌 카카오톡에서. 복잡한 설정 없이. 누구나 바로 시작할 수 있습니다.
+            <strong>MoA(Master of AI)</strong>는 클로드봇의 취약한 보안을 AES-256 암호화와
+            3중 인증으로 완전히 보강하고, 모든 기기의 MoA 에이전트가
+            성능과 장기기억을 실시간 동기화하는 &mdash; 차원이 다른 업그레이드입니다.
+          </p>
+          <p
+            style={{
+              fontSize: "clamp(0.97rem, 1.8vw, 1.13rem)",
+              color: "var(--text-muted)",
+              maxWidth: "760px",
+              margin: "0 auto 16px",
+              lineHeight: 1.85,
+            }}
+          >
+            Windows, Mac, 휴대폰에서 <strong>클릭 한 번으로 설치 완료</strong>.
+            바로 거의 모든 LLM을 사용해서 날씨, 여행계획, 길안내 등 일상업무부터
+            직장 문서작업, 자동 코딩까지 즉시 시작할 수 있습니다.
+          </p>
+          <p
+            style={{
+              fontSize: "clamp(0.97rem, 1.8vw, 1.13rem)",
+              color: "var(--text-muted)",
+              maxWidth: "760px",
+              margin: "0 auto 32px",
+              lineHeight: 1.85,
+            }}
+          >
+            기존 클로드봇에는 없었던 <strong>카카오톡 연동</strong> &mdash;
+            앱 설치 여부와 관계없이 카카오톡 메시지만으로 MoA와 대화하고,
+            글과 음성으로 업무를 지시할 수 있습니다.
+            한번 사용해보시고 그 무궁무진한 성능과 자유를 경험하세요.
           </p>
           <div style={{ display: "flex", gap: "16px", justifyContent: "center", flexWrap: "wrap" }}>
             <a href="/download" className="btn btn-primary btn-lg">
-              앱 다운로드
+              지금 바로 설치하기
             </a>
             <a href="#why-moa" className="btn btn-outline btn-lg">
               왜 MoA인가?
+            </a>
+            <a href="/community" className="btn btn-outline btn-lg" style={{ borderColor: "var(--accent)", color: "var(--accent)" }}>
+              사용사례 보기
             </a>
           </div>
         </div>

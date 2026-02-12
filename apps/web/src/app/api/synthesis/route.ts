@@ -169,12 +169,13 @@ async function callSynthesisLlm(systemPrompt: string, userPrompt: string): Promi
   if (geminiKey) {
     try {
       const res = await fetch(
-        `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${geminiKey}`,
+        `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-05-20:generateContent?key=${geminiKey}`,
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            contents: [{ parts: [{ text: `${systemPrompt}\n\n${userPrompt}` }] }],
+            systemInstruction: { parts: [{ text: systemPrompt }] },
+            contents: [{ role: "user", parts: [{ text: userPrompt }] }],
             generationConfig: { maxOutputTokens: 8192, temperature: 0.7 },
           }),
         },
@@ -192,7 +193,7 @@ async function callSynthesisLlm(systemPrompt: string, userPrompt: string): Promi
 function detectModelUsed(): string {
   if (process.env.ANTHROPIC_API_KEY) return "anthropic/claude-sonnet-4-5";
   if (process.env.OPENAI_API_KEY) return "openai/gpt-4o";
-  if (process.env.GEMINI_API_KEY) return "gemini/gemini-2.0-flash";
+  if (process.env.GEMINI_API_KEY) return "gemini/gemini-2.5-flash";
   return "fallback";
 }
 

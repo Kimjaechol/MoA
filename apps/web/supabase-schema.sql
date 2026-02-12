@@ -1,9 +1,65 @@
 -- ============================================
 -- MoA Website — Supabase Schema
 -- Run this in Supabase SQL Editor to create tables
+--
+-- IMPORTANT: All API routes use the service key (bypasses RLS).
+-- RLS policies below serve as defense-in-depth if anon key is
+-- ever exposed. The real access control is in the API layer.
 -- ============================================
 
--- 1. Feedback (건의사항/버그 신고) — 작성자+관리자만 조회 가능
+-- ============================================
+-- 0. Users & Sessions (사용자 인증)
+-- 3중 보안: 아이디/비밀번호 + 구문번호 + 기기인증
+-- ============================================
+
+CREATE TABLE IF NOT EXISTS moa_users (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id TEXT NOT NULL UNIQUE,          -- e.g. "user_1738000000_abc123"
+  username TEXT NOT NULL UNIQUE,          -- login username (lowercase)
+  display_name TEXT,
+  password_hash TEXT NOT NULL,            -- scrypt hash (salt:hash)
+  passphrase_hash TEXT NOT NULL,          -- 구문번호 scrypt hash
+  phone TEXT,
+  email TEXT,
+  is_active BOOLEAN NOT NULL DEFAULT true,
+  failed_login_attempts INTEGER NOT NULL DEFAULT 0,
+  locked_until TIMESTAMPTZ,              -- account lockout after failed attempts
+  last_login_at TIMESTAMPTZ,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+ALTER TABLE moa_users ENABLE ROW LEVEL SECURITY;
+
+-- No anon access to users table (service key only)
+-- No USING(true) policy — any anon query returns zero rows
+
+CREATE INDEX IF NOT EXISTS idx_users_user_id ON moa_users(user_id);
+CREATE INDEX IF NOT EXISTS idx_users_username ON moa_users(username);
+
+-- Sessions (서버 사이드 세션 관리)
+CREATE TABLE IF NOT EXISTS moa_sessions (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id TEXT NOT NULL,
+  token TEXT NOT NULL UNIQUE,
+  expires_at TIMESTAMPTZ NOT NULL,
+  ip_address TEXT,
+  user_agent TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+ALTER TABLE moa_sessions ENABLE ROW LEVEL SECURITY;
+
+-- No anon access to sessions table (service key only)
+
+CREATE INDEX IF NOT EXISTS idx_sessions_token ON moa_sessions(token);
+CREATE INDEX IF NOT EXISTS idx_sessions_user ON moa_sessions(user_id);
+CREATE INDEX IF NOT EXISTS idx_sessions_expires ON moa_sessions(expires_at);
+
+-- ============================================
+-- 1. Feedback (건의사항/버그 신고) — 관리자만 조회 가능
+-- ============================================
+
 CREATE TABLE IF NOT EXISTS moa_feedback (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   type TEXT NOT NULL CHECK (type IN ('bug', 'feature', 'other')),
@@ -15,10 +71,17 @@ CREATE TABLE IF NOT EXISTS moa_feedback (
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
--- RLS: Only service key can read/write (enforced via API routes)
+-- RLS: No anon access (service key only)
 ALTER TABLE moa_feedback ENABLE ROW LEVEL SECURITY;
 
--- 2. Community Posts (사용사례 게시판)
+CREATE INDEX IF NOT EXISTS idx_feedback_email ON moa_feedback(email);
+CREATE INDEX IF NOT EXISTS idx_feedback_status ON moa_feedback(status);
+CREATE INDEX IF NOT EXISTS idx_feedback_created ON moa_feedback(created_at DESC);
+
+-- ============================================
+-- 2. Community Posts (커뮤니티 게시판) — public read OK
+-- ============================================
+
 CREATE TABLE IF NOT EXISTS moa_community_posts (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   nickname TEXT NOT NULL,
@@ -31,7 +94,7 @@ CREATE TABLE IF NOT EXISTS moa_community_posts (
 
 ALTER TABLE moa_community_posts ENABLE ROW LEVEL SECURITY;
 
--- Allow anonymous reads for community posts (public board)
+-- Public board: anon reads OK
 CREATE POLICY "Public read access" ON moa_community_posts
   FOR SELECT USING (true);
 
@@ -63,14 +126,6 @@ ALTER TABLE moa_community_comments ENABLE ROW LEVEL SECURITY;
 CREATE POLICY "Public read access" ON moa_community_comments
   FOR SELECT USING (true);
 
--- ============================================
--- Indexes for performance
--- ============================================
-
-CREATE INDEX IF NOT EXISTS idx_feedback_email ON moa_feedback(email);
-CREATE INDEX IF NOT EXISTS idx_feedback_status ON moa_feedback(status);
-CREATE INDEX IF NOT EXISTS idx_feedback_created ON moa_feedback(created_at DESC);
-
 CREATE INDEX IF NOT EXISTS idx_posts_created ON moa_community_posts(created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_likes_post ON moa_community_likes(post_id);
 CREATE INDEX IF NOT EXISTS idx_likes_visitor ON moa_community_likes(visitor_id);
@@ -78,7 +133,7 @@ CREATE INDEX IF NOT EXISTS idx_comments_post ON moa_community_comments(post_id);
 CREATE INDEX IF NOT EXISTS idx_comments_created ON moa_community_comments(created_at ASC);
 
 -- ============================================
--- 5. Use Case Posts (사용사례 게시판)
+-- 5. Use Case Posts (사용사례 게시판) — public read OK
 -- ============================================
 
 CREATE TABLE IF NOT EXISTS moa_usecase_posts (
@@ -124,7 +179,6 @@ ALTER TABLE moa_usecase_comments ENABLE ROW LEVEL SECURITY;
 CREATE POLICY "Public read access" ON moa_usecase_comments
   FOR SELECT USING (true);
 
--- Use Case Indexes
 CREATE INDEX IF NOT EXISTS idx_usecase_posts_created ON moa_usecase_posts(created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_usecase_likes_post ON moa_usecase_likes(post_id);
 CREATE INDEX IF NOT EXISTS idx_usecase_likes_visitor ON moa_usecase_likes(visitor_id);
@@ -133,8 +187,7 @@ CREATE INDEX IF NOT EXISTS idx_usecase_comments_created ON moa_usecase_comments(
 
 -- ============================================
 -- 8. User API Keys (사용자 API 키 관리)
--- Each user stores their own LLM API keys.
--- Keys are encrypted at application level before storage.
+-- Keys are encrypted with AES-256-GCM at application level.
 -- ============================================
 
 CREATE TABLE IF NOT EXISTS moa_user_api_keys (
@@ -143,9 +196,9 @@ CREATE TABLE IF NOT EXISTS moa_user_api_keys (
   provider TEXT NOT NULL CHECK (provider IN (
     'openai', 'anthropic', 'gemini', 'groq', 'deepseek', 'mistral', 'xai'
   )),
-  -- API key is encrypted at app level (AES-256) before storing
+  -- API key is encrypted at app level (AES-256-GCM) before storing
   encrypted_key TEXT NOT NULL,
-  -- Display label e.g. "sk-...abc" (last 4 chars only)
+  -- Display label e.g. "sk-...abc" (first 4 + last 4 chars)
   key_hint TEXT,
   is_active BOOLEAN NOT NULL DEFAULT true,
   created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
@@ -155,11 +208,15 @@ CREATE TABLE IF NOT EXISTS moa_user_api_keys (
 
 ALTER TABLE moa_user_api_keys ENABLE ROW LEVEL SECURITY;
 
--- Users can only see their own keys (enforced via API)
-CREATE POLICY "Users read own keys" ON moa_user_api_keys
-  FOR SELECT USING (true);
+-- No anon access — API keys are sensitive (service key only)
 
--- 9. User Model Strategy Settings (사용자 모델 전략 설정)
+CREATE INDEX IF NOT EXISTS idx_user_api_keys_user ON moa_user_api_keys(user_id);
+CREATE INDEX IF NOT EXISTS idx_user_api_keys_provider ON moa_user_api_keys(user_id, provider);
+
+-- ============================================
+-- 9. User Model Strategy Settings
+-- ============================================
+
 CREATE TABLE IF NOT EXISTS moa_user_settings (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   user_id TEXT NOT NULL UNIQUE,
@@ -178,17 +235,12 @@ CREATE TABLE IF NOT EXISTS moa_user_settings (
 
 ALTER TABLE moa_user_settings ENABLE ROW LEVEL SECURITY;
 
-CREATE POLICY "Users read own settings" ON moa_user_settings
-  FOR SELECT USING (true);
+-- No anon access — settings contain phone numbers (service key only)
 
--- User API Keys & Settings Indexes
-CREATE INDEX IF NOT EXISTS idx_user_api_keys_user ON moa_user_api_keys(user_id);
-CREATE INDEX IF NOT EXISTS idx_user_api_keys_provider ON moa_user_api_keys(user_id, provider);
 CREATE INDEX IF NOT EXISTS idx_user_settings_user ON moa_user_settings(user_id);
 
 -- ============================================
 -- 10. Chat Messages (웹 채팅 메시지)
--- Stores conversation history for the built-in web chat.
 -- ============================================
 
 CREATE TABLE IF NOT EXISTS moa_chat_messages (
@@ -206,10 +258,17 @@ CREATE TABLE IF NOT EXISTS moa_chat_messages (
 
 ALTER TABLE moa_chat_messages ENABLE ROW LEVEL SECURITY;
 
-CREATE POLICY "Users read own messages" ON moa_chat_messages
-  FOR SELECT USING (true);
+-- No anon access — chat messages are private (service key only)
 
+CREATE INDEX IF NOT EXISTS idx_chat_user ON moa_chat_messages(user_id);
+CREATE INDEX IF NOT EXISTS idx_chat_session ON moa_chat_messages(session_id);
+CREATE INDEX IF NOT EXISTS idx_chat_created ON moa_chat_messages(created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_chat_category ON moa_chat_messages(category);
+
+-- ============================================
 -- 11. Channel Connections (채널 연결 상태)
+-- ============================================
+
 CREATE TABLE IF NOT EXISTS moa_channel_connections (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   user_id TEXT NOT NULL,
@@ -224,19 +283,13 @@ CREATE TABLE IF NOT EXISTS moa_channel_connections (
 
 ALTER TABLE moa_channel_connections ENABLE ROW LEVEL SECURITY;
 
-CREATE POLICY "Users read own connections" ON moa_channel_connections
-  FOR SELECT USING (true);
+-- No anon access (service key only)
 
--- Chat & Channel Indexes
-CREATE INDEX IF NOT EXISTS idx_chat_user ON moa_chat_messages(user_id);
-CREATE INDEX IF NOT EXISTS idx_chat_session ON moa_chat_messages(session_id);
-CREATE INDEX IF NOT EXISTS idx_chat_created ON moa_chat_messages(created_at DESC);
-CREATE INDEX IF NOT EXISTS idx_chat_category ON moa_chat_messages(category);
 CREATE INDEX IF NOT EXISTS idx_channel_conn_user ON moa_channel_connections(user_id);
 CREATE INDEX IF NOT EXISTS idx_channel_conn_channel ON moa_channel_connections(user_id, channel);
 
 -- ============================================
--- 12. Synthesis Jobs (종합문서 작성 기록)
+-- 12. Synthesis Jobs (문서작업 기록)
 -- ============================================
 
 CREATE TABLE IF NOT EXISTS moa_synthesis_jobs (
@@ -256,14 +309,13 @@ CREATE TABLE IF NOT EXISTS moa_synthesis_jobs (
 
 ALTER TABLE moa_synthesis_jobs ENABLE ROW LEVEL SECURITY;
 
-CREATE POLICY "Users read own synthesis jobs" ON moa_synthesis_jobs
-  FOR SELECT USING (true);
+-- No anon access (service key only)
 
 CREATE INDEX IF NOT EXISTS idx_synthesis_user ON moa_synthesis_jobs(user_id);
 CREATE INDEX IF NOT EXISTS idx_synthesis_created ON moa_synthesis_jobs(created_at DESC);
 
 -- ============================================
--- 13. Auto-Code Sessions (AI 자동코딩 세션)
+-- 13. Auto-Code Sessions (AI 코딩작업 세션)
 -- ============================================
 
 CREATE TABLE IF NOT EXISTS moa_autocode_sessions (
@@ -284,15 +336,13 @@ CREATE TABLE IF NOT EXISTS moa_autocode_sessions (
 
 ALTER TABLE moa_autocode_sessions ENABLE ROW LEVEL SECURITY;
 
-CREATE POLICY "Users read own autocode sessions" ON moa_autocode_sessions
-  FOR SELECT USING (true);
+-- No anon access (service key only)
 
 CREATE INDEX IF NOT EXISTS idx_autocode_user ON moa_autocode_sessions(user_id);
 CREATE INDEX IF NOT EXISTS idx_autocode_created ON moa_autocode_sessions(created_at DESC);
 
 -- ============================================
 -- 14. Credits (크레딧 잔액)
--- Each user has a credit balance for AI usage.
 -- ============================================
 
 CREATE TABLE IF NOT EXISTS moa_credits (
@@ -308,7 +358,9 @@ CREATE TABLE IF NOT EXISTS moa_credits (
 );
 
 ALTER TABLE moa_credits ENABLE ROW LEVEL SECURITY;
-CREATE POLICY "Users read own credits" ON moa_credits FOR SELECT USING (true);
+
+-- No anon access (service key only)
+
 CREATE INDEX IF NOT EXISTS idx_credits_user ON moa_credits(user_id);
 
 -- ============================================
@@ -330,7 +382,9 @@ CREATE TABLE IF NOT EXISTS moa_credit_transactions (
 );
 
 ALTER TABLE moa_credit_transactions ENABLE ROW LEVEL SECURITY;
-CREATE POLICY "Users read own transactions" ON moa_credit_transactions FOR SELECT USING (true);
+
+-- No anon access (service key only)
+
 CREATE INDEX IF NOT EXISTS idx_credit_tx_user ON moa_credit_transactions(user_id);
 CREATE INDEX IF NOT EXISTS idx_credit_tx_created ON moa_credit_transactions(created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_credit_tx_type ON moa_credit_transactions(user_id, tx_type);
@@ -356,7 +410,9 @@ CREATE TABLE IF NOT EXISTS moa_subscriptions (
 );
 
 ALTER TABLE moa_subscriptions ENABLE ROW LEVEL SECURITY;
-CREATE POLICY "Users read own subscriptions" ON moa_subscriptions FOR SELECT USING (true);
+
+-- No anon access (service key only)
+
 CREATE INDEX IF NOT EXISTS idx_sub_user ON moa_subscriptions(user_id);
 CREATE INDEX IF NOT EXISTS idx_sub_status ON moa_subscriptions(user_id, status);
 
@@ -385,7 +441,25 @@ CREATE TABLE IF NOT EXISTS moa_payments (
 );
 
 ALTER TABLE moa_payments ENABLE ROW LEVEL SECURITY;
-CREATE POLICY "Users read own payments" ON moa_payments FOR SELECT USING (true);
+
+-- No anon access (service key only)
+
 CREATE INDEX IF NOT EXISTS idx_payments_user ON moa_payments(user_id);
 CREATE INDEX IF NOT EXISTS idx_payments_pid ON moa_payments(payment_id);
 CREATE INDEX IF NOT EXISTS idx_payments_created ON moa_payments(created_at DESC);
+
+-- ============================================
+-- Migration helper: drop old overly-permissive RLS policies
+-- Run this ONCE on existing databases that have the old USING(true) policies.
+-- ============================================
+
+-- DROP POLICY IF EXISTS "Users read own keys" ON moa_user_api_keys;
+-- DROP POLICY IF EXISTS "Users read own settings" ON moa_user_settings;
+-- DROP POLICY IF EXISTS "Users read own messages" ON moa_chat_messages;
+-- DROP POLICY IF EXISTS "Users read own connections" ON moa_channel_connections;
+-- DROP POLICY IF EXISTS "Users read own synthesis jobs" ON moa_synthesis_jobs;
+-- DROP POLICY IF EXISTS "Users read own autocode sessions" ON moa_autocode_sessions;
+-- DROP POLICY IF EXISTS "Users read own credits" ON moa_credits;
+-- DROP POLICY IF EXISTS "Users read own transactions" ON moa_credit_transactions;
+-- DROP POLICY IF EXISTS "Users read own subscriptions" ON moa_subscriptions;
+-- DROP POLICY IF EXISTS "Users read own payments" ON moa_payments;

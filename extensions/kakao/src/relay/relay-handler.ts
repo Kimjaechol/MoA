@@ -22,17 +22,14 @@ import { chargeRelayCommand } from "./relay-billing.js";
 import { analyzeCommandSafety, formatSafetyWarning } from "./safety-guard.js";
 
 // Encryption key derived from env (used for encrypting commands at rest)
-let warnedAboutDefaultKey = false;
 function getRelayEncryptionKey(): Buffer {
-  const key = process.env.LAWCALL_ENCRYPTION_KEY ?? process.env.SUPABASE_SERVICE_KEY;
+  const key = process.env.LAWCALL_ENCRYPTION_KEY ?? process.env.MOA_ENCRYPTION_KEY ?? process.env.SUPABASE_SERVICE_KEY;
   if (!key) {
-    if (!warnedAboutDefaultKey) {
-      console.warn(
-        "[relay] WARNING: No LAWCALL_ENCRYPTION_KEY or SUPABASE_SERVICE_KEY set. Using insecure default key — NOT safe for production!",
-      );
-      warnedAboutDefaultKey = true;
-    }
-    return createHash("sha256").update("moa-relay-default").digest();
+    throw new Error(
+      "[relay] FATAL: No encryption key configured. " +
+      "Set LAWCALL_ENCRYPTION_KEY, MOA_ENCRYPTION_KEY, or SUPABASE_SERVICE_KEY. " +
+      "Refusing to use a hardcoded default — this is a security requirement for production.",
+    );
   }
   return createHash("sha256").update(key).digest();
 }

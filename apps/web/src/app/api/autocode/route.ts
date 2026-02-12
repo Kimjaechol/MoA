@@ -174,12 +174,13 @@ async function callCodeLlm(systemPrompt: string, userPrompt: string, preferredMo
   if ((preferredModel === "gemini-2.5-flash" || preferredModel === "auto") && geminiKey) {
     try {
       const res = await fetch(
-        `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${geminiKey}`,
+        `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-05-20:generateContent?key=${geminiKey}`,
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            contents: [{ parts: [{ text: `${systemPrompt}\n\n${userPrompt}` }] }],
+            systemInstruction: { parts: [{ text: systemPrompt }] },
+            contents: [{ role: "user", parts: [{ text: userPrompt }] }],
             generationConfig: { maxOutputTokens: 8192, temperature: 0.3 },
           }),
         },
@@ -187,7 +188,7 @@ async function callCodeLlm(systemPrompt: string, userPrompt: string, preferredMo
       if (res.ok) {
         const data = await res.json();
         const text = data.candidates?.[0]?.content?.parts?.[0]?.text;
-        if (text) return { text, model: "gemini/gemini-2.0-flash" };
+        if (text) return { text, model: "gemini/gemini-2.5-flash" };
       }
     } catch { /* fall through */ }
   }

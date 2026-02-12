@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { safeDecrypt } from "@/lib/crypto";
 
 /**
  * POST /api/chat
@@ -14,6 +15,12 @@ import { NextRequest, NextResponse } from "next/server";
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
+
+    // ── web_login action — delegate to /api/auth ──
+    if (body.action === "web_login") {
+      return handleWebLogin(body);
+    }
+
     const { user_id, session_id, content, channel = "web", category = "other", is_desktop = false } = body;
 
     if (!content || typeof content !== "string" || !content.trim()) {
@@ -146,6 +153,8 @@ const MODEL_CREDIT_COSTS: Record<string, number> = {
   "groq/kimi-k2-0905": 1, "groq/llama-3.3-70b-versatile": 1,
   "gemini/gemini-2.5-flash": 2, "gemini/gemini-2.0-flash": 2,
   "deepseek/deepseek-chat": 3,
+  "mistral/mistral-small": 3, "mistral/mistral-large": 6,
+  "xai/grok-3-mini": 4, "xai/grok-3": 8,
   "openai/gpt-4o": 5, "openai/gpt-4o-mini": 3,
   "anthropic/claude-sonnet-4-5": 8, "anthropic/claude-haiku-4-5": 4,
   "openai/gpt-5": 10,
@@ -157,6 +166,8 @@ function getCreditCost(model: string): number {
   if (model.startsWith("groq/")) return 1;
   if (model.startsWith("gemini/")) return 2;
   if (model.startsWith("deepseek/")) return 3;
+  if (model.startsWith("mistral/")) return 4;
+  if (model.startsWith("xai/")) return 5;
   if (model.startsWith("openai/")) return 5;
   if (model.startsWith("anthropic/")) return 8;
   return 0;
@@ -221,15 +232,17 @@ interface AIResponse {
  */
 const LANGUAGE_RULE = `
 
-[CRITICAL LANGUAGE RULE]
+[CRITICAL LANGUAGE RULE / 언어 규칙 - 최우선 적용]
 You MUST respond in the SAME language as the user's message.
-- If the user writes in Korean, respond ONLY in Korean. Never mix Japanese, Chinese, or any other language.
-- If the user writes in Japanese, respond ONLY in Japanese.
+사용자가 한국어로 말하면, 반드시 한국어로만 대답하세요.
+
+- 한국어 응답 시: 일본어(ありません, ちょっと 등), 중국어(的, 是, 了 등), 러시아어(Привет 등)를 절대 섞지 마세요.
+- 한자(漢字)를 한국어 응답에 사용하지 마세요. 한국어 단어만 사용하세요.
+- If the user writes in Korean, respond ONLY in pure Korean. NEVER mix Chinese characters (漢字), Japanese, Russian, or any other language.
 - If the user writes in English, respond ONLY in English.
-- If the user writes in Chinese, respond ONLY in Chinese.
 - If the user explicitly requests a different language (e.g. "영어로 답해줘"), follow that instruction.
 - English technical terms (API, URL, code snippets) are acceptable in any language.
-- ABSOLUTELY DO NOT mix different Asian languages. For example, never use Japanese words (ありません, ちょっと, etc.) in a Korean response. This is strictly forbidden.
+- ABSOLUTELY DO NOT mix different languages in a single response. This is strictly forbidden.
 `;
 
 /** Category-specific system prompt prefixes for LLM routing */
@@ -296,9 +309,20 @@ async function generateResponse(message: string, userId: string, category: strin
 }
 
 /**
- * Attempt real LLM API call.
- * Priority: user's own keys (1x credit) > MoA server keys (2x credit).
- * Returns usedEnvKey=true when MoA's server-level API key was used.
+ * Attempt real LLM API call — 3-phase model selection.
+ *
+ * Phase 1: User's own API keys (1x credit) — best quality first.
+ *   When a user pays for API keys, use the best model among their keys.
+ *   Priority: Claude > OpenAI > Gemini > Mistral > xAI
+ *   Groq(Llama) and DeepSeek are excluded here (CJK language mixing).
+ *
+ * Phase 2: MoA server env keys (2x credit) — strategy defaults.
+ *   - cost-efficient  → Gemini 2.5 Flash → GPT-4o-mini → Claude Haiku
+ *   - max-performance → Claude Opus 4.6 → GPT-5 → Gemini 2.5 Flash
+ *
+ * Phase 3: Groq/DeepSeek — user keys ONLY, absolute last resort.
+ *   Only used when the user explicitly provided their own key.
+ *   Never picked from env keys due to CJK language mixing issues.
  */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 async function tryLlmCall(message: string, category: string, strategy: string, keys: any[]): Promise<AIResponse | null> {
@@ -310,68 +334,121 @@ async function tryLlmCall(message: string, category: string, strategy: string, k
   const envAnthropicKey = process.env.ANTHROPIC_API_KEY;
   const envOpenaiKey = process.env.OPENAI_API_KEY;
   const envGeminiKey = process.env.GEMINI_API_KEY;
-  const envGroqKey = process.env.GROQ_API_KEY;
-  const envDeepseekKey = process.env.DEEPSEEK_API_KEY;
 
-  // User-provided keys (stored in DB → 1x credit)
-  const userAnthropicKey = keys.find((k: { provider: string }) => k.provider === "anthropic")?.encrypted_key;
-  const userOpenaiKey = keys.find((k: { provider: string }) => k.provider === "openai")?.encrypted_key;
-  const userGeminiKey = keys.find((k: { provider: string }) => k.provider === "gemini")?.encrypted_key;
-  const userGroqKey = keys.find((k: { provider: string }) => k.provider === "groq")?.encrypted_key;
-  const userDeepseekKey = keys.find((k: { provider: string }) => k.provider === "deepseek")?.encrypted_key;
-
-  // Helper: pick user key first (1x), fallback to env key (2x)
-  const pickKey = (userKey?: string, envKey?: string): { key: string; isEnv: boolean } | null => {
-    if (userKey) return { key: userKey, isEnv: false };
-    if (envKey) return { key: envKey, isEnv: true };
-    return null;
+  // User-provided keys (stored encrypted in DB → decrypt, 1x credit)
+  const decryptKey = (provider: string) => {
+    const raw = keys.find((k: { provider: string }) => k.provider === provider)?.encrypted_key;
+    return raw ? safeDecrypt(raw) : undefined;
   };
+  const userAnthropicKey = decryptKey("anthropic");
+  const userOpenaiKey = decryptKey("openai");
+  const userGeminiKey = decryptKey("gemini");
+  const userMistralKey = decryptKey("mistral");
+  const userXaiKey = decryptKey("xai");
+  const userGroqKey = decryptKey("groq");
+  const userDeepseekKey = decryptKey("deepseek");
 
-  // Max-performance: use the best model available
+  const hasUserQualityKeys = !!(userAnthropicKey || userOpenaiKey || userGeminiKey || userMistralKey || userXaiKey);
+
+  // ──────────────────────────────────────────────
+  // Phase 1: User's own API keys — best quality first
+  // When the user pays for API keys, use the best model from their keys.
+  // ──────────────────────────────────────────────
+  if (hasUserQualityKeys) {
+    if (strategy === "max-performance") {
+      // Max-perf user keys: Claude Opus → GPT-5 → Gemini → xAI → Mistral
+      if (userAnthropicKey) {
+        const r = await callAnthropic(userAnthropicKey, enrichedSystem, message, "claude-opus-4-6");
+        if (r) return { text: r, model: "anthropic/claude-opus-4-6", usedEnvKey: false };
+      }
+      if (userOpenaiKey) {
+        const r = await callOpenAI(userOpenaiKey, enrichedSystem, message, "gpt-5");
+        if (r) return { text: r, model: "openai/gpt-5", usedEnvKey: false };
+      }
+      if (userGeminiKey) {
+        const r = await callGemini(userGeminiKey, enrichedSystem, message);
+        if (r) return { text: r, model: "gemini/gemini-2.5-flash", usedEnvKey: false };
+      }
+      if (userXaiKey) {
+        const r = await callXai(userXaiKey, enrichedSystem, message, "grok-3");
+        if (r) return { text: r, model: "xai/grok-3", usedEnvKey: false };
+      }
+      if (userMistralKey) {
+        const r = await callMistral(userMistralKey, enrichedSystem, message, "mistral-large-latest");
+        if (r) return { text: r, model: "mistral/mistral-large", usedEnvKey: false };
+      }
+    } else {
+      // Cost-efficient user keys: Claude Sonnet → GPT-4o-mini → Gemini → xAI → Mistral
+      // User is paying anyway, so use the best cost-effective model from their keys.
+      if (userAnthropicKey) {
+        const r = await callAnthropic(userAnthropicKey, enrichedSystem, message, "claude-sonnet-4-5-20250929");
+        if (r) return { text: r, model: "anthropic/claude-sonnet-4-5", usedEnvKey: false };
+      }
+      if (userOpenaiKey) {
+        const r = await callOpenAI(userOpenaiKey, enrichedSystem, message, "gpt-4o-mini");
+        if (r) return { text: r, model: "openai/gpt-4o-mini", usedEnvKey: false };
+      }
+      if (userGeminiKey) {
+        const r = await callGemini(userGeminiKey, enrichedSystem, message);
+        if (r) return { text: r, model: "gemini/gemini-2.5-flash", usedEnvKey: false };
+      }
+      if (userXaiKey) {
+        const r = await callXai(userXaiKey, enrichedSystem, message, "grok-3-mini");
+        if (r) return { text: r, model: "xai/grok-3-mini", usedEnvKey: false };
+      }
+      if (userMistralKey) {
+        const r = await callMistral(userMistralKey, enrichedSystem, message, "mistral-small-latest");
+        if (r) return { text: r, model: "mistral/mistral-small", usedEnvKey: false };
+      }
+    }
+  }
+
+  // ──────────────────────────────────────────────
+  // Phase 2: MoA server env keys — strategy defaults
+  // When user has no keys (or user keys all failed), use MoA env keys.
+  // ──────────────────────────────────────────────
   if (strategy === "max-performance") {
-    const anthropicInfo = pickKey(userAnthropicKey, envAnthropicKey);
-    if (anthropicInfo) {
-      const result = await callAnthropic(anthropicInfo.key, enrichedSystem, message, "claude-opus-4-6");
-      if (result) return { text: result, model: "anthropic/claude-opus-4-6", usedEnvKey: anthropicInfo.isEnv };
+    // Max-perf env: Claude Opus → GPT-5 → Gemini 2.5 Flash
+    if (envAnthropicKey) {
+      const r = await callAnthropic(envAnthropicKey, enrichedSystem, message, "claude-opus-4-6");
+      if (r) return { text: r, model: "anthropic/claude-opus-4-6", usedEnvKey: true };
     }
-    const openaiInfo = pickKey(userOpenaiKey, envOpenaiKey);
-    if (openaiInfo) {
-      const result = await callOpenAI(openaiInfo.key, enrichedSystem, message, "gpt-5");
-      if (result) return { text: result, model: "openai/gpt-5", usedEnvKey: openaiInfo.isEnv };
+    if (envOpenaiKey) {
+      const r = await callOpenAI(envOpenaiKey, enrichedSystem, message, "gpt-5");
+      if (r) return { text: r, model: "openai/gpt-5", usedEnvKey: true };
+    }
+    if (envGeminiKey) {
+      const r = await callGemini(envGeminiKey, enrichedSystem, message);
+      if (r) return { text: r, model: "gemini/gemini-2.5-flash", usedEnvKey: true };
+    }
+  } else {
+    // Cost-efficient env: Gemini 2.5 Flash → GPT-4o-mini → Claude Haiku
+    if (envGeminiKey) {
+      const r = await callGemini(envGeminiKey, enrichedSystem, message);
+      if (r) return { text: r, model: "gemini/gemini-2.5-flash", usedEnvKey: true };
+    }
+    if (envOpenaiKey) {
+      const r = await callOpenAI(envOpenaiKey, enrichedSystem, message, "gpt-4o-mini");
+      if (r) return { text: r, model: "openai/gpt-4o-mini", usedEnvKey: true };
+    }
+    if (envAnthropicKey) {
+      const r = await callAnthropic(envAnthropicKey, enrichedSystem, message, "claude-haiku-4-5");
+      if (r) return { text: r, model: "anthropic/claude-haiku-4-5", usedEnvKey: true };
     }
   }
 
-  // Cost-efficient: try cheaper models first
-  const groqInfo = pickKey(userGroqKey, envGroqKey);
-  if (groqInfo) {
-    const result = await callGroq(groqInfo.key, enrichedSystem, message);
-    if (result) return { text: result, model: "groq/llama-3.3-70b-versatile", usedEnvKey: groqInfo.isEnv };
+  // ──────────────────────────────────────────────
+  // Phase 3: Groq(Llama) / DeepSeek — absolute last resort
+  // User keys ONLY. Never from env keys.
+  // These models have CJK language mixing issues (Korean/Chinese/Japanese).
+  // ──────────────────────────────────────────────
+  if (userGroqKey) {
+    const r = await callGroq(userGroqKey, enrichedSystem, message);
+    if (r) return { text: r, model: "groq/llama-3.3-70b-versatile", usedEnvKey: false };
   }
-
-  const geminiInfo = pickKey(userGeminiKey, envGeminiKey);
-  if (geminiInfo) {
-    const result = await callGemini(geminiInfo.key, enrichedSystem, message);
-    if (result) return { text: result, model: "gemini/gemini-2.5-flash", usedEnvKey: geminiInfo.isEnv };
-  }
-
-  const deepseekInfo = pickKey(userDeepseekKey, envDeepseekKey);
-  if (deepseekInfo) {
-    const result = await callDeepSeek(deepseekInfo.key, enrichedSystem, message);
-    if (result) return { text: result, model: "deepseek/deepseek-chat", usedEnvKey: deepseekInfo.isEnv };
-  }
-
-  // Fallback: try remaining env keys for OpenAI/Anthropic in cost-efficient mode
-  if (strategy !== "max-performance") {
-    const openaiInfo = pickKey(userOpenaiKey, envOpenaiKey);
-    if (openaiInfo) {
-      const result = await callOpenAI(openaiInfo.key, enrichedSystem, message, "gpt-4o-mini");
-      if (result) return { text: result, model: "openai/gpt-4o-mini", usedEnvKey: openaiInfo.isEnv };
-    }
-    const anthropicInfo = pickKey(userAnthropicKey, envAnthropicKey);
-    if (anthropicInfo) {
-      const result = await callAnthropic(anthropicInfo.key, enrichedSystem, message, "claude-haiku-4-5");
-      if (result) return { text: result, model: "anthropic/claude-haiku-4-5", usedEnvKey: anthropicInfo.isEnv };
-    }
+  if (userDeepseekKey) {
+    const r = await callDeepSeek(userDeepseekKey, enrichedSystem, message);
+    if (r) return { text: r, model: "deepseek/deepseek-chat", usedEnvKey: false };
   }
 
   return null;
@@ -407,12 +484,19 @@ async function callOpenAI(key: string, system: string, message: string, model: s
   return null;
 }
 
+/** Gemini model — extract to constant so it's easy to update when preview expires */
+const GEMINI_MODEL = "gemini-2.5-flash-preview-05-20";
+
 async function callGemini(key: string, system: string, message: string): Promise<string | null> {
   try {
-    const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${key}`, {
+    const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${key}`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ contents: [{ parts: [{ text: `${system}\n\n${message}` }] }], generationConfig: { maxOutputTokens: 4096 } }),
+      body: JSON.stringify({
+        systemInstruction: { parts: [{ text: system }] },
+        contents: [{ role: "user", parts: [{ text: message }] }],
+        generationConfig: { maxOutputTokens: 4096 },
+      }),
     });
     if (res.ok) {
       const data = await res.json();
@@ -452,16 +536,62 @@ async function callDeepSeek(key: string, system: string, message: string): Promi
   return null;
 }
 
+async function callXai(key: string, system: string, message: string, model: string): Promise<string | null> {
+  try {
+    const res = await fetch("https://api.x.ai/v1/chat/completions", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${key}` },
+      body: JSON.stringify({ model, messages: [{ role: "system", content: system }, { role: "user", content: message }], max_tokens: 4096 }),
+    });
+    if (res.ok) {
+      const data = await res.json();
+      return data.choices?.[0]?.message?.content ?? null;
+    }
+  } catch { /* fall through */ }
+  return null;
+}
+
+async function callMistral(key: string, system: string, message: string, model: string): Promise<string | null> {
+  try {
+    const res = await fetch("https://api.mistral.ai/v1/chat/completions", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${key}` },
+      body: JSON.stringify({ model, messages: [{ role: "system", content: system }, { role: "user", content: message }], max_tokens: 4096 }),
+    });
+    if (res.ok) {
+      const data = await res.json();
+      return data.choices?.[0]?.message?.content ?? null;
+    }
+  } catch { /* fall through */ }
+  return null;
+}
+
+/**
+ * Select model name for smart fallback responses (no API call).
+ * Same priority as tryLlmCall: quality providers first, Groq/DeepSeek last.
+ */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function selectModelName(strategy: string, keys: any[]): string {
+  const has = (p: string) => keys.some((k: { provider: string }) => k.provider === p);
+
+  // Phase 1: User's quality keys — best model first
   if (strategy === "max-performance") {
-    if (keys.some((k: { provider: string }) => k.provider === "anthropic")) return "anthropic/claude-opus-4-6";
-    if (keys.some((k: { provider: string }) => k.provider === "openai")) return "openai/gpt-5";
+    if (has("anthropic")) return "anthropic/claude-opus-4-6";
+    if (has("openai")) return "openai/gpt-5";
+    if (has("gemini")) return "gemini/gemini-2.5-flash";
+    if (has("xai")) return "xai/grok-3";
+    if (has("mistral")) return "mistral/mistral-large";
+  } else {
+    if (has("anthropic")) return "anthropic/claude-sonnet-4-5";
+    if (has("openai")) return "openai/gpt-4o-mini";
+    if (has("gemini")) return "gemini/gemini-2.5-flash";
+    if (has("xai")) return "xai/grok-3-mini";
+    if (has("mistral")) return "mistral/mistral-small";
   }
-  if (keys.some((k: { provider: string }) => k.provider === "groq")) return "groq/llama-3.3-70b-versatile";
-  if (keys.some((k: { provider: string }) => k.provider === "gemini")) return "gemini/gemini-2.5-flash";
-  if (keys.some((k: { provider: string }) => k.provider === "deepseek")) return "deepseek/deepseek-chat";
-  return "local/slm-default";
+
+  // Phase 2: No user quality keys → env key defaults
+  if (strategy === "max-performance") return "anthropic/claude-opus-4-6";
+  return "gemini/gemini-2.5-flash";
 }
 
 function generateSmartResponse(message: string, category: string, model: string, _prefix: string): string {
@@ -532,6 +662,96 @@ function getCategoryLabel(category: string): string {
     coding: "코딩작업", image: "이미지작업", music: "음악작업", other: "기타",
   };
   return labels[category] ?? "기타";
+}
+
+/**
+ * Handle web_login action from WebChatPanel.
+ * Proxies to /api/auth login logic directly.
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+async function handleWebLogin(body: any): Promise<NextResponse> {
+  const { username, password } = body;
+
+  if (!username || !password) {
+    return NextResponse.json({ success: false, error: "아이디와 비밀번호를 입력해주세요." }, { status: 400 });
+  }
+
+  try {
+    const { getServiceSupabase } = await import("@/lib/supabase");
+    const { verifyPassword: verify, generateSessionToken: genToken } = await import("@/lib/crypto");
+    const supabase = getServiceSupabase();
+
+    // Find user
+    const { data: user } = await supabase
+      .from("moa_users")
+      .select("*")
+      .eq("username", username.toLowerCase())
+      .single();
+
+    if (!user) {
+      return NextResponse.json({ success: false, error: "아이디 또는 비밀번호가 올바르지 않습니다." });
+    }
+
+    // Check lockout
+    if (user.locked_until && new Date(user.locked_until) > new Date()) {
+      const remainMin = Math.ceil((new Date(user.locked_until).getTime() - Date.now()) / 60000);
+      return NextResponse.json({ success: false, error: `${remainMin}분 후 다시 시도해주세요.` });
+    }
+
+    // Verify password
+    if (!verify(password, user.password_hash)) {
+      // Increment failed attempts
+      const attempts = (user.failed_login_attempts || 0) + 1;
+      const update: Record<string, unknown> = { failed_login_attempts: attempts };
+      if (attempts >= 5) {
+        update.locked_until = new Date(Date.now() + 30 * 60 * 1000).toISOString();
+      }
+      await supabase.from("moa_users").update(update).eq("id", user.id);
+      return NextResponse.json({ success: false, error: "아이디 또는 비밀번호가 올바르지 않습니다." });
+    }
+
+    // Reset attempts & update last login
+    await supabase.from("moa_users").update({
+      failed_login_attempts: 0,
+      locked_until: null,
+      last_login_at: new Date().toISOString(),
+    }).eq("id", user.id);
+
+    // Generate session
+    const token = genToken();
+    const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
+    await supabase.from("moa_sessions").insert({
+      user_id: user.user_id,
+      token,
+      expires_at: expiresAt.toISOString(),
+    });
+
+    // Fetch devices
+    let devices: { deviceName: string; platform: string; status: string }[] = [];
+    try {
+      const { data: devData } = await supabase
+        .from("relay_devices")
+        .select("device_name, platform, is_online")
+        .eq("user_id", user.user_id);
+      devices = (devData ?? []).map((d: { device_name: string; platform: string; is_online: boolean }) => ({
+        deviceName: d.device_name,
+        platform: d.platform,
+        status: d.is_online ? "online" : "offline",
+      }));
+    } catch { /* relay_devices table may not exist */ }
+
+    return NextResponse.json({
+      success: true,
+      user_id: user.user_id,
+      username: user.username,
+      display_name: user.display_name,
+      token,
+      devices,
+    });
+  } catch (err) {
+    console.error("[chat/web_login] Error:", err);
+    return NextResponse.json({ success: false, error: "서버 오류가 발생했습니다." });
+  }
 }
 
 function getCategoryHelp(category: string, prefix: string): string {

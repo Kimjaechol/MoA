@@ -10,10 +10,8 @@ export function detectPlatform(ua: string): Platform {
   return null;
 }
 
-/** GitHub releases page (not direct download - release must exist first) */
-const RELEASES_PAGE = "https://github.com/Kimjaechol/MoA/releases";
-/** MoA website base URL */
-const SITE_BASE = "https://mymoa.app";
+/** Cloudflare R2 download base URL */
+const DOWNLOAD_BASE = "https://download.mymoa.app/desktop";
 
 export const PLATFORM_INFO: Record<
   Exclude<Platform, null>,
@@ -30,26 +28,23 @@ export const PLATFORM_INFO: Record<
   windows: {
     name: "Windows",
     icon: "/icons/windows.svg",
-    installCmd: `powershell -c "irm ${SITE_BASE}/install.ps1 | iex"`,
-    downloadUrl: RELEASES_PAGE,
+    installCmd: `powershell -c "irm https://mymoa.app/install.ps1 | iex"`,
+    downloadUrl: `${DOWNLOAD_BASE}/MoA-Setup-latest.exe`,
     desc: "Windows 10/11 64-bit",
-    comingSoon: true,
   },
   macos: {
     name: "macOS",
     icon: "/icons/apple.svg",
-    installCmd: `curl -fsSL ${SITE_BASE}/install.sh | bash`,
-    downloadUrl: RELEASES_PAGE,
+    installCmd: `curl -fsSL https://mymoa.app/install.sh | bash`,
+    downloadUrl: `${DOWNLOAD_BASE}/MoA-latest-mac.dmg`,
     desc: "macOS 12+ (Apple Silicon / Intel)",
-    comingSoon: true,
   },
   linux: {
     name: "Linux",
     icon: "/icons/linux.svg",
-    installCmd: `curl -fsSL ${SITE_BASE}/install.sh | bash`,
-    downloadUrl: RELEASES_PAGE,
+    installCmd: `curl -fsSL https://mymoa.app/install.sh | bash`,
+    downloadUrl: `${DOWNLOAD_BASE}/MoA-latest-linux.AppImage`,
     desc: "Ubuntu 20.04+, Debian 11+, Fedora 35+",
-    comingSoon: true,
   },
   android: {
     name: "Android",

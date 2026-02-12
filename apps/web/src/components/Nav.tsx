@@ -5,8 +5,8 @@ import Link from "next/link";
 
 const NAV_LINKS = [
   { href: "/chat", label: "채팅", isAnchor: false },
-  { href: "/synthesis", label: "종합문서", isAnchor: false },
-  { href: "/autocode", label: "자동코딩", isAnchor: false },
+  { href: "/synthesis", label: "문서작업", isAnchor: false },
+  { href: "/autocode", label: "코딩작업", isAnchor: false },
   { href: "/editor", label: "에디터", isAnchor: false },
   { href: "/channels", label: "채널", isAnchor: false },
   { href: "/download", label: "다운로드", isAnchor: false },

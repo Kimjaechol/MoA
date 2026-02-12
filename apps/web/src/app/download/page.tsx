@@ -10,8 +10,8 @@ import { detectPlatform, type Platform } from "../../lib/detect-platform";
    One-click install for all platforms.
    ============================================ */
 
-/** GitHub releases page */
-const RELEASES_PAGE = "https://github.com/Kimjaechol/MoA/releases";
+/** Cloudflare R2 download base URL */
+const DOWNLOAD_BASE = "https://download.mymoa.app/desktop";
 
 interface PlatformDownload {
   name: string;
@@ -31,42 +31,39 @@ const DOWNLOADS: Record<Exclude<Platform, null>, PlatformDownload> = {
     name: "Windows",
     icon: "\uD83E\uDE9F",
     desc: "Windows 10/11 (64-bit)",
-    primaryAction: "MoA 데스크톱 앱 (준비 중)",
-    primaryUrl: RELEASES_PAGE,
+    primaryAction: "데스크톱 앱 다운로드",
+    primaryUrl: `${DOWNLOAD_BASE}/MoA-Setup-latest.exe`,
     terminalCmd: `powershell -c "irm https://mymoa.app/install.ps1 | iex"`,
-    comingSoon: true,
     steps: [
-      "데스크톱 앱은 현재 준비 중입니다",
-      "아래 '웹에서 바로 사용하기' 버튼으로 지금 바로 이용하세요",
-      "앱 출시 시 이 페이지에서 다운로드할 수 있습니다",
+      "위 버튼을 클릭하면 MoA-Setup.exe가 다운로드됩니다",
+      "다운로드된 파일을 더블클릭하면 자동으로 설치됩니다",
+      "설치 후 MoA가 자동 실행됩니다",
     ],
   },
   macos: {
     name: "macOS",
     icon: "\uD83C\uDF4E",
     desc: "macOS 12+ (Apple Silicon / Intel)",
-    primaryAction: "MoA 데스크톱 앱 (준비 중)",
-    primaryUrl: RELEASES_PAGE,
+    primaryAction: "데스크톱 앱 다운로드",
+    primaryUrl: `${DOWNLOAD_BASE}/MoA-latest-mac.dmg`,
     terminalCmd: `curl -fsSL https://mymoa.app/install.sh | bash`,
-    comingSoon: true,
     steps: [
-      "데스크톱 앱은 현재 준비 중입니다",
-      "아래 '웹에서 바로 사용하기' 버튼으로 지금 바로 이용하세요",
-      "앱 출시 시 이 페이지에서 다운로드할 수 있습니다",
+      "위 버튼을 클릭하면 DMG 파일이 다운로드됩니다",
+      "다운로드된 DMG를 열고 MoA 아이콘을 Applications 폴더로 드래그하세요",
+      "Launchpad에서 MoA를 실행하세요",
     ],
   },
   linux: {
     name: "Linux",
     icon: "\uD83D\uDC27",
     desc: "Ubuntu 20.04+, Debian 11+, Fedora 35+",
-    primaryAction: "MoA 데스크톱 앱 (준비 중)",
-    primaryUrl: RELEASES_PAGE,
+    primaryAction: "데스크톱 앱 다운로드",
+    primaryUrl: `${DOWNLOAD_BASE}/MoA-latest-linux.AppImage`,
     terminalCmd: `curl -fsSL https://mymoa.app/install.sh | bash`,
-    comingSoon: true,
     steps: [
-      "데스크톱 앱은 현재 준비 중입니다",
-      "아래 '웹에서 바로 사용하기' 버튼으로 지금 바로 이용하세요",
-      "앱 출시 시 이 페이지에서 다운로드할 수 있습니다",
+      "위 버튼을 클릭하면 AppImage 파일이 다운로드됩니다",
+      "chmod +x MoA-*.AppImage 로 실행 권한을 부여하세요",
+      "더블클릭하여 실행하세요",
     ],
   },
   android: {
