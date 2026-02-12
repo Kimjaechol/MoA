@@ -120,10 +120,16 @@ export async function startKakaoWebhook(opts: KakaoWebhookOptions): Promise<{
       return;
     }
 
-    // Parse JSON body
+    // Parse JSON body (with size limit to prevent memory exhaustion)
+    const MAX_BODY_SIZE = 64 * 1024; // 64KB
     let body = "";
     for await (const chunk of req) {
       body += chunk;
+      if (body.length > MAX_BODY_SIZE) {
+        res.writeHead(413, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ error: "Payload too large" }));
+        return;
+      }
     }
 
     let kakaoRequest: KakaoIncomingMessage;

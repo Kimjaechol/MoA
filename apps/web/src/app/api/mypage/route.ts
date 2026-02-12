@@ -49,9 +49,9 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: "Failed to fetch settings" }, { status: 500 });
     }
 
-    // Calculate trial status
+    // Calculate trial status (with null-safe date handling)
     let trialStatus = null;
-    if (settings) {
+    if (settings?.trial_started_at && settings?.trial_days != null) {
       const trialEnd = new Date(settings.trial_started_at);
       trialEnd.setDate(trialEnd.getDate() + settings.trial_days);
       const now = new Date();
@@ -59,12 +59,12 @@ export async function GET(request: NextRequest) {
       trialStatus = {
         isTrialActive: daysLeft > 0,
         daysLeft,
-        isPremium: settings.is_premium,
+        isPremium: settings.is_premium ?? false,
       };
     }
 
-    // Mask phone number for display
-    const maskedPhone = settings?.phone
+    // Mask phone number for display (validate length)
+    const maskedPhone = settings?.phone && settings.phone.length >= 7
       ? settings.phone.slice(0, 3) + "-****-" + settings.phone.slice(-4)
       : null;
 
