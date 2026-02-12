@@ -1105,6 +1105,17 @@ export default function Home() {
               &copy; {new Date().getFullYear()} MoA (Master of AI). All rights
               reserved.
             </p>
+            <p
+              style={{
+                marginTop: "8px",
+                fontSize: "0.72rem",
+                color: "var(--text-muted)",
+                opacity: 0.7,
+              }}
+            >
+              본 서비스는 OpenClaw(MIT License)의 코드를 일부 포함하고
+              있으며, 보안을 대폭 강화하고 기능을 풍부하게 보강하였습니다.
+            </p>
           </div>
         </div>
       </footer>
