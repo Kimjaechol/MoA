@@ -64,7 +64,7 @@ const AUTH_CHOICE_GROUP_DEFS: {
     value: "google",
     label: "Google",
     hint: "Gemini API key + OAuth",
-    choices: ["gemini-api-key", "google-antigravity", "google-gemini-cli"],
+    choices: ["gemini-api-key", "moa-gemini-free", "google-antigravity", "google-gemini-cli"],
   },
   {
     value: "openrouter",
@@ -160,6 +160,11 @@ export function buildAuthChoiceOptions(params: {
     hint: "Uses GitHub device flow",
   });
   options.push({ value: "gemini-api-key", label: "Google Gemini API key" });
+  options.push({
+    value: "moa-gemini-free",
+    label: "Gemini Free (Google 계정)",
+    hint: "API 키 불필요, Google 계정으로 무료 사용",
+  });
   options.push({
     value: "google-antigravity",
     label: "Google Antigravity OAuth",

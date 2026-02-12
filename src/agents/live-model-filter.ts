@@ -48,7 +48,7 @@ export function isModernModelRef(ref: ModelRef): boolean {
     return matchesExactOrPrefix(id, CODEX_MODELS);
   }
 
-  if (provider === "google" || provider === "google-gemini-cli") {
+  if (provider === "google" || provider === "google-gemini-cli" || provider === "moa-gemini-free") {
     return matchesPrefix(id, GOOGLE_PREFIXES);
   }
 

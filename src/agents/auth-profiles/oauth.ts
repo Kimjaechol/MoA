@@ -11,7 +11,10 @@ import { suggestOAuthProfileIdForLegacyDefault } from "./repair.js";
 import { ensureAuthProfileStore, saveAuthProfileStore } from "./store.js";
 
 function buildOAuthApiKey(provider: string, credentials: OAuthCredentials): string {
-  const needsProjectId = provider === "google-gemini-cli" || provider === "google-antigravity";
+  const needsProjectId =
+    provider === "google-gemini-cli" ||
+    provider === "google-antigravity" ||
+    provider === "moa-gemini-free";
   return needsProjectId
     ? JSON.stringify({
         token: credentials.access,

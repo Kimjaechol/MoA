@@ -1,0 +1,9 @@
+{
+  "id": "moa-gemini-free",
+  "providers": ["moa-gemini-free"],
+  "configSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {}
+  }
+}

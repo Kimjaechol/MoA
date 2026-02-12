@@ -1,5 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getServiceSupabase } from "@/lib/supabase";
+import {
+  sendAlimtalkWithLog,
+  hasAlreadySent,
+  normalizePhone,
+  isValidKoreanMobile,
+} from "@/lib/alimtalk";
+import { CHANNEL_INVITE_TEMPLATE } from "@/lib/alimtalk-templates";
 
 const VALID_PROVIDERS = ["openai", "anthropic", "gemini", "groq", "deepseek", "mistral", "xai"];
 const VALID_STRATEGIES = ["cost-efficient", "max-performance"];
@@ -55,10 +62,17 @@ export async function GET(request: NextRequest) {
       };
     }
 
+    // Mask phone number for display
+    const maskedPhone = settings?.phone
+      ? settings.phone.slice(0, 3) + "-****-" + settings.phone.slice(-4)
+      : null;
+
     return NextResponse.json({
       apiKeys: keys ?? [],
       settings: settings ?? { model_strategy: "cost-efficient" },
       trialStatus,
+      phone: maskedPhone,
+      kakaoChannelAdded: settings?.kakao_channel_added ?? false,
     });
   } catch {
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });
@@ -67,7 +81,7 @@ export async function GET(request: NextRequest) {
 
 /**
  * POST /api/mypage
- * Actions: save_api_key, delete_api_key, update_strategy, init_user
+ * Actions: save_api_key, delete_api_key, update_strategy, init_user, update_phone
  */
 export async function POST(request: NextRequest) {
   try {
@@ -170,27 +184,116 @@ export async function POST(request: NextRequest) {
 
       // --- Initialize User (on signup) ---
       case "init_user": {
-        const { strategy: initStrategy } = body;
+        const { strategy: initStrategy, phone: initPhone, nickname: initNickname } = body;
         const selectedStrategy = VALID_STRATEGIES.includes(initStrategy) ? initStrategy : "cost-efficient";
+
+        // 전화번호 정규화 및 검증
+        const normalizedPhone = initPhone ? normalizePhone(String(initPhone)) : null;
+        const phoneValid = normalizedPhone ? isValidKoreanMobile(normalizedPhone) : false;
+
+        const upsertData: Record<string, unknown> = {
+          user_id,
+          model_strategy: selectedStrategy,
+          trial_started_at: new Date().toISOString(),
+          trial_days: 30,
+          is_premium: false,
+        };
+
+        if (normalizedPhone && phoneValid) {
+          upsertData.phone = normalizedPhone;
+        }
+
+        const { error } = await supabase
+          .from("moa_user_settings")
+          .upsert(upsertData, { onConflict: "user_id" });
+
+        if (error) {
+          return NextResponse.json({ error: "Failed to initialize user" }, { status: 500 });
+        }
+
+        // 전화번호가 있으면 채널 추가 유도 알림톡 자동 발송
+        let alimtalkResult = null;
+        if (normalizedPhone && phoneValid) {
+          const alreadySent = await hasAlreadySent({
+            userId: user_id,
+            templateCode: CHANNEL_INVITE_TEMPLATE.code,
+          });
+
+          if (!alreadySent) {
+            alimtalkResult = await sendAlimtalkWithLog({
+              userId: user_id,
+              recipientNo: normalizedPhone,
+              templateCode: CHANNEL_INVITE_TEMPLATE.code,
+              templateParameter: {
+                nickname: initNickname || "회원",
+              },
+            });
+          }
+        }
+
+        return NextResponse.json({
+          success: true,
+          strategy: selectedStrategy,
+          phoneRegistered: Boolean(normalizedPhone && phoneValid),
+          alimtalkSent: alimtalkResult?.success ?? false,
+        });
+      }
+
+      // --- Update Phone Number ---
+      case "update_phone": {
+        const { phone, nickname } = body;
+
+        if (!phone || typeof phone !== "string") {
+          return NextResponse.json({ error: "전화번호를 입력해 주세요." }, { status: 400 });
+        }
+
+        const normalized = normalizePhone(phone);
+        if (!isValidKoreanMobile(normalized)) {
+          return NextResponse.json(
+            { error: "유효한 한국 휴대폰 번호를 입력해 주세요. (예: 010-1234-5678)" },
+            { status: 400 },
+          );
+        }
 
         const { error } = await supabase
           .from("moa_user_settings")
           .upsert(
             {
               user_id,
-              model_strategy: selectedStrategy,
-              trial_started_at: new Date().toISOString(),
-              trial_days: 30,
-              is_premium: false,
+              phone: normalized,
+              updated_at: new Date().toISOString(),
             },
-            { onConflict: "user_id" }
+            { onConflict: "user_id" },
           );
 
         if (error) {
-          return NextResponse.json({ error: "Failed to initialize user" }, { status: 500 });
+          return NextResponse.json({ error: "전화번호 저장 실패" }, { status: 500 });
         }
 
-        return NextResponse.json({ success: true, strategy: selectedStrategy });
+        // 채널 추가 유도 알림톡 자동 발송
+        let alimtalkSent = false;
+        const alreadySent = await hasAlreadySent({
+          userId: user_id,
+          templateCode: CHANNEL_INVITE_TEMPLATE.code,
+        });
+
+        if (!alreadySent) {
+          const result = await sendAlimtalkWithLog({
+            userId: user_id,
+            recipientNo: normalized,
+            templateCode: CHANNEL_INVITE_TEMPLATE.code,
+            templateParameter: {
+              nickname: nickname || "회원",
+            },
+          });
+          alimtalkSent = result.success;
+        }
+
+        return NextResponse.json({
+          success: true,
+          phone: normalized.slice(0, 3) + "-****-" + normalized.slice(-4),
+          alimtalkSent,
+        });
       }
 
       default:

@@ -164,6 +164,10 @@ CREATE TABLE IF NOT EXISTS moa_user_settings (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   user_id TEXT NOT NULL UNIQUE,
   model_strategy TEXT NOT NULL DEFAULT 'cost-efficient' CHECK (model_strategy IN ('cost-efficient', 'max-performance')),
+  -- Phone & KakaoTalk
+  phone TEXT,
+  phone_verified BOOLEAN NOT NULL DEFAULT false,
+  kakao_channel_added BOOLEAN NOT NULL DEFAULT false,
   -- Free trial tracking
   trial_started_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   trial_days INTEGER NOT NULL DEFAULT 30,

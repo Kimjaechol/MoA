@@ -62,3 +62,24 @@ export { enrichIndexedFile } from "./integration.js";
 
 // Tools
 export { createAdvancedMemoryTools } from "./tools.js";
+
+// Proactive Memory Tags
+export {
+  ensureProactiveTagsSchema,
+  addProactiveTag,
+  getTagsForChunk,
+  findChunksWithTriggerTags,
+  findMatchingTriggerTags,
+  getActionTags,
+  deactivateTag,
+  removeTagsForChunk,
+  deactivateExpiredTags,
+  getProactiveTagStats,
+} from "./memory-tags.js";
+
+export type {
+  TagCategory,
+  ProactiveTag,
+  TriggerTagConfig,
+  ActionTagConfig,
+} from "./memory-tags.js";
