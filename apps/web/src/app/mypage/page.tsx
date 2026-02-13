@@ -736,13 +736,26 @@ export default function MyPage() {
                   <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
                     {linkedChannels.map((ch) => {
                       const channelInfo: Record<string, { icon: string; name: string; color: string }> = {
-                        telegram: { icon: "✈", name: "Telegram", color: "#0088cc" },
-                        discord: { icon: "🎮", name: "Discord", color: "#5865F2" },
-                        kakao: { icon: "💬", name: "KakaoTalk", color: "#FEE500" },
-                        whatsapp: { icon: "📱", name: "WhatsApp", color: "#25D366" },
-                        line: { icon: "🟢", name: "LINE", color: "#00C300" },
-                        slack: { icon: "💼", name: "Slack", color: "#4A154B" },
-                        web: { icon: "🌐", name: "Web", color: "#667eea" },
+                        kakaotalk: { icon: "\uD83D\uDFE1", name: "KakaoTalk", color: "#FFE812" },
+                        kakao: { icon: "\uD83D\uDFE1", name: "KakaoTalk", color: "#FFE812" },
+                        telegram: { icon: "\u2708\uFE0F", name: "Telegram", color: "#0088cc" },
+                        discord: { icon: "\uD83C\uDFAE", name: "Discord", color: "#5865F2" },
+                        slack: { icon: "\uD83D\uDCAC", name: "Slack", color: "#4A154B" },
+                        whatsapp: { icon: "\uD83D\uDCDE", name: "WhatsApp", color: "#25D366" },
+                        signal: { icon: "\uD83D\uDD12", name: "Signal", color: "#3A76F0" },
+                        imessage: { icon: "\uD83D\uDCF1", name: "iMessage", color: "#34C759" },
+                        line: { icon: "\uD83D\uDFE2", name: "LINE", color: "#06C755" },
+                        msteams: { icon: "\uD83C\uDFE2", name: "MS Teams", color: "#6264A7" },
+                        googlechat: { icon: "\uD83D\uDCE8", name: "Google Chat", color: "#1a73e8" },
+                        matrix: { icon: "\uD83D\uDD35", name: "Matrix", color: "#0DBD8B" },
+                        mattermost: { icon: "\uD83D\uDD37", name: "Mattermost", color: "#0058CC" },
+                        "nextcloud-talk": { icon: "\u2601\uFE0F", name: "Nextcloud Talk", color: "#0082c9" },
+                        twitch: { icon: "\uD83D\uDFE3", name: "Twitch", color: "#9146FF" },
+                        nostr: { icon: "\uD83E\uDD18", name: "Nostr", color: "#8B5CF6" },
+                        zalo: { icon: "\uD83D\uDFE6", name: "Zalo", color: "#0068FF" },
+                        bluebubbles: { icon: "\uD83D\uDCAD", name: "BlueBubbles", color: "#1DA1F2" },
+                        tlon: { icon: "\uD83D\uDE80", name: "Tlon (Urbit)", color: "#2D3748" },
+                        web: { icon: "\uD83C\uDF10", name: "Web", color: "#667eea" },
                       };
                       const info = channelInfo[ch.channel] ?? { icon: "📡", name: ch.channel, color: "var(--text-muted)" };
 
@@ -838,9 +851,27 @@ export default function MyPage() {
                 ) : (
                   <div style={{ display: "flex", gap: "10px", flexWrap: "wrap" }}>
                     {[
-                      { id: "telegram", icon: "✈", name: "Telegram", color: "#0088cc" },
-                      { id: "discord", icon: "🎮", name: "Discord", color: "#5865F2" },
-                      { id: "kakao", icon: "💬", name: "KakaoTalk", color: "#FEE500" },
+                      // Primary channels
+                      { id: "kakaotalk", icon: "\uD83D\uDFE1", name: "KakaoTalk", cat: "primary" },
+                      { id: "telegram", icon: "\u2708\uFE0F", name: "Telegram", cat: "primary" },
+                      { id: "discord", icon: "\uD83C\uDFAE", name: "Discord", cat: "primary" },
+                      { id: "slack", icon: "\uD83D\uDCAC", name: "Slack", cat: "primary" },
+                      { id: "whatsapp", icon: "\uD83D\uDCDE", name: "WhatsApp", cat: "primary" },
+                      { id: "signal", icon: "\uD83D\uDD12", name: "Signal", cat: "primary" },
+                      { id: "imessage", icon: "\uD83D\uDCF1", name: "iMessage", cat: "primary" },
+                      { id: "line", icon: "\uD83D\uDFE2", name: "LINE", cat: "primary" },
+                      // Extended channels
+                      { id: "msteams", icon: "\uD83C\uDFE2", name: "MS Teams", cat: "extended" },
+                      { id: "googlechat", icon: "\uD83D\uDCE8", name: "Google Chat", cat: "extended" },
+                      { id: "matrix", icon: "\uD83D\uDD35", name: "Matrix", cat: "extended" },
+                      { id: "mattermost", icon: "\uD83D\uDD37", name: "Mattermost", cat: "extended" },
+                      { id: "nextcloud-talk", icon: "\u2601\uFE0F", name: "Nextcloud Talk", cat: "extended" },
+                      // Advanced channels
+                      { id: "twitch", icon: "\uD83D\uDFE3", name: "Twitch", cat: "advanced" },
+                      { id: "nostr", icon: "\uD83E\uDD18", name: "Nostr", cat: "advanced" },
+                      { id: "zalo", icon: "\uD83D\uDFE6", name: "Zalo", cat: "advanced" },
+                      { id: "bluebubbles", icon: "\uD83D\uDCAD", name: "BlueBubbles", cat: "advanced" },
+                      { id: "tlon", icon: "\uD83D\uDE80", name: "Tlon", cat: "advanced" },
                     ]
                       .filter((ch) => !linkedChannels.some((lc) => lc.channel === ch.id))
                       .map((ch) => (
@@ -848,10 +879,15 @@ export default function MyPage() {
                           key={ch.id}
                           className="btn btn-sm btn-outline"
                           onClick={() => setChannelLinking(ch.id)}
-                          style={{ display: "flex", alignItems: "center", gap: "6px" }}
+                          style={{
+                            display: "flex",
+                            alignItems: "center",
+                            gap: "6px",
+                            opacity: ch.cat === "advanced" ? 0.7 : 1,
+                          }}
                         >
                           <span>{ch.icon}</span>
-                          <span>{ch.name} 연결</span>
+                          <span>{ch.name}</span>
                         </button>
                       ))}
                   </div>

@@ -40,7 +40,26 @@
 // Types
 // ────────────────────────────────────────────
 
-export type ChannelType = "telegram" | "discord" | "kakao" | "web" | "whatsapp" | "line" | "slack";
+export type ChannelType =
+  | "telegram"
+  | "discord"
+  | "kakao"
+  | "web"
+  | "whatsapp"
+  | "line"
+  | "slack"
+  | "signal"
+  | "imessage"
+  | "msteams"
+  | "googlechat"
+  | "matrix"
+  | "mattermost"
+  | "nextcloud-talk"
+  | "twitch"
+  | "nostr"
+  | "zalo"
+  | "bluebubbles"
+  | "tlon";
 
 export interface ChannelIdentity {
   /** The channel platform */
@@ -102,6 +121,18 @@ export function makeChannelScopedId(channel: ChannelType, channelUserId: string)
     whatsapp: "wa",
     line: "line",
     slack: "slack",
+    signal: "signal",
+    imessage: "imsg",
+    msteams: "teams",
+    googlechat: "gchat",
+    matrix: "matrix",
+    mattermost: "mm",
+    "nextcloud-talk": "nc",
+    twitch: "twitch",
+    nostr: "nostr",
+    zalo: "zalo",
+    bluebubbles: "bb",
+    tlon: "tlon",
   };
   return `${prefixMap[channel]}_${channelUserId}`;
 }

@@ -7,7 +7,11 @@ import {
   type ChannelType,
 } from "@/lib/channel-user-resolver";
 
-const VALID_CHANNELS: ChannelType[] = ["telegram", "discord", "kakao", "web", "whatsapp", "line", "slack"];
+const VALID_CHANNELS: ChannelType[] = [
+  "telegram", "discord", "kakao", "web", "whatsapp", "line", "slack",
+  "signal", "imessage", "msteams", "googlechat", "matrix", "mattermost",
+  "nextcloud-talk", "twitch", "nostr", "zalo", "bluebubbles", "tlon",
+];
 
 /**
  * Validate session token and return user_id.
