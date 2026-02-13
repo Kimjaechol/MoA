@@ -1,0 +1,29 @@
+version: "3.8"
+
+services:
+  gateway:
+    build: .
+    ports:
+      - "${GATEWAY_PORT:-8900}:8900"
+    env_file:
+      - .env
+    restart: unless-stopped
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # Optional: signal-cli REST API (uncomment if using Signal)
+  # signal-cli:
+  #   image: bbernhard/signal-cli-rest-api:latest
+  #   ports:
+  #     - "8080:8080"
+  #   volumes:
+  #     - signal-data:/home/.local/share/signal-cli
+  #   environment:
+  #     - MODE=native
+  #   restart: unless-stopped
+
+# volumes:
+#   signal-data:
