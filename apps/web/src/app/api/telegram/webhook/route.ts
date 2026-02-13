@@ -319,7 +319,7 @@ export async function POST(request: NextRequest) {
 }
 
 /** Cache bot username to avoid repeated API calls */
-let cachedBotUsername: string | null = null;
+let cachedBotUsername: string = "";
 
 async function getBotUsername(token: string): Promise<string> {
   if (cachedBotUsername) return cachedBotUsername;
