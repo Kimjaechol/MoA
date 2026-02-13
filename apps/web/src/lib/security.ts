@@ -16,24 +16,40 @@
 import { createHash, createHmac, timingSafeEqual } from "node:crypto";
 
 // ────────────────────────────────────────────
-// 1. Rate Limiting (In-Memory, Per-User + Per-IP)
+// 1. Rate Limiting — Three-Strike System
+//    (DDoS / Brute-Force Protection)
+//
+//    Strike 1: 30 req/min exceeded → 30-min block + warning
+//    Strike 2: second violation    → 1-hour block + final warning
+//    Strike 3: third violation     → permanent ban
 // ────────────────────────────────────────────
 
 interface RateLimitEntry {
+  /** Requests in the current window */
   count: number;
+  /** Window start timestamp */
   windowStart: number;
+  /** Whether the user is currently blocked */
   blocked: boolean;
+  /** When the current block expires (undefined = permanent) */
   blockedUntil?: number;
+  /** Number of times this user has exceeded the limit (0–3) */
+  strikes: number;
+  /** Whether this is a permanent ban (strike 3) */
+  permanentBan: boolean;
 }
 
-/** Per-user rate limit: max requests per window */
+/** Rate limit configuration with three-strike escalation */
 const RATE_LIMIT_CONFIG = {
   /** Max requests per window per user */
   maxRequests: 30,
   /** Window size in ms (1 minute) */
   windowMs: 60_000,
-  /** Block duration after exceeding limit (5 minutes) */
-  blockDurationMs: 5 * 60_000,
+  /** Strike 1: block for 30 minutes */
+  strike1BlockMs: 30 * 60_000,
+  /** Strike 2: block for 1 hour */
+  strike2BlockMs: 60 * 60_000,
+  /** Strike 3: permanent ban (no duration — infinite) */
   /** Max unique users tracked (prevent memory exhaustion) */
   maxTrackedUsers: 10_000,
   /** Cleanup interval (10 minutes) */
@@ -43,17 +59,31 @@ const RATE_LIMIT_CONFIG = {
 const rateLimitStore = new Map<string, RateLimitEntry>();
 let lastCleanup = Date.now();
 
-/** Clean up expired rate limit entries */
+/** Clean up expired rate limit entries — never remove permanent bans */
 function cleanupRateLimits(): void {
   const now = Date.now();
   if (now - lastCleanup < RATE_LIMIT_CONFIG.cleanupIntervalMs) return;
   lastCleanup = now;
 
   for (const [key, entry] of rateLimitStore) {
-    const expired = entry.blocked
-      ? (entry.blockedUntil ?? 0) < now
-      : now - entry.windowStart > RATE_LIMIT_CONFIG.windowMs;
-    if (expired) rateLimitStore.delete(key);
+    // Never clean up permanent bans
+    if (entry.permanentBan) continue;
+
+    if (entry.blocked) {
+      // Remove if block has expired
+      if (entry.blockedUntil && entry.blockedUntil < now) {
+        // Don't delete — just unblock. Keep strikes for escalation.
+        entry.blocked = false;
+        entry.blockedUntil = undefined;
+        entry.count = 0;
+        entry.windowStart = now;
+      }
+    } else if (now - entry.windowStart > RATE_LIMIT_CONFIG.windowMs * 60) {
+      // Clean up entries that have been idle for 1 hour with no strikes
+      if (entry.strikes === 0) {
+        rateLimitStore.delete(key);
+      }
+    }
   }
 }
 
@@ -62,11 +92,20 @@ export interface RateLimitResult {
   remaining: number;
   resetInMs: number;
   reason?: string;
+  /** Current strike count (0–3) */
+  strikes?: number;
+  /** Whether this is a permanent ban */
+  permanentBan?: boolean;
 }
 
 /**
  * Check rate limit for a user/IP combination.
  * Uses composite key: channel:userId to isolate per-channel limits.
+ *
+ * Three-strike escalation:
+ *   Strike 1 → 30분 차단 + 경고 (2회째 초과시 1시간, 3번 초과시 영구차단 경고)
+ *   Strike 2 → 1시간 차단 + 강력경고 (한번만 더 초과되면 영구차단)
+ *   Strike 3 → 영구 차단
  */
 export function checkRateLimit(channel: string, userId: string): RateLimitResult {
   cleanupRateLimits();
@@ -74,34 +113,120 @@ export function checkRateLimit(channel: string, userId: string): RateLimitResult
   const key = `${channel}:${userId}`;
   const now = Date.now();
 
-  // Check if blocked
   const existing = rateLimitStore.get(key);
-  if (existing?.blocked && existing.blockedUntil && existing.blockedUntil > now) {
+
+  // Check permanent ban
+  if (existing?.permanentBan) {
     return {
       allowed: false,
       remaining: 0,
-      resetInMs: existing.blockedUntil - now,
-      reason: "요청이 너무 많습니다. 잠시 후 다시 시도해주세요.",
+      resetInMs: Infinity,
+      reason: "반복적인 과도한 요청으로 계정이 영구 차단되었습니다. 관리자에게 문의해주세요.",
+      strikes: 3,
+      permanentBan: true,
     };
   }
 
-  // Initialize or reset window
-  if (!existing || now - existing.windowStart > RATE_LIMIT_CONFIG.windowMs) {
-    rateLimitStore.set(key, { count: 1, windowStart: now, blocked: false });
-    return { allowed: true, remaining: RATE_LIMIT_CONFIG.maxRequests - 1, resetInMs: RATE_LIMIT_CONFIG.windowMs };
-  }
+  // Check if currently blocked (temporary)
+  if (existing?.blocked && existing.blockedUntil && existing.blockedUntil > now) {
+    const resetInMs = existing.blockedUntil - now;
+    const minutes = Math.ceil(resetInMs / 60_000);
+    const strikeWarning = existing.strikes === 1
+      ? `\n\n[경고] 다음 초과 시 1시간 차단, 3회 초과 시 영구 차단됩니다.`
+      : existing.strikes === 2
+        ? `\n\n[강력경고] 한 번만 더 초과하면 영구 차단됩니다!`
+        : "";
 
-  // Increment
-  existing.count++;
-
-  if (existing.count > RATE_LIMIT_CONFIG.maxRequests) {
-    existing.blocked = true;
-    existing.blockedUntil = now + RATE_LIMIT_CONFIG.blockDurationMs;
     return {
       allowed: false,
       remaining: 0,
-      resetInMs: RATE_LIMIT_CONFIG.blockDurationMs,
-      reason: "요청 한도를 초과했습니다. 5분 후 다시 시도해주세요.",
+      resetInMs,
+      reason: `요청 한도를 초과했습니다. 약 ${minutes}분 후 다시 시도해주세요.${strikeWarning}`,
+      strikes: existing.strikes,
+    };
+  }
+
+  // If block expired, unblock and reset window
+  if (existing?.blocked && existing.blockedUntil && existing.blockedUntil <= now) {
+    existing.blocked = false;
+    existing.blockedUntil = undefined;
+    existing.count = 0;
+    existing.windowStart = now;
+  }
+
+  // Initialize new entry
+  if (!existing) {
+    rateLimitStore.set(key, {
+      count: 1,
+      windowStart: now,
+      blocked: false,
+      strikes: 0,
+      permanentBan: false,
+    });
+    return {
+      allowed: true,
+      remaining: RATE_LIMIT_CONFIG.maxRequests - 1,
+      resetInMs: RATE_LIMIT_CONFIG.windowMs,
+      strikes: 0,
+    };
+  }
+
+  // Reset window if expired
+  if (now - existing.windowStart > RATE_LIMIT_CONFIG.windowMs) {
+    existing.count = 1;
+    existing.windowStart = now;
+    return {
+      allowed: true,
+      remaining: RATE_LIMIT_CONFIG.maxRequests - 1,
+      resetInMs: RATE_LIMIT_CONFIG.windowMs,
+      strikes: existing.strikes,
+    };
+  }
+
+  // Increment request count
+  existing.count++;
+
+  // Check if limit exceeded
+  if (existing.count > RATE_LIMIT_CONFIG.maxRequests) {
+    existing.strikes++;
+
+    if (existing.strikes >= 3) {
+      // Strike 3: PERMANENT BAN
+      existing.blocked = true;
+      existing.permanentBan = true;
+      existing.blockedUntil = undefined;
+      return {
+        allowed: false,
+        remaining: 0,
+        resetInMs: Infinity,
+        reason: "3회 연속 요청 한도 초과로 계정이 영구 차단되었습니다. 관리자에게 문의해주세요.",
+        strikes: 3,
+        permanentBan: true,
+      };
+    }
+
+    if (existing.strikes === 2) {
+      // Strike 2: 1-hour block + final warning
+      existing.blocked = true;
+      existing.blockedUntil = now + RATE_LIMIT_CONFIG.strike2BlockMs;
+      return {
+        allowed: false,
+        remaining: 0,
+        resetInMs: RATE_LIMIT_CONFIG.strike2BlockMs,
+        reason: "요청 한도를 2회째 초과했습니다. 1시간 동안 차단됩니다.\n\n[강력경고] 한 번만 더 초과하면 영구 차단됩니다!",
+        strikes: 2,
+      };
+    }
+
+    // Strike 1: 30-minute block + warning
+    existing.blocked = true;
+    existing.blockedUntil = now + RATE_LIMIT_CONFIG.strike1BlockMs;
+    return {
+      allowed: false,
+      remaining: 0,
+      resetInMs: RATE_LIMIT_CONFIG.strike1BlockMs,
+      reason: "요청 한도를 초과했습니다. 30분 동안 차단됩니다.\n\n[경고] 다음 초과 시 1시간 차단, 3회 초과 시 영구 차단됩니다.",
+      strikes: 1,
     };
   }
 
@@ -109,6 +234,7 @@ export function checkRateLimit(channel: string, userId: string): RateLimitResult
     allowed: true,
     remaining: RATE_LIMIT_CONFIG.maxRequests - existing.count,
     resetInMs: RATE_LIMIT_CONFIG.windowMs - (now - existing.windowStart),
+    strikes: existing.strikes,
   };
 }
 
@@ -386,15 +512,25 @@ export async function runSecurityChecks(params: {
 }): Promise<SecurityCheckResult> {
   const { channel, userId, messageText } = params;
 
-  // 1. Rate limiting
+  // 1. Rate limiting (three-strike system)
   const rateLimit = checkRateLimit(channel, userId);
   if (!rateLimit.allowed) {
+    const severity = rateLimit.permanentBan ? "critical"
+      : (rateLimit.strikes ?? 0) >= 2 ? "critical"
+        : "warning";
+    const eventType = rateLimit.permanentBan ? "brute_force_attempt" : "rate_limit_hit";
+
     await logSecurityEvent({
-      eventType: "rate_limit_hit",
+      eventType,
       channel,
       userId,
-      details: { remaining: rateLimit.remaining, resetInMs: rateLimit.resetInMs },
-      severity: "warning",
+      details: {
+        remaining: rateLimit.remaining,
+        resetInMs: rateLimit.resetInMs,
+        strikes: rateLimit.strikes ?? 0,
+        permanentBan: rateLimit.permanentBan ?? false,
+      },
+      severity,
     });
     return {
       proceed: false,
@@ -403,7 +539,7 @@ export async function runSecurityChecks(params: {
       sensitiveDataDetected: false,
       sensitiveDataTypes: [],
       rateLimit,
-      blockReason: "rate_limit",
+      blockReason: rateLimit.permanentBan ? "permanent_ban" : "rate_limit",
       userResponse: rateLimit.reason,
     };
   }

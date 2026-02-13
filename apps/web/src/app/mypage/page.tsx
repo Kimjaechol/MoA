@@ -153,6 +153,15 @@ export default function MyPage() {
   const [phoneSaving, setPhoneSaving] = useState(false);
   const [kakaoChannelAdded, setKakaoChannelAdded] = useState(false);
 
+  // Channel linking state
+  const [linkedChannels, setLinkedChannels] = useState<
+    Array<{ channel: string; channelUserId: string; displayName: string; lastMessageAt: string | null }>
+  >([]);
+  const [channelLinking, setChannelLinking] = useState<string | null>(null);
+  const [channelIdInput, setChannelIdInput] = useState("");
+  const [channelDisplayInput, setChannelDisplayInput] = useState("");
+  const [channelSaving, setChannelSaving] = useState(false);
+
   const [editingProvider, setEditingProvider] = useState<string | null>(null);
   const [keyInput, setKeyInput] = useState("");
   const [saving, setSaving] = useState(false);
@@ -194,6 +203,18 @@ export default function MyPage() {
         const credData = await credRes.json();
         setCreditBalance(credData.balance ?? 100);
         setCreditPlan(credData.plan ?? "free");
+      }
+    } catch { /* silent */ }
+
+    // Load linked channels
+    try {
+      const token = localStorage.getItem("moa_session_token") ?? "";
+      const chRes = await fetch(
+        `/api/channels/link?user_id=${encodeURIComponent(userId)}&token=${encodeURIComponent(token)}`,
+      );
+      if (chRes.ok) {
+        const chData = await chRes.json();
+        setLinkedChannels(chData.channels ?? []);
       }
     } catch { /* silent */ }
   }, [userId]);
@@ -352,6 +373,82 @@ export default function MyPage() {
       }
     } catch {
       setMessage({ type: "error", text: "네트워크 오류가 발생했습니다." });
+    }
+  };
+
+  // Link channel account
+  const handleLinkChannel = async (channel: string) => {
+    if (!channelIdInput.trim()) return;
+    setChannelSaving(true);
+    setMessage(null);
+
+    try {
+      const token = localStorage.getItem("moa_session_token") ?? "";
+      const res = await fetch("/api/channels/link", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "link",
+          user_id: userId,
+          token,
+          channel,
+          channel_user_id: channelIdInput.trim(),
+          display_name: channelDisplayInput.trim() || undefined,
+        }),
+      });
+
+      const data = await res.json();
+      if (data.success) {
+        setLinkedChannels((prev) => [
+          ...prev,
+          {
+            channel,
+            channelUserId: channelIdInput.trim(),
+            displayName: channelDisplayInput.trim() || `${channel} user`,
+            lastMessageAt: null,
+          },
+        ]);
+        setChannelLinking(null);
+        setChannelIdInput("");
+        setChannelDisplayInput("");
+        setMessage({ type: "success", text: `${channel} 계정이 연결되었습니다.` });
+      } else {
+        setMessage({ type: "error", text: data.error || "연결 실패" });
+      }
+    } catch {
+      setMessage({ type: "error", text: "네트워크 오류가 발생했습니다." });
+    } finally {
+      setChannelSaving(false);
+    }
+  };
+
+  // Unlink channel account
+  const handleUnlinkChannel = async (channel: string, channelUserId: string) => {
+    if (!confirm(`${channel} 계정 연결을 해제하시겠습니까?`)) return;
+
+    try {
+      const token = localStorage.getItem("moa_session_token") ?? "";
+      const res = await fetch("/api/channels/link", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "unlink",
+          user_id: userId,
+          token,
+          channel,
+          channel_user_id: channelUserId,
+        }),
+      });
+
+      const data = await res.json();
+      if (data.success) {
+        setLinkedChannels((prev) =>
+          prev.filter((c) => !(c.channel === channel && c.channelUserId === channelUserId)),
+        );
+        setMessage({ type: "success", text: `${channel} 계정 연결이 해제되었습니다.` });
+      }
+    } catch {
+      setMessage({ type: "error", text: "연결 해제 실패" });
     }
   };
 
@@ -614,6 +711,149 @@ export default function MyPage() {
                         </button>
                       )}
                     </div>
+                  </div>
+                )}
+              </div>
+            </div>
+          </section>
+
+          {/* ===== Cross-Channel Linking ===== */}
+          <section style={{ marginBottom: "48px" }}>
+            <h2 style={{ fontSize: "1.5rem", fontWeight: 700, marginBottom: "8px" }}>
+              채널 연동 관리
+            </h2>
+            <p style={{ color: "var(--text-muted)", fontSize: "0.9rem", marginBottom: "24px" }}>
+              텔레그램, 디스코드 등 다른 채널의 계정을 연결하면 크레딧, API 키, 설정을 모든 채널에서 공유할 수 있습니다.
+            </p>
+
+            <div className="card" style={{ padding: "24px" }}>
+              {/* Linked channels list */}
+              {linkedChannels.length > 0 && (
+                <div style={{ marginBottom: "20px" }}>
+                  <h3 style={{ fontSize: "1rem", fontWeight: 600, marginBottom: "12px" }}>
+                    연결된 채널
+                  </h3>
+                  <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
+                    {linkedChannels.map((ch) => {
+                      const channelInfo: Record<string, { icon: string; name: string; color: string }> = {
+                        telegram: { icon: "✈", name: "Telegram", color: "#0088cc" },
+                        discord: { icon: "🎮", name: "Discord", color: "#5865F2" },
+                        kakao: { icon: "💬", name: "KakaoTalk", color: "#FEE500" },
+                        whatsapp: { icon: "📱", name: "WhatsApp", color: "#25D366" },
+                        line: { icon: "🟢", name: "LINE", color: "#00C300" },
+                        slack: { icon: "💼", name: "Slack", color: "#4A154B" },
+                        web: { icon: "🌐", name: "Web", color: "#667eea" },
+                      };
+                      const info = channelInfo[ch.channel] ?? { icon: "📡", name: ch.channel, color: "var(--text-muted)" };
+
+                      return (
+                        <div
+                          key={`${ch.channel}-${ch.channelUserId}`}
+                          style={{
+                            display: "flex",
+                            alignItems: "center",
+                            justifyContent: "space-between",
+                            padding: "10px 14px",
+                            borderRadius: "8px",
+                            background: "rgba(0,0,0,0.15)",
+                          }}
+                        >
+                          <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+                            <span style={{ fontSize: "1.2rem" }}>{info.icon}</span>
+                            <div>
+                              <span style={{ fontWeight: 600, fontSize: "0.9rem", color: info.color }}>
+                                {info.name}
+                              </span>
+                              <span style={{ fontSize: "0.8rem", color: "var(--text-muted)", marginLeft: "8px" }}>
+                                {ch.displayName} ({ch.channelUserId.slice(0, 8)}...)
+                              </span>
+                            </div>
+                          </div>
+                          <button
+                            onClick={() => handleUnlinkChannel(ch.channel, ch.channelUserId)}
+                            style={{
+                              background: "none",
+                              border: "none",
+                              color: "var(--danger)",
+                              cursor: "pointer",
+                              fontSize: "0.8rem",
+                            }}
+                          >
+                            연결 해제
+                          </button>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
+              {/* Add new channel */}
+              <div style={{ borderTop: linkedChannels.length > 0 ? "1px solid var(--border)" : "none", paddingTop: linkedChannels.length > 0 ? "20px" : "0" }}>
+                <h3 style={{ fontSize: "1rem", fontWeight: 600, marginBottom: "12px" }}>
+                  새 채널 연결
+                </h3>
+                <p style={{ fontSize: "0.85rem", color: "var(--text-muted)", marginBottom: "16px" }}>
+                  각 채널의 봇에게 메시지를 보내면 자동으로 채널 사용자 ID가 생성됩니다.
+                  봇에게 <code>/credits</code> 명령을 보내면 현재 사용자 ID를 확인할 수 있습니다.
+                </p>
+
+                {channelLinking ? (
+                  <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
+                    <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
+                      <input
+                        type="text"
+                        className="form-input"
+                        placeholder="채널 사용자 ID"
+                        value={channelIdInput}
+                        onChange={(e) => setChannelIdInput(e.target.value)}
+                        style={{ flex: 1, fontSize: "0.9rem" }}
+                        autoFocus
+                      />
+                      <input
+                        type="text"
+                        className="form-input"
+                        placeholder="표시 이름 (선택)"
+                        value={channelDisplayInput}
+                        onChange={(e) => setChannelDisplayInput(e.target.value)}
+                        style={{ flex: 1, fontSize: "0.9rem" }}
+                      />
+                    </div>
+                    <div style={{ display: "flex", gap: "8px" }}>
+                      <button
+                        className="btn btn-sm btn-primary"
+                        onClick={() => handleLinkChannel(channelLinking)}
+                        disabled={channelSaving || !channelIdInput.trim()}
+                      >
+                        {channelSaving ? "연결 중..." : "연결"}
+                      </button>
+                      <button
+                        className="btn btn-sm btn-outline"
+                        onClick={() => { setChannelLinking(null); setChannelIdInput(""); setChannelDisplayInput(""); }}
+                      >
+                        취소
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <div style={{ display: "flex", gap: "10px", flexWrap: "wrap" }}>
+                    {[
+                      { id: "telegram", icon: "✈", name: "Telegram", color: "#0088cc" },
+                      { id: "discord", icon: "🎮", name: "Discord", color: "#5865F2" },
+                      { id: "kakao", icon: "💬", name: "KakaoTalk", color: "#FEE500" },
+                    ]
+                      .filter((ch) => !linkedChannels.some((lc) => lc.channel === ch.id))
+                      .map((ch) => (
+                        <button
+                          key={ch.id}
+                          className="btn btn-sm btn-outline"
+                          onClick={() => setChannelLinking(ch.id)}
+                          style={{ display: "flex", alignItems: "center", gap: "6px" }}
+                        >
+                          <span>{ch.icon}</span>
+                          <span>{ch.name} 연결</span>
+                        </button>
+                      ))}
                   </div>
                 )}
               </div>

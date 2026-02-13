@@ -49,6 +49,7 @@ import {
 } from "./relay/index.js";
 import { getSupabase, isSupabaseConfigured } from "./supabase.js";
 import { handleSyncCommand, isSyncCommand, type SyncCommandContext } from "./sync/index.js";
+import { resolveKakaoUser, getOrCreateLegacyUser } from "./channel-resolver.js";
 
 export interface KakaoWebhookOptions {
   account: ResolvedKakaoAccount;
@@ -151,6 +152,12 @@ export async function startKakaoWebhook(opts: KakaoWebhookOptions): Promise<{
       `[kakao] Received message from ${userId.slice(0, 8)}...: "${utterance.slice(0, 50)}${utterance.length > 50 ? "..." : ""}"`,
     );
 
+    // Resolve unified user identity (MoA cross-channel)
+    const resolvedUser = await resolveKakaoUser(userId);
+    if (resolvedUser.isLinked) {
+      logger.info(`[kakao] User ${userId.slice(0, 8)}... linked to MoA account ${resolvedUser.effectiveUserId.slice(0, 8)}...`);
+    }
+
     // Check allowlist if configured
     if (account.config.dmPolicy === "allowlist") {
       const allowFrom = account.config.allowFrom ?? [];
@@ -175,35 +182,15 @@ export async function startKakaoWebhook(opts: KakaoWebhookOptions): Promise<{
 
       // Step 0: Check for sync commands (/동기화, /sync) — requires Supabase
       if (supabaseReady && isSyncCommand(utterance)) {
-        // Get or create user in Supabase
-        const supabase = getSupabase();
-        let supabaseUserId: string;
-
-        const { data: existingUser } = await supabase
-          .from("lawcall_users")
-          .select("id")
-          .eq("kakao_user_id", userId)
-          .single();
-
-        if (existingUser) {
-          supabaseUserId = existingUser.id;
-        } else {
-          // Create new user
-          const { data: newUser, error } = await supabase
-            .from("lawcall_users")
-            .insert({ kakao_user_id: userId })
-            .select("id")
-            .single();
-
-          if (error || !newUser) {
-            const response = apiClient.buildSkillResponse(
-              "사용자 등록에 실패했습니다. 잠시 후 다시 시도해주세요.",
-            );
-            res.writeHead(200, { "Content-Type": "application/json" });
-            res.end(JSON.stringify(response));
-            return;
-          }
-          supabaseUserId = newUser.id;
+        // Get or create user in Supabase (uses unified resolver)
+        const supabaseUserId = await getOrCreateLegacyUser(userId);
+        if (!supabaseUserId) {
+          const response = apiClient.buildSkillResponse(
+            "사용자 등록에 실패했습니다. 잠시 후 다시 시도해주세요.",
+          );
+          res.writeHead(200, { "Content-Type": "application/json" });
+          res.end(JSON.stringify(response));
+          return;
         }
 
         // Create sync context
@@ -247,10 +234,12 @@ export async function startKakaoWebhook(opts: KakaoWebhookOptions): Promise<{
       }
 
       // Step 1 & 2: Billing checks — only when Supabase is configured
+      // Use effective user ID for unified billing across channels
+      const billingUserId = resolvedUser.effectiveUserId;
       let usedPlatformKey = true;
       if (supabaseReady) {
         // Step 1: Check for billing commands (잔액, 충전, API키 등록 등)
-        const billingCmd = await handleBillingCommand(userId, utterance);
+        const billingCmd = await handleBillingCommand(billingUserId, utterance);
         if (billingCmd.handled) {
           let response: KakaoSkillResponse;
           if (billingCmd.paymentUrl) {
@@ -273,7 +262,7 @@ export async function startKakaoWebhook(opts: KakaoWebhookOptions): Promise<{
         }
 
         // Step 2: Pre-billing check (verify credits or custom API key)
-        const billingCheck = await preBillingCheck(userId);
+        const billingCheck = await preBillingCheck(billingUserId);
         if (billingCheck.handled) {
           const response = apiClient.buildSkillResponse(
             billingCheck.response ?? "",
@@ -290,8 +279,9 @@ export async function startKakaoWebhook(opts: KakaoWebhookOptions): Promise<{
       }
 
       // Step 3: Call the message handler (AI agent)
+      // Use effective user ID for unified identity (shared credits, settings, memory)
       const result = await onMessage({
-        userId,
+        userId: resolvedUser.effectiveUserId,
         userType,
         text: utterance,
         botId,
@@ -308,7 +298,7 @@ export async function startKakaoWebhook(opts: KakaoWebhookOptions): Promise<{
         const model = process.env.OPENCLAW_MODEL ?? "claude-3-5-haiku-20241022";
 
         const billingResult = await postBillingDeduct(
-          userId,
+          billingUserId,
           model,
           estimatedInputTokens,
           estimatedOutputTokens,
@@ -317,7 +307,7 @@ export async function startKakaoWebhook(opts: KakaoWebhookOptions): Promise<{
         creditsUsed = billingResult.creditsUsed;
 
         const creditMessage = await getCreditStatusMessage(
-          userId,
+          billingUserId,
           billingResult.creditsUsed,
           usedPlatformKey,
         );
