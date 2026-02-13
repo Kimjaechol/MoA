@@ -1,0 +1,25 @@
+{
+  "name": "@moa/gateway",
+  "version": "1.0.0",
+  "private": true,
+  "description": "MoA Gateway Server — multi-channel AI message gateway",
+  "type": "module",
+  "main": "dist/index.js",
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "lint": "tsc --noEmit"
+  },
+  "dependencies": {
+    "matrix-js-sdk": "^34.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.7.0"
+  },
+  "engines": {
+    "node": ">=22"
+  }
+}
