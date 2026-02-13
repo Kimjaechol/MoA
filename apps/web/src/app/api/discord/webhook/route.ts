@@ -109,7 +109,7 @@ export async function POST(request: NextRequest) {
           const interactionToken = interaction.token;
           const category = detectCategory(securityResult.sanitizedText);
 
-          // Try async path (Optimization 2)
+          // Try async path (Optimization 2), fallback to sync on failure
           if (isQueueAvailable() && appId) {
             enqueueTask({
               channel: "discord",
@@ -119,7 +119,19 @@ export async function POST(request: NextRequest) {
               sessionId,
               category,
               delivery: { interactionToken },
-            }).catch(() => {});
+            }).catch(() => {
+              // QStash enqueue failed — fallback to sync processing
+              generateAIResponse({
+                message: securityResult.sanitizedText,
+                userId: effectiveUserId,
+                sessionId,
+                channel: "discord",
+                category,
+                maskedTextForStorage: securityResult.sensitiveDataDetected ? securityResult.maskedTextForStorage : undefined,
+              }).then(async (result) => {
+                await deliverDiscordFollowup({ appId: appId!, interactionToken, text: result.reply });
+              }).catch((err) => console.error("[discord] Fallback error:", err));
+            });
           } else if (appId) {
             // Sync fallback: process in background via unresolved promise
             // (Discord deferred response allows up to 15 min for followup)

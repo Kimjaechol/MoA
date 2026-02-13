@@ -498,11 +498,10 @@ export async function generateAIResponse(params: {
     } catch { /* LLM failed */ }
   }
 
-  // Fallback: smart response (no API key used)
+  // Fallback: smart response (no actual LLM call — zero credit cost)
   if (!aiResponse) {
-    const modelUsed = selectModelName(strategy, activeKeys);
-    const text = generateSmartResponse(message, category, modelUsed, activeKeys);
-    aiResponse = { text, model: modelUsed, usedEnvKey: false };
+    const text = generateSmartResponse(message, category, "local/fallback", activeKeys);
+    aiResponse = { text, model: "local/fallback", usedEnvKey: false };
   }
 
   // ── Optimization 4: Parallelize credit deduction + response save ──
