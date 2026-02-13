@@ -1,372 +1,32 @@
 import { NextRequest, NextResponse } from "next/server";
 import { runSecurityChecks } from "@/lib/security";
 import { resolveChannelUser, getUserCredits, makeSessionId } from "@/lib/channel-user-resolver";
+import { generateAIResponse, detectCategory } from "@/lib/ai-engine";
+import { enqueueTask, isQueueAvailable } from "@/lib/async-queue";
+import { deliverTelegram, sendTelegramTyping, splitMessage } from "@/lib/channel-delivery";
 
 /**
  * POST /api/telegram/webhook
- * Telegram Bot webhook endpoint for Vercel deployment.
+ * Telegram Bot webhook endpoint — optimized architecture.
+ *
+ * With QStash: returns 200 instantly, processes via /api/worker (Opt 2)
+ * Without QStash: calls ai-engine directly (Opt 1 — no internal HTTP)
  *
  * Security layers:
  *   1. Webhook secret verification (Telegram-provided)
- *   2. Rate limiting per user
+ *   2. Rate limiting per user (three-strike system)
  *   3. Input validation & injection detection
  *   4. Sensitive data masking for stored messages
  *   5. Unified user resolution (cross-channel identity)
- *
- * Env vars needed:
- *   TELEGRAM_BOT_TOKEN      — Telegram Bot token from @BotFather
- *   TELEGRAM_WEBHOOK_SECRET — (optional) Secret for webhook verification
- *
- * Setup:
- *   1. Set TELEGRAM_BOT_TOKEN in Vercel env vars
- *   2. Call GET /api/telegram/webhook?action=register to register the webhook
- *   3. Telegram will send updates to POST /api/telegram/webhook
- *
- * Flow:
- *   Telegram message → security checks → user resolution → AI response → Telegram sendMessage
  */
+
+// Optimization 3: Run in Seoul region for Korean users (lowest latency)
+export const preferredRegion = "icn1";
 
 const TELEGRAM_API = "https://api.telegram.org/bot";
 
-/** Send a message via Telegram Bot API */
-async function sendTelegramMessage(
-  token: string,
-  chatId: number | string,
-  text: string,
-  replyToMessageId?: number,
-): Promise<boolean> {
-  try {
-    // Truncate very long messages (Telegram limit: 4096 chars)
-    const chunks = splitMessage(text, 4000);
-
-    for (const chunk of chunks) {
-      const res = await fetch(`${TELEGRAM_API}${token}/sendMessage`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          chat_id: chatId,
-          text: chunk,
-          parse_mode: "Markdown",
-          ...(replyToMessageId ? { reply_to_message_id: replyToMessageId } : {}),
-        }),
-      });
-
-      if (!res.ok) {
-        // Retry without Markdown if parse failed
-        const errData = await res.json().catch(() => ({}));
-        if (errData.description?.includes("parse")) {
-          await fetch(`${TELEGRAM_API}${token}/sendMessage`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              chat_id: chatId,
-              text: chunk,
-              ...(replyToMessageId ? { reply_to_message_id: replyToMessageId } : {}),
-            }),
-          });
-        }
-      }
-    }
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-/** Send a "typing..." chat action */
-async function sendTypingAction(token: string, chatId: number | string): Promise<void> {
-  try {
-    await fetch(`${TELEGRAM_API}${token}/sendChatAction`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ chat_id: chatId, action: "typing" }),
-    });
-  } catch { /* non-critical */ }
-}
-
-/** Split long messages into chunks at sentence boundaries */
-function splitMessage(text: string, maxLen: number): string[] {
-  if (text.length <= maxLen) return [text];
-
-  const chunks: string[] = [];
-  let remaining = text;
-
-  while (remaining.length > 0) {
-    if (remaining.length <= maxLen) {
-      chunks.push(remaining);
-      break;
-    }
-
-    // Try to break at paragraph, then sentence, then word boundary
-    let breakAt = remaining.lastIndexOf("\n\n", maxLen);
-    if (breakAt < maxLen * 0.3) breakAt = remaining.lastIndexOf("\n", maxLen);
-    if (breakAt < maxLen * 0.3) breakAt = remaining.lastIndexOf(". ", maxLen);
-    if (breakAt < maxLen * 0.3) breakAt = remaining.lastIndexOf(" ", maxLen);
-    if (breakAt < maxLen * 0.3) breakAt = maxLen;
-
-    chunks.push(remaining.slice(0, breakAt + 1));
-    remaining = remaining.slice(breakAt + 1);
-  }
-
-  return chunks;
-}
-
-/**
- * Generate AI response for a Telegram message.
- * Uses unified user ID for shared settings/credits across channels.
- */
-async function generateTelegramResponse(
-  text: string,
-  effectiveUserId: string,
-  sessionId: string,
-  maskedTextForStorage?: string,
-): Promise<string> {
-  try {
-    // Call our own chat API internally
-    const baseUrl = process.env.NEXT_PUBLIC_BASE_URL ?? process.env.VERCEL_URL
-      ? `https://${process.env.VERCEL_URL}`
-      : "http://localhost:3000";
-
-    const res = await fetch(`${baseUrl}/api/chat`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        user_id: effectiveUserId,
-        session_id: sessionId,
-        content: text,
-        content_for_storage: maskedTextForStorage,
-        channel: "telegram",
-        category: detectCategory(text),
-      }),
-    });
-
-    if (res.ok) {
-      const data = await res.json();
-      return data.reply ?? "Sorry, I couldn't process your message.";
-    }
-  } catch (err) {
-    console.error("[telegram/webhook] AI response error:", err);
-  }
-
-  return "안녕하세요! MoA AI입니다. 현재 시스템을 준비 중입니다. 잠시 후 다시 시도해주세요.";
-}
-
-/** Simple category detection from message content */
-function detectCategory(text: string): string {
-  const lower = text.toLowerCase();
-  if (/코드|코딩|프로그래밍|debug|bug|function|class|import|git/.test(lower)) return "coding";
-  if (/문서|보고서|요약|번역|pptx|docx|pdf/.test(lower)) return "document";
-  if (/이미지|그림|사진|그려|image|photo|draw/.test(lower)) return "image";
-  if (/음악|노래|작곡|가사|music|song/.test(lower)) return "music";
-  if (/이메일|업무|보고|회의|미팅|email|meeting|report/.test(lower)) return "work";
-  if (/날씨|일정|번역|맛집|추천|weather|schedule/.test(lower)) return "daily";
-  return "other";
-}
-
-/**
- * POST /api/telegram/webhook
- * Receive Telegram updates.
- */
-export async function POST(request: NextRequest) {
-  try {
-    const token = process.env.TELEGRAM_BOT_TOKEN;
-    if (!token) {
-      console.error("[telegram/webhook] TELEGRAM_BOT_TOKEN not set");
-      return NextResponse.json({ ok: true }); // Return 200 to avoid Telegram retries
-    }
-
-    // Verify webhook secret if configured
-    const webhookSecret = process.env.TELEGRAM_WEBHOOK_SECRET;
-    if (webhookSecret) {
-      const secretHeader = request.headers.get("x-telegram-bot-api-secret-token");
-      if (secretHeader !== webhookSecret) {
-        return NextResponse.json({ ok: true }); // Silent reject
-      }
-    }
-
-    const update = await request.json();
-
-    // Handle /start command
-    if (update.message?.text === "/start") {
-      const chatId = update.message.chat.id;
-      const firstName = update.message.from?.first_name ?? "User";
-      await sendTelegramMessage(
-        token,
-        chatId,
-        `안녕하세요 ${firstName}님! *MoA AI 에이전트*입니다. 🤖\n\n` +
-        `무엇이든 물어보세요! 일상, 업무, 코딩, 문서 작성 등 다양한 분야를 도와드립니다.\n\n` +
-        `*주요 명령어:*\n` +
-        `/help - 도움말\n` +
-        `/model - 현재 AI 모델 정보\n` +
-        `/credits - 크레딧 잔액\n\n` +
-        `💡 웹에서 더 많은 기능을 사용하세요: https://mymoa.app`,
-      );
-      return NextResponse.json({ ok: true });
-    }
-
-    // Handle /help command
-    if (update.message?.text === "/help") {
-      const chatId = update.message.chat.id;
-      await sendTelegramMessage(
-        token,
-        chatId,
-        `*MoA AI 도움말* 📖\n\n` +
-        `MoA는 100+ 전문 스킬을 가진 AI 에이전트입니다.\n\n` +
-        `*카테고리별 기능:*\n` +
-        `🌤 *일상* - 날씨, 번역, 일정, 맛집\n` +
-        `💼 *업무* - 이메일, 보고서, 데이터 분석\n` +
-        `📄 *문서* - 요약, 작성, 변환 (DOCX/PDF/PPTX)\n` +
-        `💻 *코딩* - 코드 작성, 디버깅, 리뷰\n` +
-        `🎨 *이미지* - AI 생성, 편집, 분석\n` +
-        `🎵 *음악* - 작곡, 가사, TTS\n\n` +
-        `*설정:*\n` +
-        `• 웹에서 API 키 등록 시 크레딧 50% 절감\n` +
-        `• 마이페이지: https://mymoa.app/mypage\n` +
-        `• 결제/크레딧: https://mymoa.app/billing`,
-      );
-      return NextResponse.json({ ok: true });
-    }
-
-    // Handle /credits command — uses unified user resolution
-    if (update.message?.text === "/credits") {
-      const chatId = update.message.chat.id;
-      const rawTgId = String(update.message.from?.id ?? chatId);
-
-      // Resolve to unified user
-      const resolvedUser = await resolveChannelUser({
-        channel: "telegram",
-        channelUserId: rawTgId,
-        displayName: [update.message.from?.first_name, update.message.from?.last_name].filter(Boolean).join(" ") || undefined,
-      });
-      const credits = await getUserCredits(resolvedUser.effectiveUserId);
-
-      const linkedStatus = resolvedUser.isLinked
-        ? "계정 연동됨"
-        : "미연동 (mymoa.app에서 연동하면 모든 채널 통합)";
-
-      const balanceText = `*크레딧 잔액:* ${credits.balance.toLocaleString()}\n` +
-        `*플랜:* ${credits.plan}\n` +
-        `*월 사용량:* ${credits.monthlyUsed}/${credits.monthlyQuota}\n` +
-        `*계정 상태:* ${linkedStatus}`;
-
-      await sendTelegramMessage(token, chatId, `💳 ${balanceText}\n\n충전: https://mymoa.app/billing`);
-      return NextResponse.json({ ok: true });
-    }
-
-    // Handle /model command — shows user-specific model settings
-    if (update.message?.text === "/model") {
-      const chatId = update.message.chat.id;
-      const rawTgId = String(update.message.from?.id ?? chatId);
-
-      // Resolve to unified user for personalized model info
-      const resolvedUser = await resolveChannelUser({
-        channel: "telegram",
-        channelUserId: rawTgId,
-      });
-
-      let modelInfo = `*기본 전략:* 가성비 (cost-efficient)\n*사용 모델:* Gemini 2.5 Flash → GPT-4o-mini → Claude Haiku`;
-      try {
-        const { getUserLLMSettings } = await import("@/lib/channel-user-resolver");
-        const settings = await getUserLLMSettings(resolvedUser.effectiveUserId);
-        const strategyLabel = settings.modelStrategy === "max-performance" ? "최고성능" : "가성비";
-        const keyStatus = settings.hasOwnApiKeys
-          ? `등록됨 (${settings.activeProviders.join(", ")})`
-          : "미등록";
-
-        modelInfo = `*현재 전략:* ${strategyLabel}\n` +
-          `*API 키:* ${keyStatus}\n` +
-          (settings.hasOwnApiKeys
-            ? `*모델 우선순위:* 사용자 키 → MoA 기본 모델`
-            : `*사용 모델:* Gemini 2.5 Flash → GPT-4o-mini → Claude Haiku`);
-      } catch { /* settings not available */ }
-
-      await sendTelegramMessage(
-        token,
-        chatId,
-        `🤖 *현재 AI 모델 설정*\n\n${modelInfo}\n\n` +
-        `자체 API 키를 등록하면 1x 크레딧으로 더 좋은 모델을 사용할 수 있습니다.\n` +
-        `설정: https://mymoa.app/mypage`,
-      );
-      return NextResponse.json({ ok: true });
-    }
-
-    // Handle regular text messages
-    const message = update.message;
-    if (!message?.text) {
-      // Non-text messages (photos, stickers, etc.) — acknowledge but skip
-      return NextResponse.json({ ok: true });
-    }
-
-    const chatId = message.chat.id;
-    const messageId = message.message_id;
-    const text = message.text;
-    const rawTgId = String(message.from?.id ?? chatId);
-    const displayName = [message.from?.first_name, message.from?.last_name].filter(Boolean).join(" ") || "Telegram User";
-
-    // ── Security: resolve unified user identity ──
-    const resolvedUser = await resolveChannelUser({
-      channel: "telegram",
-      channelUserId: rawTgId,
-      displayName,
-    });
-    const effectiveUserId = resolvedUser.effectiveUserId;
-    const sessionId = makeSessionId("telegram", rawTgId);
-
-    // ── Security: rate limiting + input validation + data masking ──
-    const securityResult = await runSecurityChecks({
-      channel: "telegram",
-      userId: effectiveUserId,
-      messageText: text,
-    });
-
-    if (!securityResult.proceed) {
-      // Rate limited or blocked — send friendly message
-      await sendTelegramMessage(token, chatId, securityResult.userResponse ?? "잠시 후 다시 시도해주세요.", messageId);
-      return NextResponse.json({ ok: true });
-    }
-
-    // Send typing indicator
-    await sendTypingAction(token, chatId);
-
-    // In group chats, only respond when mentioned or replied to
-    if (message.chat.type !== "private") {
-      const botUsername = await getBotUsername(token);
-      const isMentioned = text.includes(`@${botUsername}`);
-      const isReplyToBot = message.reply_to_message?.from?.is_bot === true;
-
-      if (!isMentioned && !isReplyToBot) {
-        return NextResponse.json({ ok: true }); // Ignore non-targeted group messages
-      }
-
-      // Remove bot mention from text
-      const cleanText = text.replace(new RegExp(`@${botUsername}`, "gi"), "").trim();
-      if (!cleanText) return NextResponse.json({ ok: true });
-
-      const reply = await generateTelegramResponse(
-        cleanText, effectiveUserId, sessionId,
-        securityResult.sensitiveDataDetected ? securityResult.maskedTextForStorage : undefined,
-      );
-      await sendTelegramMessage(token, chatId, reply, messageId);
-      return NextResponse.json({ ok: true });
-    }
-
-    // Private chat — respond to all messages (use original text for LLM, masked for storage)
-    const reply = await generateTelegramResponse(
-      securityResult.sanitizedText, effectiveUserId, sessionId,
-      securityResult.sensitiveDataDetected ? securityResult.maskedTextForStorage : undefined,
-    );
-    await sendTelegramMessage(token, chatId, reply, messageId);
-
-    return NextResponse.json({ ok: true });
-  } catch (err) {
-    console.error("[telegram/webhook] Error:", err);
-    // Always return 200 to prevent Telegram from retrying
-    return NextResponse.json({ ok: true });
-  }
-}
-
 /** Cache bot username to avoid repeated API calls */
-let cachedBotUsername: string = "";
+let cachedBotUsername = "";
 
 async function getBotUsername(token: string): Promise<string> {
   if (cachedBotUsername) return cachedBotUsername;
@@ -381,14 +41,192 @@ async function getBotUsername(token: string): Promise<string> {
   return "moa_ai_bot";
 }
 
+/** Process message: either enqueue (async) or handle directly (sync) */
+async function processMessage(params: {
+  token: string;
+  chatId: number;
+  messageId: number;
+  text: string;
+  effectiveUserId: string;
+  sessionId: string;
+  maskedText?: string;
+}): Promise<void> {
+  const { token, chatId, messageId, text, effectiveUserId, sessionId, maskedText } = params;
+  const category = detectCategory(text);
+
+  // Try async path first (Optimization 2)
+  if (isQueueAvailable()) {
+    await enqueueTask({
+      channel: "telegram",
+      message: text,
+      maskedTextForStorage: maskedText,
+      userId: effectiveUserId,
+      sessionId,
+      category,
+      delivery: { chatId, messageId },
+    });
+    return; // Webhook returns 200 immediately
+  }
+
+  // Sync fallback: call ai-engine directly (Optimization 1 — no internal HTTP)
+  await sendTelegramTyping(token, chatId);
+  const result = await generateAIResponse({
+    message: text,
+    userId: effectiveUserId,
+    sessionId,
+    channel: "telegram",
+    category,
+    maskedTextForStorage: maskedText,
+  });
+  await deliverTelegram({ token, chatId, text: result.reply, replyToMessageId: messageId });
+}
+
+export async function POST(request: NextRequest) {
+  try {
+    const token = process.env.TELEGRAM_BOT_TOKEN;
+    if (!token) {
+      return NextResponse.json({ ok: true });
+    }
+
+    // Verify webhook secret
+    const webhookSecret = process.env.TELEGRAM_WEBHOOK_SECRET;
+    if (webhookSecret) {
+      const secretHeader = request.headers.get("x-telegram-bot-api-secret-token");
+      if (secretHeader !== webhookSecret) {
+        return NextResponse.json({ ok: true });
+      }
+    }
+
+    const update = await request.json();
+
+    // Handle /start command
+    if (update.message?.text === "/start") {
+      const chatId = update.message.chat.id;
+      const firstName = update.message.from?.first_name ?? "User";
+      await deliverTelegram({
+        token, chatId,
+        text: `안녕하세요 ${firstName}님! *MoA AI 에이전트*입니다.\n\n` +
+          `무엇이든 물어보세요! 일상, 업무, 코딩, 문서 작성 등 다양한 분야를 도와드립니다.\n\n` +
+          `*주요 명령어:*\n/help - 도움말\n/model - AI 모델 정보\n/credits - 크레딧 잔액\n\n` +
+          `웹에서 더 많은 기능: https://mymoa.app`,
+      });
+      return NextResponse.json({ ok: true });
+    }
+
+    // Handle /help command
+    if (update.message?.text === "/help") {
+      const chatId = update.message.chat.id;
+      await deliverTelegram({
+        token, chatId,
+        text: `*MoA AI 도움말*\n\n` +
+          `*카테고리별 기능:*\n` +
+          `일상 - 날씨, 번역, 일정, 맛집\n` +
+          `업무 - 이메일, 보고서, 데이터 분석\n` +
+          `문서 - 요약, 작성, 변환\n` +
+          `코딩 - 코드 작성, 디버깅, 리뷰\n` +
+          `이미지 - AI 생성, 편집, 분석\n` +
+          `음악 - 작곡, 가사, TTS\n\n` +
+          `설정: https://mymoa.app/mypage\n결제: https://mymoa.app/billing`,
+      });
+      return NextResponse.json({ ok: true });
+    }
+
+    // Handle /credits command
+    if (update.message?.text === "/credits") {
+      const chatId = update.message.chat.id;
+      const rawTgId = String(update.message.from?.id ?? chatId);
+      const resolvedUser = await resolveChannelUser({
+        channel: "telegram",
+        channelUserId: rawTgId,
+        displayName: [update.message.from?.first_name, update.message.from?.last_name].filter(Boolean).join(" ") || undefined,
+      });
+      const credits = await getUserCredits(resolvedUser.effectiveUserId);
+      const linkedStatus = resolvedUser.isLinked ? "계정 연동됨" : "미연동 (mymoa.app에서 연동)";
+      await deliverTelegram({
+        token, chatId,
+        text: `*크레딧 잔액:* ${credits.balance.toLocaleString()}\n*플랜:* ${credits.plan}\n*월 사용량:* ${credits.monthlyUsed}/${credits.monthlyQuota}\n*계정:* ${linkedStatus}\n\n충전: https://mymoa.app/billing`,
+      });
+      return NextResponse.json({ ok: true });
+    }
+
+    // Handle /model command
+    if (update.message?.text === "/model") {
+      const chatId = update.message.chat.id;
+      const rawTgId = String(update.message.from?.id ?? chatId);
+      const resolvedUser = await resolveChannelUser({ channel: "telegram", channelUserId: rawTgId });
+      let modelInfo = `*기본 전략:* 가성비\n*사용 모델:* Gemini 2.5 Flash`;
+      try {
+        const { getUserLLMSettings } = await import("@/lib/channel-user-resolver");
+        const settings = await getUserLLMSettings(resolvedUser.effectiveUserId);
+        const strategyLabel = settings.modelStrategy === "max-performance" ? "최고성능" : "가성비";
+        const keyStatus = settings.hasOwnApiKeys ? `등록됨 (${settings.activeProviders.join(", ")})` : "미등록";
+        modelInfo = `*현재 전략:* ${strategyLabel}\n*API 키:* ${keyStatus}`;
+      } catch { /* settings not available */ }
+      await deliverTelegram({
+        token, chatId,
+        text: `*현재 AI 모델 설정*\n\n${modelInfo}\n\n설정: https://mymoa.app/mypage`,
+      });
+      return NextResponse.json({ ok: true });
+    }
+
+    // Handle regular text messages
+    const message = update.message;
+    if (!message?.text) {
+      return NextResponse.json({ ok: true });
+    }
+
+    const chatId = message.chat.id;
+    const messageId = message.message_id;
+    const text = message.text;
+    const rawTgId = String(message.from?.id ?? chatId);
+    const displayName = [message.from?.first_name, message.from?.last_name].filter(Boolean).join(" ") || "Telegram User";
+
+    // Resolve unified user identity
+    const resolvedUser = await resolveChannelUser({ channel: "telegram", channelUserId: rawTgId, displayName });
+    const effectiveUserId = resolvedUser.effectiveUserId;
+    const sessionId = makeSessionId("telegram", rawTgId);
+
+    // Security checks
+    const securityResult = await runSecurityChecks({ channel: "telegram", userId: effectiveUserId, messageText: text });
+    if (!securityResult.proceed) {
+      await deliverTelegram({ token, chatId, text: securityResult.userResponse ?? "잠시 후 다시 시도해주세요.", replyToMessageId: messageId });
+      return NextResponse.json({ ok: true });
+    }
+
+    // Group chat: only respond when mentioned or replied to
+    if (message.chat.type !== "private") {
+      const botUsername = await getBotUsername(token);
+      const isMentioned = text.includes(`@${botUsername}`);
+      const isReplyToBot = message.reply_to_message?.from?.is_bot === true;
+      if (!isMentioned && !isReplyToBot) {
+        return NextResponse.json({ ok: true });
+      }
+      const cleanText = text.replace(new RegExp(`@${botUsername}`, "gi"), "").trim();
+      if (!cleanText) return NextResponse.json({ ok: true });
+
+      await processMessage({
+        token, chatId, messageId, text: cleanText, effectiveUserId, sessionId,
+        maskedText: securityResult.sensitiveDataDetected ? securityResult.maskedTextForStorage : undefined,
+      });
+      return NextResponse.json({ ok: true });
+    }
+
+    // Private chat
+    await processMessage({
+      token, chatId, messageId, text: securityResult.sanitizedText, effectiveUserId, sessionId,
+      maskedText: securityResult.sensitiveDataDetected ? securityResult.maskedTextForStorage : undefined,
+    });
+
+    return NextResponse.json({ ok: true });
+  } catch (err) {
+    console.error("[telegram/webhook] Error:", err);
+    return NextResponse.json({ ok: true });
+  }
+}
+
 /**
- * GET /api/telegram/webhook?action=register
+ * GET /api/telegram/webhook?action=register|unregister|info
  * Register/manage the Telegram webhook.
- *
- * Actions:
- *   register — Set webhook URL with Telegram
- *   unregister — Remove webhook
- *   info — Get current webhook info
  */
 export async function GET(request: NextRequest) {
   try {
@@ -404,14 +242,11 @@ export async function GET(request: NextRequest) {
       case "register": {
         const baseUrl = process.env.NEXT_PUBLIC_BASE_URL
           ?? (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : null);
-
         if (!baseUrl) {
           return NextResponse.json({ error: "NEXT_PUBLIC_BASE_URL not set" }, { status: 400 });
         }
-
         const webhookUrl = `${baseUrl}/api/telegram/webhook`;
         const secret = process.env.TELEGRAM_WEBHOOK_SECRET;
-
         const params: Record<string, unknown> = {
           url: webhookUrl,
           allowed_updates: ["message", "edited_message", "callback_query"],
@@ -425,12 +260,7 @@ export async function GET(request: NextRequest) {
           body: JSON.stringify(params),
         });
         const data = await res.json();
-
-        return NextResponse.json({
-          success: data.ok,
-          webhook_url: webhookUrl,
-          description: data.description,
-        });
+        return NextResponse.json({ success: data.ok, webhook_url: webhookUrl, description: data.description });
       }
 
       case "unregister": {
@@ -450,11 +280,7 @@ export async function GET(request: NextRequest) {
         ]);
         const webhookData = await webhookRes.json();
         const meData = await meRes.json();
-
-        return NextResponse.json({
-          bot: meData.result,
-          webhook: webhookData.result,
-        });
+        return NextResponse.json({ bot: meData.result, webhook: webhookData.result });
       }
 
       default:
