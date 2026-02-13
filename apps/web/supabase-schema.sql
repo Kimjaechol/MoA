@@ -313,6 +313,8 @@ ALTER TABLE moa_user_settings ENABLE ROW LEVEL SECURITY;
 
 ALTER TABLE moa_user_settings ADD COLUMN IF NOT EXISTS user_id TEXT;
 ALTER TABLE moa_user_settings ADD COLUMN IF NOT EXISTS model_strategy TEXT DEFAULT 'cost-efficient';
+ALTER TABLE moa_user_settings ADD COLUMN IF NOT EXISTS preferred_provider TEXT;
+ALTER TABLE moa_user_settings ADD COLUMN IF NOT EXISTS preferred_model TEXT;
 ALTER TABLE moa_user_settings ADD COLUMN IF NOT EXISTS phone TEXT;
 ALTER TABLE moa_user_settings ADD COLUMN IF NOT EXISTS phone_verified BOOLEAN DEFAULT false;
 ALTER TABLE moa_user_settings ADD COLUMN IF NOT EXISTS kakao_channel_added BOOLEAN DEFAULT false;
@@ -370,12 +372,13 @@ CREATE TABLE IF NOT EXISTS moa_channel_connections (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   user_id TEXT NOT NULL,
   channel TEXT NOT NULL,
-  channel_user_id TEXT,
+  channel_user_id TEXT NOT NULL,
   display_name TEXT,
   is_active BOOLEAN NOT NULL DEFAULT true,
+  linked_at TIMESTAMPTZ,
   connected_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   last_message_at TIMESTAMPTZ,
-  UNIQUE(user_id, channel)
+  UNIQUE(channel, channel_user_id)
 );
 
 ALTER TABLE moa_channel_connections ENABLE ROW LEVEL SECURITY;
@@ -385,13 +388,21 @@ ALTER TABLE moa_channel_connections ADD COLUMN IF NOT EXISTS channel TEXT;
 ALTER TABLE moa_channel_connections ADD COLUMN IF NOT EXISTS channel_user_id TEXT;
 ALTER TABLE moa_channel_connections ADD COLUMN IF NOT EXISTS display_name TEXT;
 ALTER TABLE moa_channel_connections ADD COLUMN IF NOT EXISTS is_active BOOLEAN DEFAULT true;
+ALTER TABLE moa_channel_connections ADD COLUMN IF NOT EXISTS linked_at TIMESTAMPTZ;
 ALTER TABLE moa_channel_connections ADD COLUMN IF NOT EXISTS connected_at TIMESTAMPTZ DEFAULT now();
 ALTER TABLE moa_channel_connections ADD COLUMN IF NOT EXISTS last_message_at TIMESTAMPTZ;
 
 -- No anon access (service key only)
 
+-- Primary lookup: find MoA user by channel identity
+CREATE INDEX IF NOT EXISTS idx_channel_conn_lookup ON moa_channel_connections(channel, channel_user_id) WHERE is_active = true;
 CREATE INDEX IF NOT EXISTS idx_channel_conn_user ON moa_channel_connections(user_id);
 CREATE INDEX IF NOT EXISTS idx_channel_conn_channel ON moa_channel_connections(user_id, channel);
+
+-- Migration: update existing unique constraint (safe to run)
+-- DROP the old (user_id, channel) constraint and add (channel, channel_user_id)
+-- Run manually if migrating: ALTER TABLE moa_channel_connections DROP CONSTRAINT IF EXISTS moa_channel_connections_user_id_channel_key;
+-- Then: ALTER TABLE moa_channel_connections ADD CONSTRAINT moa_channel_connections_channel_channel_user_id_key UNIQUE(channel, channel_user_id);
 
 -- ============================================
 -- 12. Synthesis Jobs (문서작업 기록)
@@ -649,3 +660,31 @@ CREATE INDEX IF NOT EXISTS idx_payments_created ON moa_payments(created_at DESC)
 -- DROP POLICY IF EXISTS "Users read own transactions" ON moa_credit_transactions;
 -- DROP POLICY IF EXISTS "Users read own subscriptions" ON moa_subscriptions;
 -- DROP POLICY IF EXISTS "Users read own payments" ON moa_payments;
+
+-- ============================================
+-- Security Audit Log (보안 감사 로그)
+-- Records security events for monitoring and forensics.
+-- User IDs are stored as SHA-256 hashes for privacy.
+-- ============================================
+
+CREATE TABLE IF NOT EXISTS moa_security_audit_log (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  event_type TEXT NOT NULL,
+  channel TEXT,
+  user_id_hash TEXT NOT NULL,
+  details JSONB DEFAULT '{}',
+  severity TEXT NOT NULL DEFAULT 'info' CHECK (severity IN ('info', 'warning', 'critical')),
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+ALTER TABLE moa_security_audit_log ENABLE ROW LEVEL SECURITY;
+
+-- No anon access (service key only, read-only for admins)
+
+CREATE INDEX IF NOT EXISTS idx_security_audit_type ON moa_security_audit_log(event_type);
+CREATE INDEX IF NOT EXISTS idx_security_audit_severity ON moa_security_audit_log(severity) WHERE severity IN ('warning', 'critical');
+CREATE INDEX IF NOT EXISTS idx_security_audit_created ON moa_security_audit_log(created_at DESC);
+
+-- Auto-purge old info-level logs after 90 days (run periodically)
+-- DELETE FROM moa_security_audit_log WHERE severity = 'info' AND created_at < now() - interval '90 days';
+-- Critical/warning logs should be retained longer for forensics.

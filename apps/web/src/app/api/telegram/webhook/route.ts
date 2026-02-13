@@ -1,8 +1,17 @@
 import { NextRequest, NextResponse } from "next/server";
+import { runSecurityChecks } from "@/lib/security";
+import { resolveChannelUser, getUserCredits, makeSessionId } from "@/lib/channel-user-resolver";
 
 /**
  * POST /api/telegram/webhook
  * Telegram Bot webhook endpoint for Vercel deployment.
+ *
+ * Security layers:
+ *   1. Webhook secret verification (Telegram-provided)
+ *   2. Rate limiting per user
+ *   3. Input validation & injection detection
+ *   4. Sensitive data masking for stored messages
+ *   5. Unified user resolution (cross-channel identity)
  *
  * Env vars needed:
  *   TELEGRAM_BOT_TOKEN      — Telegram Bot token from @BotFather
@@ -14,7 +23,7 @@ import { NextRequest, NextResponse } from "next/server";
  *   3. Telegram will send updates to POST /api/telegram/webhook
  *
  * Flow:
- *   Telegram message → this webhook → AI response → Telegram sendMessage
+ *   Telegram message → security checks → user resolution → AI response → Telegram sendMessage
  */
 
 const TELEGRAM_API = "https://api.telegram.org/bot";
@@ -104,12 +113,13 @@ function splitMessage(text: string, maxLen: number): string[] {
 
 /**
  * Generate AI response for a Telegram message.
- * Reuses the same AI pipeline as the web chat.
+ * Uses unified user ID for shared settings/credits across channels.
  */
 async function generateTelegramResponse(
   text: string,
-  userId: string,
-  chatId: string,
+  effectiveUserId: string,
+  sessionId: string,
+  maskedTextForStorage?: string,
 ): Promise<string> {
   try {
     // Call our own chat API internally
@@ -121,9 +131,10 @@ async function generateTelegramResponse(
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        user_id: userId,
-        session_id: `telegram_${chatId}`,
+        user_id: effectiveUserId,
+        session_id: sessionId,
         content: text,
+        content_for_storage: maskedTextForStorage,
         channel: "telegram",
         category: detectCategory(text),
       }),
@@ -216,42 +227,63 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ ok: true });
     }
 
-    // Handle /credits command
+    // Handle /credits command — uses unified user resolution
     if (update.message?.text === "/credits") {
       const chatId = update.message.chat.id;
-      const telegramUserId = `tg_${update.message.from?.id ?? chatId}`;
+      const rawTgId = String(update.message.from?.id ?? chatId);
 
-      let balanceText = "크레딧 정보를 조회할 수 없습니다.";
-      try {
-        const { getServiceSupabase } = await import("@/lib/supabase");
-        const supabase = getServiceSupabase();
-        const { data } = await supabase
-          .from("moa_credits")
-          .select("balance, plan, monthly_quota, monthly_used")
-          .eq("user_id", telegramUserId)
-          .single();
-        if (data) {
-          balanceText = `*크레딧 잔액:* ${data.balance.toLocaleString()}\n` +
-            `*플랜:* ${data.plan}\n` +
-            `*월 사용량:* ${data.monthly_used}/${data.monthly_quota}`;
-        } else {
-          balanceText = "*크레딧 잔액:* 100 (무료 체험)\n*플랜:* Free";
-        }
-      } catch { /* DB not available */ }
+      // Resolve to unified user
+      const resolvedUser = await resolveChannelUser({
+        channel: "telegram",
+        channelUserId: rawTgId,
+        displayName: [update.message.from?.first_name, update.message.from?.last_name].filter(Boolean).join(" ") || undefined,
+      });
+      const credits = await getUserCredits(resolvedUser.effectiveUserId);
+
+      const linkedStatus = resolvedUser.isLinked
+        ? "계정 연동됨"
+        : "미연동 (mymoa.app에서 연동하면 모든 채널 통합)";
+
+      const balanceText = `*크레딧 잔액:* ${credits.balance.toLocaleString()}\n` +
+        `*플랜:* ${credits.plan}\n` +
+        `*월 사용량:* ${credits.monthlyUsed}/${credits.monthlyQuota}\n` +
+        `*계정 상태:* ${linkedStatus}`;
 
       await sendTelegramMessage(token, chatId, `💳 ${balanceText}\n\n충전: https://mymoa.app/billing`);
       return NextResponse.json({ ok: true });
     }
 
-    // Handle /model command
+    // Handle /model command — shows user-specific model settings
     if (update.message?.text === "/model") {
       const chatId = update.message.chat.id;
+      const rawTgId = String(update.message.from?.id ?? chatId);
+
+      // Resolve to unified user for personalized model info
+      const resolvedUser = await resolveChannelUser({
+        channel: "telegram",
+        channelUserId: rawTgId,
+      });
+
+      let modelInfo = `*기본 전략:* 가성비 (cost-efficient)\n*사용 모델:* Gemini 2.5 Flash → GPT-4o-mini → Claude Haiku`;
+      try {
+        const { getUserLLMSettings } = await import("@/lib/channel-user-resolver");
+        const settings = await getUserLLMSettings(resolvedUser.effectiveUserId);
+        const strategyLabel = settings.modelStrategy === "max-performance" ? "최고성능" : "가성비";
+        const keyStatus = settings.hasOwnApiKeys
+          ? `등록됨 (${settings.activeProviders.join(", ")})`
+          : "미등록";
+
+        modelInfo = `*현재 전략:* ${strategyLabel}\n` +
+          `*API 키:* ${keyStatus}\n` +
+          (settings.hasOwnApiKeys
+            ? `*모델 우선순위:* 사용자 키 → MoA 기본 모델`
+            : `*사용 모델:* Gemini 2.5 Flash → GPT-4o-mini → Claude Haiku`);
+      } catch { /* settings not available */ }
+
       await sendTelegramMessage(
         token,
         chatId,
-        `🤖 *현재 AI 모델 설정*\n\n` +
-        `*기본 전략:* 가성비 (cost-efficient)\n` +
-        `*사용 모델:* Gemini 2.5 Flash → GPT-4o-mini → Claude Haiku\n\n` +
+        `🤖 *현재 AI 모델 설정*\n\n${modelInfo}\n\n` +
         `자체 API 키를 등록하면 1x 크레딧으로 더 좋은 모델을 사용할 수 있습니다.\n` +
         `설정: https://mymoa.app/mypage`,
       );
@@ -268,7 +300,30 @@ export async function POST(request: NextRequest) {
     const chatId = message.chat.id;
     const messageId = message.message_id;
     const text = message.text;
-    const telegramUserId = `tg_${message.from?.id ?? chatId}`;
+    const rawTgId = String(message.from?.id ?? chatId);
+    const displayName = [message.from?.first_name, message.from?.last_name].filter(Boolean).join(" ") || "Telegram User";
+
+    // ── Security: resolve unified user identity ──
+    const resolvedUser = await resolveChannelUser({
+      channel: "telegram",
+      channelUserId: rawTgId,
+      displayName,
+    });
+    const effectiveUserId = resolvedUser.effectiveUserId;
+    const sessionId = makeSessionId("telegram", rawTgId);
+
+    // ── Security: rate limiting + input validation + data masking ──
+    const securityResult = await runSecurityChecks({
+      channel: "telegram",
+      userId: effectiveUserId,
+      messageText: text,
+    });
+
+    if (!securityResult.proceed) {
+      // Rate limited or blocked — send friendly message
+      await sendTelegramMessage(token, chatId, securityResult.userResponse ?? "잠시 후 다시 시도해주세요.", messageId);
+      return NextResponse.json({ ok: true });
+    }
 
     // Send typing indicator
     await sendTypingAction(token, chatId);
@@ -287,28 +342,20 @@ export async function POST(request: NextRequest) {
       const cleanText = text.replace(new RegExp(`@${botUsername}`, "gi"), "").trim();
       if (!cleanText) return NextResponse.json({ ok: true });
 
-      const reply = await generateTelegramResponse(cleanText, telegramUserId, String(chatId));
+      const reply = await generateTelegramResponse(
+        cleanText, effectiveUserId, sessionId,
+        securityResult.sensitiveDataDetected ? securityResult.maskedTextForStorage : undefined,
+      );
       await sendTelegramMessage(token, chatId, reply, messageId);
       return NextResponse.json({ ok: true });
     }
 
-    // Private chat — respond to all messages
-    const reply = await generateTelegramResponse(text, telegramUserId, String(chatId));
+    // Private chat — respond to all messages (use original text for LLM, masked for storage)
+    const reply = await generateTelegramResponse(
+      securityResult.sanitizedText, effectiveUserId, sessionId,
+      securityResult.sensitiveDataDetected ? securityResult.maskedTextForStorage : undefined,
+    );
     await sendTelegramMessage(token, chatId, reply, messageId);
-
-    // Save channel connection record (best-effort)
-    try {
-      const { getServiceSupabase } = await import("@/lib/supabase");
-      const supabase = getServiceSupabase();
-      await supabase.from("moa_channel_connections").upsert({
-        user_id: telegramUserId,
-        channel: "telegram",
-        channel_user_id: String(message.from?.id ?? chatId),
-        display_name: [message.from?.first_name, message.from?.last_name].filter(Boolean).join(" ") || "Telegram User",
-        is_active: true,
-        last_message_at: new Date().toISOString(),
-      }, { onConflict: "user_id,channel" });
-    } catch { /* non-critical */ }
 
     return NextResponse.json({ ok: true });
   } catch (err) {
