@@ -242,28 +242,97 @@ export function checkRateLimit(channel: string, userId: string): RateLimitResult
 // 2. Sensitive Data Detection & Masking
 // ────────────────────────────────────────────
 
-/** Patterns that detect sensitive data in messages */
+/**
+ * Patterns that detect sensitive data in messages.
+ *
+ * IMPORTANT: Order matters — more specific patterns should come first
+ * to prevent partial matches by broader patterns.
+ *
+ * Categories:
+ *   - Identity documents: 주민번호, 운전면허, 여권, 외국인등록번호
+ *   - Financial: 계좌번호, 카드번호, 계좌 비밀번호
+ *   - Credentials: 비밀번호, API키, 인증서, AWS키, 개인키
+ *   - Access codes: 현관문 비번, 도어락, 금고 비번
+ *   - Contact: 전화번호, 이메일
+ */
 const SENSITIVE_PATTERNS: Array<{ name: string; pattern: RegExp; mask: string }> = [
-  // Korean bank account numbers (most Korean banks: 10-14 digits with dashes)
-  { name: "bank_account", pattern: /\b\d{3,4}[-\s]?\d{2,6}[-\s]?\d{2,8}\b/g, mask: "***-****-****" },
+  // ── Identity Documents ──
+
+  // Korean resident registration number (주민등록번호: 6자리-7자리, 뒤 첫자리 1~4)
+  { name: "rrn", pattern: /\b\d{6}[-\s]?[1-4]\d{6}\b/g, mask: "******-*******" },
+
+  // Korean driver's license (운전면허번호: 2자리지역-2자리-6자리-2자리)
+  { name: "driver_license", pattern: /\b\d{2}[-\s]?\d{2}[-\s]?\d{6}[-\s]?\d{2}\b/g, mask: "**-**-******-**" },
+
+  // Korean passport number (여권번호: M 또는 문자 1자리 + 8자리 숫자)
+  { name: "passport", pattern: /\b[A-Z]{1,2}\d{7,8}\b/g, mask: "[여권번호 보호됨]" },
+
+  // Alien registration number (외국인등록번호: 주민번호와 동일 형식, 뒤 첫자리 5~8)
+  { name: "alien_registration", pattern: /\b\d{6}[-\s]?[5-8]\d{6}\b/g, mask: "******-*******" },
+
+  // ── Financial ──
+
   // Credit card numbers (16 digits, possibly with dashes/spaces)
   { name: "card_number", pattern: /\b\d{4}[-\s]?\d{4}[-\s]?\d{4}[-\s]?\d{4}\b/g, mask: "****-****-****-****" },
-  // Korean resident registration number (주민등록번호)
-  { name: "rrn", pattern: /\b\d{6}[-\s]?[1-4]\d{6}\b/g, mask: "******-*******" },
-  // Passwords (explicit mentions)
-  { name: "password", pattern: /(?:비밀번호|패스워드|password|passwd|pwd)\s*[:=]\s*\S+/gi, mask: "[비밀번호 보호됨]" },
-  // API keys (common patterns)
-  { name: "api_key", pattern: /\b(sk-[a-zA-Z0-9_-]{20,}|key-[a-zA-Z0-9_-]{20,}|AIza[a-zA-Z0-9_-]{30,})\b/g, mask: "[API키 보호됨]" },
-  // Korean phone numbers
-  { name: "phone", pattern: /\b01[0-9][-\s]?\d{3,4}[-\s]?\d{4}\b/g, mask: "010-****-****" },
-  // Email addresses
-  { name: "email", pattern: /\b[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}\b/g, mask: "***@***.***" },
+
+  // Card CVV/CVC (카드 보안코드: 명시적 언급 + 3~4자리)
+  { name: "card_cvv", pattern: /(?:CVV|CVC|보안코드|시큐리티\s*코드)\s*[:=]?\s*\d{3,4}/gi, mask: "[카드보안코드 보호됨]" },
+
+  // Card expiry (카드 유효기간: MM/YY 형식)
+  { name: "card_expiry", pattern: /(?:유효기간|만료일|expir(?:y|ation))\s*[:=]?\s*\d{2}\s*[/\-]\s*\d{2,4}/gi, mask: "[유효기간 보호됨]" },
+
+  // Korean bank account numbers (most Korean banks: 10-14 digits with dashes)
+  { name: "bank_account", pattern: /\b\d{3,4}[-\s]?\d{2,6}[-\s]?\d{2,8}\b/g, mask: "***-****-****" },
+
+  // 계좌 비밀번호 (account PIN: 명시적 언급 + 4~6자리)
+  { name: "account_pin", pattern: /(?:계좌\s*비밀번호|계좌\s*비번|통장\s*비번|통장\s*비밀번호|account\s*(?:pin|password))\s*[:=]?\s*\d{4,6}/gi, mask: "[계좌 비밀번호 보호됨]" },
+
+  // ── Credentials & Passwords ──
+
+  // General passwords (명시적 언급: 비밀번호, 패스워드, password 등)
+  { name: "password", pattern: /(?:비밀번호|패스워드|password|passwd|pwd|비번)\s*[:=]\s*\S+/gi, mask: "[비밀번호 보호됨]" },
+
+  // Door lock / front door codes (현관문, 도어락, 금고)
+  { name: "door_code", pattern: /(?:현관문|현관|도어락|도어\s*록|door\s*lock|금고|사물함|캐비넷|잠금)\s*(?:비밀번호|비번|코드|암호|password|code|pin)\s*[:=]?\s*\S+/gi, mask: "[잠금 비밀번호 보호됨]" },
+
+  // PIN codes (명시적 핀번호/핀코드 언급)
+  { name: "pin_code", pattern: /(?:핀\s*번호|핀\s*코드|pin\s*(?:code|number)?)\s*[:=]?\s*\d{4,8}/gi, mask: "[PIN 보호됨]" },
+
+  // OTP / verification codes (인증번호, OTP)
+  { name: "otp", pattern: /(?:인증\s*번호|인증\s*코드|OTP|verification\s*code|확인\s*코드)\s*[:=]?\s*\d{4,8}/gi, mask: "[인증코드 보호됨]" },
+
+  // 공인인증서 비밀번호
+  { name: "cert_password", pattern: /(?:인증서|공인인증|certificate)\s*(?:비밀번호|패스워드|password|비번)\s*[:=]?\s*\S+/gi, mask: "[인증서 비밀번호 보호됨]" },
+
+  // ── API Keys & Tokens ──
+
+  // OpenAI/Anthropic/generic API keys
+  { name: "api_key", pattern: /\b(sk-[a-zA-Z0-9_-]{20,}|sk-ant-[a-zA-Z0-9_-]{20,}|key-[a-zA-Z0-9_-]{20,}|AIza[a-zA-Z0-9_-]{30,}|xai-[a-zA-Z0-9_-]{20,}|gsk_[a-zA-Z0-9_-]{20,})\b/g, mask: "[API키 보호됨]" },
+
   // AWS access keys
   { name: "aws_key", pattern: /\b(AKIA[0-9A-Z]{16})\b/g, mask: "[AWS키 보호됨]" },
-  // Private keys / certificates
+
+  // AWS secret keys (40 chars, often after access key)
+  { name: "aws_secret", pattern: /(?:aws_secret_access_key|secret_key|AWS_SECRET)\s*[:=]\s*[A-Za-z0-9/+=]{40}/gi, mask: "[AWS 시크릿키 보호됨]" },
+
+  // Generic tokens (bearer, auth tokens)
+  { name: "bearer_token", pattern: /(?:Bearer|Authorization|token)\s+[a-zA-Z0-9_\-.]{30,}/gi, mask: "[토큰 보호됨]" },
+
+  // Private keys / certificates (PEM format)
   { name: "private_key", pattern: /-----BEGIN\s+(RSA\s+)?PRIVATE\s+KEY-----[\s\S]*?-----END\s+(RSA\s+)?PRIVATE\s+KEY-----/g, mask: "[인증키 보호됨]" },
-  // 공인인증서 비밀번호 패턴
-  { name: "cert_password", pattern: /(?:인증서|공인인증|certificate)\s*(?:비밀번호|패스워드|password)\s*[:=]?\s*\S+/gi, mask: "[인증서 비밀번호 보호됨]" },
+
+  // ── Contact Info ──
+
+  // Korean phone numbers
+  { name: "phone", pattern: /\b01[0-9][-\s]?\d{3,4}[-\s]?\d{4}\b/g, mask: "010-****-****" },
+
+  // Email addresses
+  { name: "email", pattern: /\b[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}\b/g, mask: "***@***.***" },
+
+  // ── Addresses & Location ──
+
+  // Korean detailed address patterns (with dong/ho numbers that could identify residence)
+  { name: "address_detail", pattern: /(?:주소|address)\s*[:=]\s*.{10,80}/gi, mask: "[주소 보호됨]" },
 ];
 
 export interface SensitiveDataResult {
