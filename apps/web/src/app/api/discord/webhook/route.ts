@@ -32,9 +32,10 @@ async function verifyDiscordSignature(
 ): Promise<boolean> {
   try {
     const encoder = new TextEncoder();
+    const keyData = hexToUint8Array(publicKey);
     const key = await crypto.subtle.importKey(
       "raw",
-      hexToUint8Array(publicKey),
+      keyData.buffer as ArrayBuffer,
       { name: "Ed25519" },
       false,
       ["verify"],
@@ -43,7 +44,7 @@ async function verifyDiscordSignature(
     const message = encoder.encode(timestamp + body);
     const sig = hexToUint8Array(signature);
 
-    return await crypto.subtle.verify("Ed25519", key, sig, message);
+    return await crypto.subtle.verify("Ed25519", key, sig.buffer as ArrayBuffer, message);
   } catch {
     return false;
   }
