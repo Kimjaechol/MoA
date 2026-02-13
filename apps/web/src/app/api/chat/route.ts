@@ -1,13 +1,18 @@
 import { NextRequest, NextResponse } from "next/server";
 import { safeDecrypt } from "@/lib/crypto";
+import { detectAndMaskSensitiveData } from "@/lib/security";
 
 /**
  * POST /api/chat
  * Send a message and get an AI response.
- * Body: { user_id, session_id, content, channel?, category? }
+ * Body: { user_id, session_id, content, channel?, category?, content_for_storage? }
  *
  * The `category` field enables category-aware skill routing:
  *   daily, work, document, coding, image, music, other
+ *
+ * Security: When `content_for_storage` is provided (pre-masked by webhook),
+ * it is used for DB persistence while `content` goes to the LLM.
+ * When not provided, masking is applied here as a second defense layer.
  *
  * Resilient design: works even without Supabase or API keys.
  * Supabase persistence is best-effort; AI responses always returned.
@@ -21,7 +26,10 @@ export async function POST(request: NextRequest) {
       return handleWebLogin(body);
     }
 
-    const { user_id, session_id, content, channel = "web", category = "other", is_desktop = false } = body;
+    const {
+      user_id, session_id, content, channel = "web", category = "other",
+      is_desktop = false, content_for_storage,
+    } = body;
 
     if (!content || typeof content !== "string" || !content.trim()) {
       return NextResponse.json({ error: "메시지를 입력해주세요." }, { status: 400 });
@@ -37,12 +45,17 @@ export async function POST(request: NextRequest) {
       // Supabase not configured — continue without persistence
     }
 
-    // 1. Save user message (best-effort, non-blocking)
+    // Determine what to store: use pre-masked content from webhook,
+    // or apply masking here as a second defense layer
+    const storageContent = content_for_storage
+      ?? detectAndMaskSensitiveData(content.trim()).maskedText;
+
+    // 1. Save user message (best-effort, non-blocking) — stores MASKED content
     if (supabase && user_id && session_id) {
       try {
         await supabase.from("moa_chat_messages").insert({
           user_id, session_id, role: "user",
-          content: content.trim(), channel, category,
+          content: storageContent, channel, category,
         });
       } catch { /* persistence failure — non-fatal */ }
     }

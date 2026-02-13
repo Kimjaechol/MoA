@@ -1,12 +1,16 @@
 import { NextRequest, NextResponse } from "next/server";
+import { runSecurityChecks } from "@/lib/security";
+import { resolveChannelUser, getUserCredits, makeSessionId } from "@/lib/channel-user-resolver";
 
 /**
  * Discord Bot Integration for Vercel (Serverless)
  *
- * Discord bots on serverless need a different approach than WebSocket-based bots.
- * We use two mechanisms:
- *   1. Interactions Endpoint — slash commands (/ask, /help, /credits)
- *   2. Message polling via Discord REST API — for DM responses
+ * Security layers:
+ *   1. Ed25519 signature verification (Discord-provided)
+ *   2. Rate limiting per user
+ *   3. Input validation & injection detection
+ *   4. Sensitive data masking for stored messages
+ *   5. Unified user resolution (cross-channel identity)
  *
  * Env vars needed:
  *   DISCORD_BOT_TOKEN         — Bot token from Discord Developer Portal
@@ -118,8 +122,13 @@ function splitMessage(text: string, maxLen: number): string[] {
   return chunks;
 }
 
-/** Generate AI response via our chat API */
-async function generateDiscordResponse(text: string, userId: string, channelId: string): Promise<string> {
+/** Generate AI response via our chat API, using unified user identity */
+async function generateDiscordResponse(
+  text: string,
+  effectiveUserId: string,
+  sessionId: string,
+  maskedTextForStorage?: string,
+): Promise<string> {
   try {
     const baseUrl = process.env.NEXT_PUBLIC_BASE_URL
       ?? (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : "http://localhost:3000");
@@ -128,9 +137,10 @@ async function generateDiscordResponse(text: string, userId: string, channelId: 
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        user_id: userId,
-        session_id: `discord_${channelId}`,
+        user_id: effectiveUserId,
+        session_id: sessionId,
         content: text,
+        content_for_storage: maskedTextForStorage,
         channel: "discord",
         category: detectCategory(text),
       }),
@@ -202,9 +212,19 @@ export async function POST(request: NextRequest) {
     // Handle Application Commands (slash commands)
     if (interaction.type === INTERACTION_TYPE.APPLICATION_COMMAND) {
       const commandName = interaction.data?.name;
-      const userId = `discord_${interaction.member?.user?.id ?? interaction.user?.id}`;
+      const rawDiscordId = String(interaction.member?.user?.id ?? interaction.user?.id);
+      const discordUsername = interaction.member?.user?.username ?? interaction.user?.username;
       const channelId = interaction.channel_id;
       const token = process.env.DISCORD_BOT_TOKEN;
+
+      // Resolve to unified user identity
+      const resolvedUser = await resolveChannelUser({
+        channel: "discord",
+        channelUserId: rawDiscordId,
+        displayName: discordUsername,
+      });
+      const effectiveUserId = resolvedUser.effectiveUserId;
+      const sessionId = makeSessionId("discord", rawDiscordId);
 
       switch (commandName) {
         case "ask": {
@@ -216,8 +236,21 @@ export async function POST(request: NextRequest) {
             });
           }
 
+          // Security checks on the question
+          const securityResult = await runSecurityChecks({
+            channel: "discord",
+            userId: effectiveUserId,
+            messageText: question,
+          });
+
+          if (!securityResult.proceed) {
+            return NextResponse.json({
+              type: INTERACTION_CALLBACK.CHANNEL_MESSAGE_WITH_SOURCE,
+              data: { content: securityResult.userResponse ?? "Please try again later." },
+            });
+          }
+
           // Respond with deferred message (shows "Bot is thinking...")
-          // Then follow up with the actual response
           const deferResponse = NextResponse.json({
             type: INTERACTION_CALLBACK.DEFERRED_CHANNEL_MESSAGE_WITH_SOURCE,
           });
@@ -227,17 +260,17 @@ export async function POST(request: NextRequest) {
             const appId = process.env.DISCORD_APPLICATION_ID;
             const interactionToken = interaction.token;
 
-            // Use edge runtime or background processing
-            generateDiscordResponse(question, userId, channelId).then(async (reply) => {
+            generateDiscordResponse(
+              securityResult.sanitizedText, effectiveUserId, sessionId,
+              securityResult.sensitiveDataDetected ? securityResult.maskedTextForStorage : undefined,
+            ).then(async (reply) => {
               try {
                 const chunks = splitMessage(reply, 2000);
-                // Edit the deferred response with first chunk
                 await fetch(`${DISCORD_API}/webhooks/${appId}/${interactionToken}/messages/@original`, {
                   method: "PATCH",
                   headers: { "Content-Type": "application/json" },
                   body: JSON.stringify({ content: chunks[0] }),
                 });
-                // Send additional chunks as followups
                 for (let i = 1; i < chunks.length; i++) {
                   await fetch(`${DISCORD_API}/webhooks/${appId}/${interactionToken}`, {
                     method: "POST",
@@ -279,23 +312,16 @@ export async function POST(request: NextRequest) {
         }
 
         case "credits": {
-          let balanceText = "Credit info unavailable.";
-          try {
-            const { getServiceSupabase } = await import("@/lib/supabase");
-            const supabase = getServiceSupabase();
-            const { data } = await supabase
-              .from("moa_credits")
-              .select("balance, plan, monthly_quota, monthly_used")
-              .eq("user_id", userId)
-              .single();
-            if (data) {
-              balanceText = `**Balance:** ${data.balance.toLocaleString()} credits\n` +
-                `**Plan:** ${data.plan}\n` +
-                `**Usage:** ${data.monthly_used}/${data.monthly_quota} this month`;
-            } else {
-              balanceText = "**Balance:** 100 credits (Free trial)\n**Plan:** Free";
-            }
-          } catch { /* DB not available */ }
+          // Use unified user credits
+          const credits = await getUserCredits(effectiveUserId);
+          const linkedStatus = resolvedUser.isLinked
+            ? "Account linked"
+            : "Not linked (link at mymoa.app for unified access)";
+
+          const balanceText = `**Balance:** ${credits.balance.toLocaleString()} credits\n` +
+            `**Plan:** ${credits.plan}\n` +
+            `**Usage:** ${credits.monthlyUsed}/${credits.monthlyQuota} this month\n` +
+            `**Status:** ${linkedStatus}`;
 
           return NextResponse.json({
             type: INTERACTION_CALLBACK.CHANNEL_MESSAGE_WITH_SOURCE,
