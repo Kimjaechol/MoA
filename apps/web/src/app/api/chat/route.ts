@@ -1,9 +1,48 @@
 import { NextRequest, NextResponse } from "next/server";
+import { createHmac, timingSafeEqual } from "node:crypto";
 import { detectAndMaskSensitiveData } from "@/lib/security";
 import { generateAIResponse, detectCategory } from "@/lib/ai-engine";
 
 // Optimization 3: Run in Seoul region for Korean users
 export const preferredRegion = "icn1";
+
+/**
+ * Verify HMAC-SHA256 signed request from MoA Gateway.
+ * Token format: "timestamp:signature" where signature = HMAC-SHA256(timestamp:payload, secret).
+ * Accepts requests within a 5-minute window.
+ */
+function verifyGatewayAuth(
+  token: string,
+  payload: string,
+  secret: string,
+  maxAgeMs = 300_000,
+): boolean {
+  try {
+    const sepIdx = token.indexOf(":");
+    if (sepIdx < 1) return false;
+
+    const timestamp = token.slice(0, sepIdx);
+    const signature = token.slice(sepIdx + 1);
+    const ts = parseInt(timestamp, 10);
+    if (isNaN(ts)) return false;
+
+    // Check freshness (5-minute window)
+    const age = Date.now() - ts * 1000;
+    if (age < 0 || age > maxAgeMs) return false;
+
+    // Compute expected HMAC
+    const data = `${timestamp}:${payload}`;
+    const expected = createHmac("sha256", secret).update(data).digest("hex");
+
+    // Timing-safe comparison
+    const bufA = Buffer.from(signature, "utf8");
+    const bufB = Buffer.from(expected, "utf8");
+    if (bufA.length !== bufB.length) return false;
+    return timingSafeEqual(bufA, bufB);
+  } catch {
+    return false;
+  }
+}
 
 /**
  * POST /api/chat
@@ -12,12 +51,36 @@ export const preferredRegion = "icn1";
  *
  * Now uses shared ai-engine (Optimization 1 — single function, no internal HTTP).
  *
+ * Authentication:
+ * - Web clients: session token in body or cookie
+ * - MoA Gateway: X-Gateway-Auth HMAC-SHA256 header (verified with MOA_API_SECRET)
+ *
  * Resilient design: works even without Supabase or API keys.
  * Supabase persistence is best-effort; AI responses always returned.
  */
 export async function POST(request: NextRequest) {
   try {
-    const body = await request.json();
+    // Read raw body for HMAC verification, then parse
+    const rawBody = await request.text();
+    const gatewayAuth = request.headers.get("x-gateway-auth");
+    const gatewayChannel = request.headers.get("x-gateway-channel");
+
+    // Verify Gateway HMAC authentication if present
+    if (gatewayAuth) {
+      const apiSecret = process.env.MOA_API_SECRET;
+      if (!apiSecret) {
+        console.error("[chat] X-Gateway-Auth received but MOA_API_SECRET is not configured");
+        return NextResponse.json({ error: "Gateway auth not configured" }, { status: 500 });
+      }
+      if (!verifyGatewayAuth(gatewayAuth, rawBody, apiSecret)) {
+        console.warn("[chat] Invalid Gateway auth signature");
+        return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+      }
+      // Authenticated — log the gateway channel
+      console.info(`[chat] Gateway request authenticated (channel: ${gatewayChannel ?? "unknown"})`);
+    }
+
+    const body = JSON.parse(rawBody);
 
     // ── web_login action — delegate to /api/auth ──
     if (body.action === "web_login") {
