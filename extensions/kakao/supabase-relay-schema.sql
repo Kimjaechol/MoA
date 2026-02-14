@@ -561,3 +561,110 @@ CREATE POLICY "Service role full access on moa_credit_history"
 CREATE POLICY "Service role full access on moa_credit_purchases"
   ON moa_credit_purchases FOR ALL USING (auth.role() = 'service_role');
 
+-- ============================================
+-- Device Location Tracking (분실 기기 GPS 추적)
+-- ============================================
+-- 분실 신고 시 원격 삭제와 동시에 GPS 좌표를 실시간으로 전송하여
+-- 분실 기기를 회수할 수 있도록 합니다.
+
+-- 추적 세션 (분실 기기당 1개 활성 세션)
+CREATE TABLE IF NOT EXISTS device_location_sessions (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  user_id TEXT NOT NULL,
+  device_id UUID NOT NULL REFERENCES relay_devices(id) ON DELETE CASCADE,
+  device_name TEXT NOT NULL,
+  -- 추적 상태: active(진행중), paused(일시정지), completed(완료), expired(만료)
+  status TEXT NOT NULL DEFAULT 'active'
+    CHECK (status IN ('active', 'paused', 'completed', 'expired')),
+  -- 추적 설정
+  interval_sec INTEGER NOT NULL DEFAULT 30,        -- GPS 수집 간격 (초)
+  high_accuracy BOOLEAN NOT NULL DEFAULT true,     -- 고정밀 GPS 모드
+  -- 마지막 수신 위치 (빠른 조회용 denormalized)
+  last_latitude DOUBLE PRECISION,
+  last_longitude DOUBLE PRECISION,
+  last_accuracy DOUBLE PRECISION,
+  last_location_at TIMESTAMPTZ,
+  -- 통계
+  total_points INTEGER NOT NULL DEFAULT 0,
+  -- 연결된 wipe 명령
+  wipe_command_id UUID REFERENCES device_wipe_commands(id) ON DELETE SET NULL,
+  -- 타임스탬프
+  started_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  expires_at TIMESTAMPTZ NOT NULL DEFAULT (NOW() + INTERVAL '72 hours'),
+  ended_at TIMESTAMPTZ
+);
+
+CREATE INDEX IF NOT EXISTS idx_location_sessions_user_device
+  ON device_location_sessions(user_id, device_id);
+CREATE INDEX IF NOT EXISTS idx_location_sessions_active
+  ON device_location_sessions(device_id, status) WHERE status = 'active';
+CREATE INDEX IF NOT EXISTS idx_location_sessions_expires
+  ON device_location_sessions(expires_at) WHERE status = 'active';
+
+-- 위치 기록 (개별 GPS 좌표)
+CREATE TABLE IF NOT EXISTS device_location_entries (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  session_id UUID NOT NULL REFERENCES device_location_sessions(id) ON DELETE CASCADE,
+  -- GPS 좌표
+  latitude DOUBLE PRECISION NOT NULL,
+  longitude DOUBLE PRECISION NOT NULL,
+  accuracy DOUBLE PRECISION NOT NULL DEFAULT 0,     -- 정확도 (미터)
+  altitude DOUBLE PRECISION,                        -- 고도 (미터)
+  speed DOUBLE PRECISION,                           -- 속도 (m/s)
+  bearing DOUBLE PRECISION,                         -- 방향 (0-360도)
+  provider TEXT DEFAULT 'fused'                     -- gps, network, fused
+    CHECK (provider IN ('gps', 'network', 'fused')),
+  -- 기기 상태
+  battery_level INTEGER CHECK (battery_level >= 0 AND battery_level <= 100),
+  network_type TEXT CHECK (network_type IN ('wifi', 'cellular', 'none')),
+  is_moving BOOLEAN,
+  -- 타임스탬프
+  measured_at TIMESTAMPTZ NOT NULL,                 -- GPS 측정 시각
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()     -- 서버 수신 시각
+);
+
+CREATE INDEX IF NOT EXISTS idx_location_entries_session
+  ON device_location_entries(session_id);
+CREATE INDEX IF NOT EXISTS idx_location_entries_time
+  ON device_location_entries(session_id, measured_at DESC);
+CREATE INDEX IF NOT EXISTS idx_location_entries_cleanup
+  ON device_location_entries(created_at) WHERE created_at < NOW() - INTERVAL '30 days';
+
+-- 오래된 위치 데이터 자동 삭제 (30일)
+CREATE OR REPLACE FUNCTION cleanup_old_location_entries()
+RETURNS INTEGER AS $$
+DECLARE
+  deleted_count INTEGER;
+BEGIN
+  DELETE FROM device_location_entries
+  WHERE created_at < NOW() - INTERVAL '30 days';
+  GET DIAGNOSTICS deleted_count = ROW_COUNT;
+  RETURN deleted_count;
+END;
+$$ LANGUAGE plpgsql;
+
+-- 만료된 추적 세션 자동 종료
+CREATE OR REPLACE FUNCTION expire_location_sessions()
+RETURNS INTEGER AS $$
+DECLARE
+  expired_count INTEGER;
+BEGIN
+  UPDATE device_location_sessions
+  SET status = 'expired', ended_at = NOW()
+  WHERE status = 'active'
+    AND expires_at < NOW();
+  GET DIAGNOSTICS expired_count = ROW_COUNT;
+  RETURN expired_count;
+END;
+$$ LANGUAGE plpgsql;
+
+-- RLS
+ALTER TABLE device_location_sessions ENABLE ROW LEVEL SECURITY;
+ALTER TABLE device_location_entries ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "Service role full access on device_location_sessions"
+  ON device_location_sessions FOR ALL USING (auth.role() = 'service_role');
+
+CREATE POLICY "Service role full access on device_location_entries"
+  ON device_location_entries FOR ALL USING (auth.role() = 'service_role');
+

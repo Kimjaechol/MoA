@@ -166,6 +166,9 @@ export async function deliverSlack(params: {
         }),
       });
       if (!res.ok) return false;
+      // Slack returns 200 even on errors — check the JSON body
+      const data = await res.json().catch(() => ({ ok: false }));
+      if (!data.ok) return false;
     }
     return true;
   } catch {

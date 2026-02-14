@@ -52,6 +52,12 @@ async function verifySlackSignature(body: string, timestamp: string, signature: 
 
 export async function POST(request: NextRequest) {
   try {
+    // Skip Slack retry events to prevent duplicate processing
+    const retryNum = request.headers.get("x-slack-retry-num");
+    if (retryNum) {
+      return NextResponse.json({ ok: true });
+    }
+
     const rawBody = await request.text();
 
     // Verify Slack signature

@@ -9,6 +9,15 @@ import {
   type CalendarEvent,
 } from "./calendar.js";
 import {
+  generateImage as freepikGenerateImage,
+  searchResources as freepikSearchResources,
+  upscaleImage as freepikUpscaleImage,
+  formatGenerateMessage as formatFreepikGenerateMessage,
+  formatSearchMessage as formatFreepikSearchMessage,
+  type FreepikGenerateResult,
+  type FreepikSearchResult,
+} from "./freepik.js";
+import {
   getDirections,
   parseNavigationCommand,
   formatRouteResultForKakao,
@@ -18,6 +27,16 @@ import {
   type NavigationProvider,
 } from "./navigation.js";
 import { getPublicHolidays, getAirQuality, type PublicDataResult } from "./public-data.js";
+import {
+  translateText,
+  searchTravelPhrases,
+  getTravelPhrasesByCategory,
+  formatTranslationMessage,
+  formatTravelPhrases,
+  formatTravelHelp,
+  type TranslationResult,
+  type TranslationDirection,
+} from "./realtime-translate.js";
 import { getSportsSchedule, type SportsResult } from "./sports.js";
 import { getWeather, type WeatherResult } from "./weather.js";
 
@@ -358,6 +377,125 @@ export const tools: Record<string, ToolDefinition> = {
       }
     },
   },
+
+  // Freepik AI 이미지 생성
+  freepikGenerate: {
+    name: "freepikGenerate",
+    description: "Freepik AI로 고품질 이미지를 생성합니다 (Mystic, HyperFlux, Classic 모델)",
+    category: "action",
+    parameters: [
+      {
+        name: "prompt",
+        type: "string",
+        required: true,
+        description: "이미지 설명 프롬프트",
+      },
+      {
+        name: "model",
+        type: "string",
+        required: false,
+        description: "모델 선택: mystic(최고품질), hyperflux(빠른), classic(경제적)",
+      },
+      {
+        name: "aspectRatio",
+        type: "string",
+        required: false,
+        description: "비율: square, landscape, portrait, widescreen",
+      },
+    ],
+    execute: async (params) => {
+      try {
+        const result = await freepikGenerateImage(params.prompt as string, {
+          model: params.model as "mystic" | "hyperflux" | "classic" | undefined,
+          aspectRatio: params.aspectRatio as "square" | "landscape" | "portrait" | "widescreen" | undefined,
+        });
+        return { success: true, data: result, source: "freepik" };
+      } catch (error) {
+        return {
+          success: false,
+          error: error instanceof Error ? error.message : "Freepik 이미지 생성 실패",
+          source: "freepik",
+        };
+      }
+    },
+  },
+
+  // Freepik 스톡 리소스 검색
+  freepikSearch: {
+    name: "freepikSearch",
+    description: "Freepik에서 디자인 리소스를 검색합니다 (사진, 벡터, PSD, AI 이미지)",
+    category: "search",
+    parameters: [
+      {
+        name: "query",
+        type: "string",
+        required: true,
+        description: "검색어 (예: modern logo, 한국 음식)",
+      },
+      {
+        name: "contentType",
+        type: "string",
+        required: false,
+        description: "유형: photo, vector, psd, ai_generated",
+      },
+      {
+        name: "limit",
+        type: "number",
+        required: false,
+        description: "결과 수 (1-20, 기본값: 5)",
+      },
+    ],
+    execute: async (params) => {
+      try {
+        const result = await freepikSearchResources(params.query as string, {
+          contentType: params.contentType as "photo" | "vector" | "psd" | "ai_generated" | undefined,
+          limit: params.limit as number | undefined,
+        });
+        return { success: true, data: result, source: "freepik_search" };
+      } catch (error) {
+        return {
+          success: false,
+          error: error instanceof Error ? error.message : "Freepik 검색 실패",
+          source: "freepik_search",
+        };
+      }
+    },
+  },
+
+  // 실시간 번역
+  translate: {
+    name: "translate",
+    description: "실시간 텍스트 번역 (일본어↔한국어 특화, Papago/DeepL/Google 자동 선택)",
+    category: "action",
+    parameters: [
+      {
+        name: "text",
+        type: "string",
+        required: true,
+        description: "번역할 텍스트",
+      },
+      {
+        name: "direction",
+        type: "string",
+        required: false,
+        description: "번역 방향: ja-ko, ko-ja, en-ko, ko-en 등 (자동 감지 가능)",
+      },
+    ],
+    execute: async (params) => {
+      try {
+        const result = await translateText(params.text as string, {
+          direction: params.direction as TranslationDirection | undefined,
+        });
+        return { success: true, data: result, source: "translate" };
+      } catch (error) {
+        return {
+          success: false,
+          error: error instanceof Error ? error.message : "번역 실패",
+          source: "translate",
+        };
+      }
+    },
+  },
 };
 
 /**
@@ -416,3 +554,50 @@ export {
   isNavigationQuery,
 } from "./navigation.js";
 export type { RouteResult, TransportMode, NavigationProvider } from "./navigation.js";
+
+// Freepik exports
+export {
+  freepikGenerateImage,
+  freepikSearchResources,
+  freepikUpscaleImage,
+  formatFreepikGenerateMessage,
+  formatFreepikSearchMessage,
+} from "./freepik.js";
+export type { FreepikGenerateResult, FreepikSearchResult } from "./freepik.js";
+
+// Translation exports
+export {
+  translateText,
+  searchTravelPhrases,
+  getTravelPhrasesByCategory,
+  formatTranslationMessage,
+  formatTravelPhrases,
+  formatTravelHelp,
+} from "./realtime-translate.js";
+export type { TranslationResult, TranslationDirection } from "./realtime-translate.js";
+
+// Gemini Live multi-language exports
+export {
+  SUPPORTED_LANGUAGES,
+  findLanguageByKeyword,
+  findLanguageByCode,
+  formatModeLabel,
+  getLanguageQuickReplies,
+  formatLiveTranslateGuide,
+  formatSessionStatus,
+  GeminiLiveTranslator,
+} from "./gemini-live-translate.js";
+export type { LanguageInfo, LiveSessionConfig } from "./gemini-live-translate.js";
+
+// Translation session state management
+export {
+  getSessionState,
+  setAwaitingLanguage,
+  setSessionActive,
+  endSession,
+  isAwaitingLanguage,
+  parseLanguageResponse,
+  isTranslationIntent,
+  isLiveTranslationIntent,
+} from "./translation-session.js";
+export type { SessionPhase, TranslationSessionState } from "./translation-session.js";

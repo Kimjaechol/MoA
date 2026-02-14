@@ -48,6 +48,14 @@ export {
   type SyncCommandResult,
 } from "./sync-commands.js";
 
+// Auto delta sync
+export {
+  AutoSyncManager,
+  formatAutoSyncStatus,
+  type DeltaBatch,
+  type MemoryDelta,
+} from "./auto-sync.js";
+
 // Re-export Moltbot adapters for convenience
 export {
   // Memory adapter

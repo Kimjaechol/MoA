@@ -10,6 +10,16 @@ import type { NextConfig } from "next";
 const RAILWAY_BACKEND =
   process.env.RAILWAY_BACKEND_URL ?? "https://openclaw-production-2e2e.up.railway.app";
 
+/**
+ * MoA Gateway server URL — handles 12 additional messaging channels
+ * (Signal, Matrix, MS Teams, Google Chat, Mattermost, Nextcloud Talk,
+ *  Zalo, Twitch, Nostr, BlueBubbles, Tlon, iMessage).
+ *
+ * Set MOA_GATEWAY_URL in Vercel env vars to point to your Gateway deployment.
+ * Example: https://moa-gateway.fly.dev or http://gateway:8900 (Docker)
+ */
+const GATEWAY_BACKEND = process.env.MOA_GATEWAY_URL ?? "";
+
 const nextConfig: NextConfig = {
   output: "standalone",
 
@@ -40,7 +50,7 @@ const nextConfig: NextConfig = {
   },
 
   async rewrites() {
-    return [
+    const rules = [
       // Install HTML page: mymoa.app/install → Railway /install
       {
         source: "/install",
@@ -109,6 +119,31 @@ const nextConfig: NextConfig = {
         destination: `${RAILWAY_BACKEND}/settings/:path*`,
       },
     ];
+
+    // Gateway webhook proxies — only add when Gateway URL is configured.
+    // mymoa.app/webhook/:channel → Gateway /webhook/:channel
+    // This allows a single domain for all channel webhooks.
+    if (GATEWAY_BACKEND) {
+      rules.push(
+        // Gateway channel webhooks (Signal, Matrix, Teams, etc.)
+        {
+          source: "/webhook/:channel*",
+          destination: `${GATEWAY_BACKEND}/webhook/:channel*`,
+        },
+        // Gateway health check
+        {
+          source: "/gateway/health",
+          destination: `${GATEWAY_BACKEND}/health`,
+        },
+        // Gateway admin API
+        {
+          source: "/gateway/admin/:path*",
+          destination: `${GATEWAY_BACKEND}/admin/:path*`,
+        },
+      );
+    }
+
+    return rules;
   },
 };
 

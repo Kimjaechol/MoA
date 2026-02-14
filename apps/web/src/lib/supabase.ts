@@ -27,12 +27,17 @@ export const supabase = new Proxy({} as SupabaseClient, {
   },
 });
 
-/** Server-side Supabase (service key, bypasses RLS) — only use in API routes */
+let _serviceClient: SupabaseClient | null = null;
+
+/** Server-side Supabase (service key, bypasses RLS) — only use in API routes. Cached singleton. */
 export function getServiceSupabase(): SupabaseClient {
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const serviceKey = process.env.SUPABASE_SERVICE_KEY;
-  if (!url || !serviceKey) {
-    throw new Error("SUPABASE_URL or SUPABASE_SERVICE_KEY is not set");
+  if (!_serviceClient) {
+    const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+    const serviceKey = process.env.SUPABASE_SERVICE_KEY;
+    if (!url || !serviceKey) {
+      throw new Error("SUPABASE_URL or SUPABASE_SERVICE_KEY is not set");
+    }
+    _serviceClient = createClient(url, serviceKey);
   }
-  return createClient(url, serviceKey);
+  return _serviceClient;
 }

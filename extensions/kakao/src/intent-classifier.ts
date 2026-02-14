@@ -25,6 +25,10 @@ export type IntentType =
   | 'creative_music' // 음악 생성
   | 'creative_emoticon' // 이모티콘 생성
   | 'creative_qrcode' // QR 코드 생성
+  | 'freepik_generate' // Freepik AI 이미지 생성
+  | 'freepik_search' // Freepik 리소스 검색
+  | 'translate' // 실시간 번역
+  | 'travel_help' // 여행 통역 도우미
   | 'billing'; // 과금 관련
 
 export interface ClassifiedIntent {
@@ -51,6 +55,73 @@ const INTENT_PATTERNS: {
     type: 'billing',
     patterns: [/^(잔액|크레딧|충전|요금|결제|결제내역|api\s*키)/i],
     priority: 100,
+  },
+
+  // Freepik 요청 (이미지 생성 + 리소스 검색)
+  {
+    type: 'freepik_generate',
+    patterns: [
+      /freepik.*(생성|만들|그려)/i,
+      /프리픽.*(생성|만들|그려)/i,
+      /freepik.*image/i,
+      /프리픽.*이미지/,
+    ],
+    priority: 95,
+  },
+  {
+    type: 'freepik_search',
+    patterns: [
+      /freepik.*(검색|찾아|search)/i,
+      /프리픽.*(검색|찾아|리소스)/i,
+      /freepik.*(벡터|사진|템플릿|소스)/i,
+    ],
+    priority: 95,
+  },
+
+  // 실시간 통역 (Gemini Live API — 40+ 언어)
+  // 어떤 표현이든 "통역"이라는 의미가 담겨 있으면 잡아냄
+  {
+    type: 'translate',
+    patterns: [
+      // 슬래시 명령어
+      /^\/번역/,
+      /^\/음성번역/,
+      /^\/통역시작/,
+      /^\/전화통역/,
+      /^\/통역종료/,
+      /^\/통역상태/,
+      // "통역" 포함 — 어떤 형태든 (가장 넓은 매칭)
+      /통역/,
+      // "음성 번역", "실시간 번역", "동시 번역" → 라이브 통역
+      /음성\s*번역/,
+      /실시간\s*번역/,
+      /동시\s*번역/,
+      // "[언어] 통역" — 영어 통역, 일본어 통역, 중국어 통역 등
+      /^(일본어|영어|중국어|스페인어|프랑스어|독일어|포르투갈어|러시아어|이탈리아어|아랍어|힌디어|태국어|베트남어|인도네시아어|터키어|네덜란드어|폴란드어|스웨덴어|덴마크어|노르웨이어|핀란드어|그리스어|체코어|말레이어|필리핀어|우크라이나어|일어|영|불어|독어|노어|중어)\s*통역/,
+      // 번역 요청 (텍스트 번역도 포함)
+      /번역.*(해줘|해\s*줘|부탁)/,
+      /일본어로.*(뭐|어떻게|말해)/,
+      /한국어로.*(뭐|어떻게|말해)/,
+      /뭐라고.*(했|말|뜻)/,
+      /무슨\s*뜻/,
+      /전화.*(통역|번역)/,
+      // 영어 키워드
+      /interpret/i,
+      /translate/i,
+    ],
+    priority: 92,
+  },
+  {
+    type: 'travel_help',
+    patterns: [
+      /^\/여행표현/,
+      /^\/여행도우미/,
+      /^\/여행통역/,
+      /^\/일본어/,
+      /여행.*(표현|회화|문장)/,
+      /일본.*(여행|회화|표현).*(알려|가르쳐)/,
+    ],
+    priority: 92,
   },
 
   // 창작 요청
@@ -310,6 +381,26 @@ export function getSystemPromptForIntent(intent: ClassifiedIntent): string {
     creative_music: `${basePrompt}
 음악 생성 요청을 처리할 때는 원하는 분위기, 장르, 용도를 확인하세요.
 생성된 음악의 특징과 사용 방법을 안내하세요.`,
+
+    freepik_generate: `${basePrompt}
+Freepik AI 이미지 생성 요청을 처리합니다.
+모델 선택(Mystic/HyperFlux/Classic), 비율, 해상도 옵션을 안내하세요.
+생성된 이미지의 수정 및 업스케일 가능 여부를 알려주세요.`,
+
+    freepik_search: `${basePrompt}
+Freepik 디자인 리소스 검색을 처리합니다.
+검색된 리소스의 유형(사진/벡터/PSD/AI), 라이선스, 다운로드 방법을 안내하세요.`,
+
+    translate: `${basePrompt}
+실시간 통역을 처리합니다. Gemini Live API로 40개 이상의 언어를 지원합니다.
+사용자가 "통역"이라고 하면 언어 선택 옵션을 보여주세요.
+"영어 통역", "일본어 통역" 등 언어를 명시하면 바로 해당 통역을 시작하세요.
+번역 결과와 함께 발음 가이드를 제공하세요.`,
+
+    travel_help: `${basePrompt}
+여행 통역 도우미 모드입니다. 40개 이상의 언어를 지원합니다.
+상황별(식당/교통/쇼핑/호텔/긴급) 필수 표현을 발음과 함께 제공하세요.
+실용적이고 즉시 사용 가능한 표현에 집중하세요.`,
   };
 
   return intentPrompts[intent.type] || basePrompt;

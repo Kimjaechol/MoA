@@ -117,6 +117,12 @@ export async function POST(request: NextRequest) {
         break;
       }
 
+      case "kakao":
+        // KakaoTalk runs on a separate server (extensions/kakao),
+        // but handle gracefully if a task is queued with this channel
+        console.info(`[worker] KakaoTalk messages are handled by the kakao extension server`);
+        break;
+
       default:
         console.warn(`[worker] Unknown channel: ${channel}`);
     }

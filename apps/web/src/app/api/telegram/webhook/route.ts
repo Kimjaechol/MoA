@@ -154,7 +154,7 @@ export async function POST(request: NextRequest) {
       const chatId = update.message.chat.id;
       const rawTgId = String(update.message.from?.id ?? chatId);
       const resolvedUser = await resolveChannelUser({ channel: "telegram", channelUserId: rawTgId });
-      let modelInfo = `*기본 전략:* 가성비\n*사용 모델:* Gemini 2.5 Flash`;
+      let modelInfo = `*기본 전략:* 가성비\n*사용 모델:* Gemini 3.0 Flash`;
       try {
         const { getUserLLMSettings } = await import("@/lib/channel-user-resolver");
         const settings = await getUserLLMSettings(resolvedUser.effectiveUserId);
@@ -186,13 +186,6 @@ export async function POST(request: NextRequest) {
     const effectiveUserId = resolvedUser.effectiveUserId;
     const sessionId = makeSessionId("telegram", rawTgId);
 
-    // Security checks
-    const securityResult = await runSecurityChecks({ channel: "telegram", userId: effectiveUserId, messageText: text });
-    if (!securityResult.proceed) {
-      await deliverTelegram({ token, chatId, text: securityResult.userResponse ?? "잠시 후 다시 시도해주세요.", replyToMessageId: messageId });
-      return NextResponse.json({ ok: true });
-    }
-
     // Group chat: only respond when mentioned or replied to
     if (message.chat.type !== "private") {
       const botUsername = await getBotUsername(token);
@@ -204,14 +197,27 @@ export async function POST(request: NextRequest) {
       const cleanText = text.replace(new RegExp(`@${botUsername}`, "gi"), "").trim();
       if (!cleanText) return NextResponse.json({ ok: true });
 
+      // Run security on cleaned text (without @mention)
+      const securityResult = await runSecurityChecks({ channel: "telegram", userId: effectiveUserId, messageText: cleanText });
+      if (!securityResult.proceed) {
+        await deliverTelegram({ token, chatId, text: securityResult.userResponse ?? "잠시 후 다시 시도해주세요.", replyToMessageId: messageId });
+        return NextResponse.json({ ok: true });
+      }
+
       await processMessage({
-        token, chatId, messageId, text: cleanText, effectiveUserId, sessionId,
+        token, chatId, messageId, text: securityResult.sanitizedText, effectiveUserId, sessionId,
         maskedText: securityResult.sensitiveDataDetected ? securityResult.maskedTextForStorage : undefined,
       });
       return NextResponse.json({ ok: true });
     }
 
-    // Private chat
+    // Private chat — security checks on original text
+    const securityResult = await runSecurityChecks({ channel: "telegram", userId: effectiveUserId, messageText: text });
+    if (!securityResult.proceed) {
+      await deliverTelegram({ token, chatId, text: securityResult.userResponse ?? "잠시 후 다시 시도해주세요.", replyToMessageId: messageId });
+      return NextResponse.json({ ok: true });
+    }
+
     await processMessage({
       token, chatId, messageId, text: securityResult.sanitizedText, effectiveUserId, sessionId,
       maskedText: securityResult.sensitiveDataDetected ? securityResult.maskedTextForStorage : undefined,

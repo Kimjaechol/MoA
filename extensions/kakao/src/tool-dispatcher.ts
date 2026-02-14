@@ -39,6 +39,36 @@ import {
   generateQRCode,
   formatCreativeMessage,
 } from './tools/creative.js';
+import {
+  generateImage as freepikGenerateImage,
+  searchResources as freepikSearchResources,
+  formatGenerateMessage as formatFreepikGenerateMessage,
+  formatSearchMessage as formatFreepikSearchMessage,
+  detectFreepikRequest,
+} from './tools/freepik.js';
+import {
+  translateText,
+  searchTravelPhrases,
+  getTravelPhrasesByCategory,
+  formatTranslationMessage,
+  formatTravelPhrases,
+  formatTravelHelp,
+  detectTranslationRequest,
+} from './tools/realtime-translate.js';
+import {
+  formatModeLabel,
+  getLanguageQuickReplies,
+  findLanguageByCode,
+} from './tools/gemini-live-translate.js';
+import {
+  getSessionState,
+  setAwaitingLanguage,
+  setSessionActive,
+  endSession,
+  isAwaitingLanguage,
+  parseLanguageResponse,
+  isLiveTranslationIntent,
+} from './tools/translation-session.js';
 import { getConsultationButton, parseLawCallRoutes } from './lawcall-router.js';
 
 export interface ToolDispatchResult {
@@ -53,6 +83,14 @@ export interface ToolDispatchResult {
   ragContext?: string; // LLM에 전달할 RAG 컨텍스트
   systemPrompt?: string; // 의도에 맞는 시스템 프롬프트
   intent: ClassifiedIntent;
+  /** Gemini Live 모드 시작 신호 — MoA 앱이 마이크를 활성화 */
+  liveTranslateMode?: {
+    enabled: boolean;
+    targetLangCode: string;
+    targetLangName: string;
+    mode: string; // "bidirectional:en:ko" 등
+    context?: string;
+  };
 }
 
 /**
@@ -72,6 +110,14 @@ export async function dispatchTool(
   };
 
   try {
+    // ━━ 통역 대화 흐름: "언어 선택 대기 중" 체크 ━━
+    // MoA가 "어느 나라 말로 통역할까요?" 라고 물은 후, 사용자 응답 처리
+    if (isAwaitingLanguage(userId)) {
+      const languageResult = handleLanguageSelection(userId, message, result);
+      if (languageResult) return languageResult;
+      // 언어를 파싱하지 못한 경우 → 일반 의도 분류로 폴스루
+    }
+
     switch (intent.type) {
       case 'weather':
         return await handleWeather(message, intent, result);
@@ -108,6 +154,18 @@ export async function dispatchTool(
       case 'creative_qrcode':
         return await handleCreativeQRCode(message, intent, result);
 
+      case 'freepik_generate':
+        return await handleFreepikGenerate(message, intent, result);
+
+      case 'freepik_search':
+        return await handleFreepikSearch(message, intent, result);
+
+      case 'translate':
+        return await handleTranslate(userId, message, intent, result);
+
+      case 'travel_help':
+        return await handleTravelHelp(message, intent, result);
+
       case 'chat':
       default:
         // 일반 대화는 LLM에 위임
@@ -124,6 +182,89 @@ export async function dispatchTool(
       handled: false,
     };
   }
+}
+
+// ==================== 통역 대화 흐름 핸들러 ====================
+
+/**
+ * "어느 나라 말로 통역할까요?" 후 사용자의 언어 선택 응답 처리
+ * 언어를 파싱할 수 있으면 세션 시작, 못하면 null 리턴 (폴스루)
+ */
+function handleLanguageSelection(
+  userId: string,
+  message: string,
+  result: ToolDispatchResult,
+): ToolDispatchResult | null {
+  // 통역 종료/취소 의도
+  if (/취소|그만|됐어|안\s*할래|괜찮아/.test(message)) {
+    endSession(userId);
+    return {
+      ...result,
+      handled: true,
+      response: '통역을 취소했습니다. 필요하시면 언제든 "통역"이라고 말씀해주세요!',
+      usedTool: 'live_translate',
+    };
+  }
+
+  const language = parseLanguageResponse(message);
+  if (!language) {
+    // 언어를 인식하지 못한 경우 → 다시 물어봄
+    return {
+      ...result,
+      handled: true,
+      response: [
+        '죄송해요, 어떤 언어인지 잘 모르겠어요.',
+        '',
+        '아래 버튼을 누르거나 언어 이름을 말씀해주세요.',
+        '(예: "영어", "일본어", "중국어", "스페인어" 등)',
+      ].join('\n'),
+      usedTool: 'live_translate',
+      quickReplies: getLanguageQuickReplies(),
+    };
+  }
+
+  // 한국어를 선택한 경우 (자기 모국어)
+  if (language.code === 'ko') {
+    return {
+      ...result,
+      handled: true,
+      response: [
+        '한국어는 이미 사용 중이시네요! 😊',
+        '통역할 상대방의 언어를 선택해주세요.',
+      ].join('\n'),
+      usedTool: 'live_translate',
+      quickReplies: getLanguageQuickReplies(),
+    };
+  }
+
+  // 언어 선택 완료 → 세션 활성화 + Live API 시작
+  const session = getSessionState(userId);
+  setSessionActive(userId, language, session.context);
+
+  const mode = `bidirectional:${language.code}:ko`;
+
+  return {
+    ...result,
+    handled: true,
+    response: [
+      `지금부터 요청하신 ${language.flag} ${language.nameKo}로 통역을 하겠습니다.`,
+      '',
+      `🎯 모드: ${formatModeLabel(mode)}`,
+      '⚡ Gemini 2.5 Flash Native Audio (320~800ms)',
+      '',
+      '📱 마이크 버튼을 눌러 말씀하세요.',
+      '통역을 끝내려면 "통역 종료"라고 말씀해주세요.',
+    ].join('\n'),
+    usedTool: 'live_translate',
+    quickReplies: ['통역 종료', '통역 상태'],
+    liveTranslateMode: {
+      enabled: true,
+      targetLangCode: language.code,
+      targetLangName: language.nameKo,
+      mode,
+      context: session.context,
+    },
+  };
 }
 
 // ==================== 도구별 핸들러 ====================
@@ -499,6 +640,252 @@ async function handleCreativeQRCode(
       quickReplies: ['다시 시도'],
     };
   }
+}
+
+// ==================== Freepik 핸들러 ====================
+
+async function handleFreepikGenerate(
+  message: string,
+  intent: ClassifiedIntent,
+  result: ToolDispatchResult,
+): Promise<ToolDispatchResult> {
+  try {
+    const request = detectFreepikRequest(message);
+    const generateResult = await freepikGenerateImage(request.prompt, {
+      model: request.model,
+      aspectRatio: request.aspectRatio,
+    });
+    const response = formatFreepikGenerateMessage(generateResult);
+
+    return {
+      ...result,
+      handled: true,
+      response,
+      imageUrl: generateResult.images[0]?.url,
+      usedTool: 'freepik_generate',
+      quickReplies: ['다시 생성', '다른 모델로', '업스케일'],
+    };
+  } catch (error) {
+    console.error('Freepik generate error:', error);
+    return {
+      ...result,
+      handled: true,
+      response: '죄송합니다. Freepik 이미지 생성에 실패했습니다.\nFREEPIK_API_KEY를 확인해주세요.',
+      quickReplies: ['다시 시도', 'DALL-E로 생성'],
+    };
+  }
+}
+
+async function handleFreepikSearch(
+  message: string,
+  intent: ClassifiedIntent,
+  result: ToolDispatchResult,
+): Promise<ToolDispatchResult> {
+  try {
+    const request = detectFreepikRequest(message);
+    const searchResult = await freepikSearchResources(request.prompt, { limit: 5 });
+    const response = formatFreepikSearchMessage(searchResult);
+
+    return {
+      ...result,
+      handled: true,
+      response,
+      usedTool: 'freepik_search',
+      quickReplies: ['더 보기', '벡터만', '사진만'],
+    };
+  } catch (error) {
+    console.error('Freepik search error:', error);
+    return {
+      ...result,
+      handled: true,
+      response: '죄송합니다. Freepik 검색에 실패했습니다.\nFREEPIK_API_KEY를 확인해주세요.',
+      quickReplies: ['다시 시도'],
+    };
+  }
+}
+
+// ==================== 번역 / 여행 통역 핸들러 ====================
+
+async function handleTranslate(
+  userId: string,
+  message: string,
+  intent: ClassifiedIntent,
+  result: ToolDispatchResult,
+): Promise<ToolDispatchResult> {
+  const request = detectTranslationRequest(message);
+
+  // 통역 종료 요청
+  if (/통역\s*(종료|끝|그만|멈춰|스탑|stop)/i.test(message) || /^\/통역종료/.test(message)) {
+    endSession(userId);
+    return {
+      ...result,
+      handled: true,
+      response: [
+        '🎙️ 통역을 종료했습니다.',
+        '',
+        '다시 필요하시면 "통역"이라고 말씀해주세요!',
+      ].join('\n'),
+      usedTool: 'live_translate',
+      liveTranslateMode: { enabled: false, targetLangCode: '', targetLangName: '', mode: '' },
+    };
+  }
+
+  // 통역 상태 요청
+  if (/통역\s*상태/.test(message) || /^\/통역상태/.test(message)) {
+    const session = getSessionState(userId);
+    if (session.phase === 'active' && session.targetLanguage) {
+      const lang = session.targetLanguage;
+      return {
+        ...result,
+        handled: true,
+        response: `🎙️ ${lang.flag} ${lang.nameKo} 통역 세션 활성 중\n"통역 종료"로 종료할 수 있습니다.`,
+        usedTool: 'live_translate',
+        quickReplies: ['통역 종료'],
+      };
+    }
+    return {
+      ...result,
+      handled: true,
+      response: '현재 활성 통역 세션이 없습니다.\n"통역"이라고 말하면 시작합니다.',
+      usedTool: 'live_translate',
+    };
+  }
+
+  // Gemini API 키 확인
+  const hasGeminiKey = !!(process.env.GOOGLE_API_KEY ?? process.env.GEMINI_API_KEY);
+  if (!hasGeminiKey) {
+    return {
+      ...result,
+      handled: true,
+      response: [
+        '🎙️ 실시간 통역을 사용하려면 Google API 키가 필요합니다.',
+        '',
+        'GOOGLE_API_KEY 또는 GEMINI_API_KEY를 설정해주세요.',
+        'Google AI Studio에서 무료로 발급받을 수 있습니다:',
+        'https://aistudio.google.com',
+      ].join('\n'),
+      quickReplies: ['텍스트 번역', '여행 표현'],
+    };
+  }
+
+  // ━━ 핵심 흐름: 라이브 통역 의도인지 텍스트 번역인지 판별 ━━
+  const wantsLiveTranslation = isLiveTranslationIntent(message)
+    || request.type === 'live_translate';
+
+  if (wantsLiveTranslation) {
+    // 언어가 이미 지정된 경우 → 바로 세션 시작
+    if (request.targetLangCode) {
+      const targetLang = findLanguageByCode(request.targetLangCode);
+      if (targetLang && targetLang.code !== 'ko') {
+        setSessionActive(userId, targetLang, request.liveContext);
+        const mode = `bidirectional:${targetLang.code}:ko`;
+        return {
+          ...result,
+          handled: true,
+          response: [
+            `지금부터 요청하신 ${targetLang.flag} ${targetLang.nameKo}로 통역을 하겠습니다.`,
+            '',
+            `🎯 모드: ${formatModeLabel(mode)}`,
+            '⚡ Gemini 2.5 Flash Native Audio (320~800ms)',
+            '',
+            '📱 마이크 버튼을 눌러 말씀하세요.',
+            '통역을 끝내려면 "통역 종료"라고 말씀해주세요.',
+          ].join('\n'),
+          usedTool: 'live_translate',
+          quickReplies: ['통역 종료', '통역 상태'],
+          liveTranslateMode: {
+            enabled: true,
+            targetLangCode: targetLang.code,
+            targetLangName: targetLang.nameKo,
+            mode,
+            context: request.liveContext,
+          },
+        };
+      }
+    }
+
+    // 언어가 지정되지 않은 경우 → "어느 나라 말로 통역할까요?" 질문
+    setAwaitingLanguage(userId, request.liveContext);
+    return {
+      ...result,
+      handled: true,
+      response: '어느 나라 말로 통역할까요?',
+      usedTool: 'live_translate',
+      quickReplies: getLanguageQuickReplies(),
+    };
+  }
+
+  // ━━ 텍스트 번역 (통역이 아닌 번역 요청) ━━
+  try {
+    const translationResult = await translateText(request.text, {
+      direction: request.direction,
+    });
+    const response = formatTranslationMessage(translationResult);
+
+    return {
+      ...result,
+      handled: true,
+      response,
+      usedTool: 'translate',
+      quickReplies: ['일본어로', '한국어로', '통역', '여행 표현'],
+    };
+  } catch (error) {
+    console.error('Translation error:', error);
+    return {
+      ...result,
+      handled: true,
+      response:
+        '죄송합니다. 번역에 실패했습니다.\n' +
+        '번역 API 키를 확인해주세요:\n' +
+        '• Papago: NAVER_CLIENT_ID, NAVER_CLIENT_SECRET\n' +
+        '• DeepL: DEEPL_API_KEY\n' +
+        '• Google: GOOGLE_TRANSLATE_API_KEY',
+      quickReplies: ['다시 시도'],
+    };
+  }
+}
+
+async function handleTravelHelp(
+  message: string,
+  intent: ClassifiedIntent,
+  result: ToolDispatchResult,
+): Promise<ToolDispatchResult> {
+  const request = detectTranslationRequest(message);
+
+  // 특정 카테고리의 여행 표현 요청
+  if (request.category) {
+    const phrases = getTravelPhrasesByCategory(request.category);
+    if (phrases.length > 0) {
+      return {
+        ...result,
+        handled: true,
+        response: formatTravelPhrases(phrases, request.category),
+        usedTool: 'travel_phrases',
+        quickReplies: ['식당 표현', '교통 표현', '긴급 표현', '쇼핑 표현'],
+      };
+    }
+
+    // 카테고리 검색 폴백
+    const searchResults = searchTravelPhrases(request.category);
+    if (searchResults.length > 0) {
+      return {
+        ...result,
+        handled: true,
+        response: formatTravelPhrases(searchResults),
+        usedTool: 'travel_phrases',
+        quickReplies: ['식당 표현', '교통 표현', '긴급 표현'],
+      };
+    }
+  }
+
+  // 전체 여행 도우미 메뉴
+  return {
+    ...result,
+    handled: true,
+    response: formatTravelHelp(),
+    usedTool: 'travel_help',
+    quickReplies: ['식당 표현', '교통 표현', '긴급 표현', '번역 해줘'],
+  };
 }
 
 // ==================== 헬퍼 함수 ====================
