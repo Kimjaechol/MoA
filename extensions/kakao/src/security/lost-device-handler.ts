@@ -3,39 +3,44 @@
  *
  * 이 파일은 분실 기기 보안의 전체 흐름을 관장하는 오케스트레이터입니다.
  *
+ * === 핵심 원칙 ===
+ *
+ * GPS 추적과 데이터 삭제는 동시에 시작되지만,
+ * 데이터 삭제 후에도 GPS 추적은 계속됩니다.
+ *
+ * MoA 데이터 외에도 문자, 카톡, 사진, 이메일, 금융앱 등
+ * 중요한 개인정보가 기기에 남아있으므로 반드시 회수해야 합니다.
+ * 절취범이 MoA 앱을 찾아 삭제하지 않는 한,
+ * GPS 좌표는 72시간까지 계속 서버로 전송됩니다.
+ *
  * === 전체 보안 흐름 ===
  *
  * 1. 사용자가 /분실신고 입력 (어떤 채널에서든)
  *    ↓
- * 2. reportLostDevice() 호출
+ * 2. reportLostDevice() 호출 — 삭제 + GPS 추적 동시 시작
  *    ├─ 대상 기기 식별 (이름 또는 자동 선택)
- *    ├─ 클라우드 백업 상태 확인
- *    ├─ 전략 결정: immediate | backup_then_wipe
- *    ├─ 기기 토큰 즉시 폐기 → 절취자 relay 접근 차단
- *    ├─ wipe 전용 토큰 발급
- *    ├─ wipe 명령 큐잉
+ *    ├─ [동시 실행 A] 원격 삭제 요청
+ *    │   ├─ 클라우드 백업 상태 확인
+ *    │   ├─ 전략 결정: immediate | backup_then_wipe
+ *    │   ├─ 기기 토큰 즉시 폐기 → 절취자 relay 접근 차단
+ *    │   └─ wipe 명령 큐잉
+ *    ├─ [동시 실행 B] GPS 추적 활성화
+ *    │   ├─ Supabase에 tracking session 생성
+ *    │   └─ 30초 간격, 고정밀 모드, 72시간 만료
  *    └─ 사용자에게 확인 메시지 전송
  *    ↓
- * 3. 사용자가 /분실확인 입력
- *    ↓
- * 4. confirmLostDevice() 호출
- *    └─ 이미 위에서 큐잉됨 → "대기 중" 상태 확인
- *    ↓
- * 5. [기기가 온라인 되는 순간] executeDeviceWipe() 호출
- *    ├─ backup_then_wipe인 경우:
- *    │   ├─ 긴급 E2E 암호화 백업 수행
- *    │   ├─ 백업 성공 확인
- *    │   └─ 실패 시: 최대 3회 재시도 → 그래도 실패하면 강제 삭제
- *    ├─ secureWipeAll() 실행 (3중 덮어쓰기)
- *    │   ├─ 벡터 DB 파일 삭제
- *    │   ├─ 채팅 로그 파일 삭제
- *    │   ├─ 인증 정보 삭제
- *    │   ├─ 보안 설정 삭제
- *    │   └─ 메모리 키 제로화
+ * 3. [기기가 온라인 되는 순간]
+ *    ├─ GPS 추적 시작 (30초마다 좌표 전송)
+ *    ├─ 삭제 직전 GPS 좌표 전송
+ *    ├─ secureWipeAll() 실행 (MoA 데이터만 3중 덮어쓰기)
  *    ├─ wipe 결과 보고
- *    └─ 사용자 알림 (원래 채널로)
+ *    └─ GPS 추적은 계속! (MoA 앱은 살아있으므로)
  *    ↓
- * 6. [사용자가 새 기기 구입]
+ * 4. [사용자가 /기기위치로 실시간 위치 확인 → 기기 회수]
+ *    ↓
+ * 5. [기기 회수 후] /추적종료 — GPS 추적 종료
+ *    ↓
+ * 6. [새 기기에서]
  *    ├─ MoA 설치 → /기기등록
  *    ├─ /동기화 다운로드 → 클라우드 백업에서 복원
  *    └─ 정상 운영 재개
@@ -55,7 +60,6 @@ import {
 import {
   activateLocationTracking,
   reportDeviceLocation,
-  deactivateLocationTracking,
   formatTrackingActivated,
   type GpsCoordinate,
 } from "./device-location-tracker.js";
@@ -214,7 +218,11 @@ export async function reportLostDevice(params: {
  * For backup_then_wipe strategy:
  * 1. Perform emergency E2E encrypted backup
  * 2. Verify backup success
- * 3. Then wipe
+ * 3. Then wipe MoA data (DB, chat, credentials)
+ *
+ * 중요: wipe는 MoA 데이터만 삭제합니다. MoA 앱 자체는 유지됩니다.
+ * GPS 추적은 wipe 후에도 계속됩니다 (기기 회수를 위해).
+ * 추적 종료는 사용자가 /추적종료 또는 72시간 만료 시에만.
  */
 export async function executeDeviceWipe(params: {
   userId: string;
@@ -294,8 +302,7 @@ export async function executeDeviceWipe(params: {
     }
   }
 
-  // ── Phase 1.5: 삭제 직전 최종 GPS 좌표 전송 ──
-  // 삭제 후에는 위치 수집 불가 → 마지막 위치를 반드시 기록
+  // ── Phase 1.5: 삭제 직전 GPS 좌표 전송 ──
   if (params.getCurrentLocation) {
     try {
       const lastCoord = await params.getCurrentLocation();
@@ -306,7 +313,7 @@ export async function executeDeviceWipe(params: {
           coordinate: lastCoord,
         });
         await notifyUser(
-          `📍 삭제 직전 마지막 위치: ${lastCoord.latitude.toFixed(5)}, ${lastCoord.longitude.toFixed(5)}\nhttps://map.kakao.com/?q=${lastCoord.latitude},${lastCoord.longitude}`,
+          `📍 삭제 직전 위치: ${lastCoord.latitude.toFixed(5)}, ${lastCoord.longitude.toFixed(5)}\nhttps://map.kakao.com/?q=${lastCoord.latitude},${lastCoord.longitude}`,
         );
       }
     } catch {
@@ -314,7 +321,7 @@ export async function executeDeviceWipe(params: {
     }
   }
 
-  // ── Phase 2: Secure Wipe ──
+  // ── Phase 2: Secure Wipe (MoA 데이터만 삭제 — 앱 자체는 유지) ──
   const wipeResult = securityManager.secureWipeAll({
     dbPaths,
     chatDirs,
@@ -331,10 +338,12 @@ export async function executeDeviceWipe(params: {
     backupVersion,
   });
 
-  // ── Phase 3.5: GPS 추적 종료 (삭제 완료 후) ──
-  await deactivateLocationTracking({ userId, deviceId }).catch(() => {});
+  // ── Phase 3.5: GPS 추적은 계속됨 (삭제 완료 후에도!) ──
+  // MoA 데이터는 삭제되었지만, 기기에는 문자/카톡/사진/이메일 등
+  // 중요한 개인 데이터가 남아있으므로 기기 회수를 위해 GPS 추적 지속.
+  // 추적 종료: 사용자가 /추적종료 또는 72시간 만료 시에만.
 
-  // Notify user of completion
+  // Notify user of completion + tracking continues
   const completionNotice = formatWipeCompletionNotice({
     deviceName: `Device ${deviceId.slice(0, 8)}`,
     wipedFiles: wipeResult.wipedFiles,
@@ -343,7 +352,18 @@ export async function executeDeviceWipe(params: {
     backupVersion,
   });
 
-  await notifyUser(completionNotice);
+  const trackingContinuesNotice = [
+    "",
+    "📡 GPS 추적은 계속됩니다!",
+    "MoA 데이터는 삭제되었지만, 기기의 문자/카톡/사진 등",
+    "중요 데이터가 남아있으므로 회수를 위해 위치 추적을 유지합니다.",
+    "",
+    "📍 /기기위치 — 현재 위치 확인",
+    "📍 /분실추적 — 이동 경로 확인",
+    "⏹️ /추적종료 — 기기 회수 후 추적 종료",
+  ].join("\n");
+
+  await notifyUser(completionNotice + trackingContinuesNotice);
 
   return {
     success: true,
@@ -355,15 +375,17 @@ export async function executeDeviceWipe(params: {
 }
 
 /**
- * Heartbeat integration: check for pending wipe and execute if found.
+ * Heartbeat integration: check for pending wipe and/or active GPS tracking.
  *
- * This should be called during the device heartbeat handler.
- * If a wipe is pending, it will:
- * 1. Suspend normal operations
- * 2. Execute the wipe flow (backup if needed, then wipe)
- * 3. Report results
+ * 이 함수는 기기의 heartbeat 핸들러에서 호출됩니다.
  *
- * Returns true if a wipe was executed (caller should terminate after this).
+ * 중요: wipe와 GPS 추적은 독립적으로 처리됩니다.
+ * - wipe가 대기 중이면: 백업 → 삭제 실행
+ * - GPS 추적이 활성이면: 위치 수집 및 전송 (wipe 여부 무관)
+ * - 둘 다 해당하면: 둘 다 실행 (삭제 후에도 GPS 계속)
+ *
+ * wipe 후에도 이 함수는 계속 호출될 수 있으며,
+ * GPS 추적은 사용자가 /추적종료 하거나 72시간 만료될 때까지 유지됩니다.
  */
 export async function handleHeartbeatWipeCheck(params: {
   userId: string;
@@ -380,36 +402,82 @@ export async function handleHeartbeatWipeCheck(params: {
   performEmergencyBackup: () => Promise<{ success: boolean; version?: number; error?: string }>;
   /** User notification function */
   notifyUser: (message: string) => Promise<void>;
-  /** GPS location getter (for last-known-location before wipe) */
+  /** GPS location getter — wipe 전 마지막 위치 전송 + 추적 모드에서 주기적 전송 */
   getCurrentLocation?: () => Promise<GpsCoordinate | null>;
-}): Promise<{ wipeExecuted: boolean }> {
+}): Promise<{
+  wipeExecuted: boolean;
+  /** GPS 추적이 활성 상태인지 (true면 caller는 GPS 수집을 계속해야 함) */
+  trackingActive: boolean;
+  /** 추적 세션 설정 (caller가 GPS 수집 간격/정밀도 조정용) */
+  trackingConfig?: {
+    sessionId: string;
+    intervalSec: number;
+    highAccuracy: boolean;
+  };
+}> {
+  const { checkActiveTracking } = await import("./device-location-tracker.js");
+
+  // ── 1. wipe 대기 명령 확인 및 실행 ──
+  let wipeExecuted = false;
   const wipeCommand = await checkPendingWipe({
     userId: params.userId,
     deviceId: params.deviceId,
   });
 
-  if (!wipeCommand) {
-    return { wipeExecuted: false };
+  if (wipeCommand) {
+    const existingConfig = DeviceSecurityManager.loadConfig(params.dataDir);
+    const securityManager = new DeviceSecurityManager(params.dataDir, existingConfig ?? undefined);
+
+    await executeDeviceWipe({
+      userId: params.userId,
+      deviceId: params.deviceId,
+      wipeCommand,
+      securityManager,
+      dbPaths: params.dbPaths,
+      chatDirs: params.chatDirs,
+      credentialPaths: params.credentialPaths,
+      performEmergencyBackup: params.performEmergencyBackup,
+      notifyUser: params.notifyUser,
+      getCurrentLocation: params.getCurrentLocation,
+    });
+
+    wipeExecuted = true;
   }
 
-  // Load or create security manager
-  const existingConfig = DeviceSecurityManager.loadConfig(params.dataDir);
-  const securityManager = new DeviceSecurityManager(params.dataDir, existingConfig ?? undefined);
-
-  await executeDeviceWipe({
+  // ── 2. GPS 추적 상태 확인 (wipe 완료 여부 무관!) ──
+  // wipe가 끝나도 추적 세션은 살아있으므로 GPS를 계속 보내야 함
+  const tracking = await checkActiveTracking({
     userId: params.userId,
     deviceId: params.deviceId,
-    wipeCommand,
-    securityManager,
-    dbPaths: params.dbPaths,
-    chatDirs: params.chatDirs,
-    credentialPaths: params.credentialPaths,
-    performEmergencyBackup: params.performEmergencyBackup,
-    notifyUser: params.notifyUser,
-    getCurrentLocation: params.getCurrentLocation,
   });
 
-  return { wipeExecuted: true };
+  // GPS 좌표 전송 (추적 활성 && 위치 함수가 있으면)
+  if (tracking.tracking && params.getCurrentLocation) {
+    try {
+      const coord = await params.getCurrentLocation();
+      if (coord) {
+        await reportDeviceLocation({
+          userId: params.userId,
+          deviceId: params.deviceId,
+          coordinate: coord,
+        });
+      }
+    } catch {
+      // GPS 실패해도 heartbeat는 계속
+    }
+  }
+
+  return {
+    wipeExecuted,
+    trackingActive: tracking.tracking,
+    trackingConfig: tracking.tracking
+      ? {
+          sessionId: tracking.sessionId!,
+          intervalSec: tracking.intervalSec!,
+          highAccuracy: tracking.highAccuracy!,
+        }
+      : undefined,
+  };
 }
 
 /**
@@ -439,11 +507,14 @@ export function formatLostDeviceHelp(): string {
     "1. /분실신고 → 기기 접근 토큰 즉시 폐기 + GPS 추적 활성화",
     "   (절취자는 MoA 릴레이 접근 불가)",
     "   (기기 위치는 30초마다 서버로 전송)",
-    "2. 기기 온라인 시 → GPS 추적 시작 + 자동 백업 → 데이터 삭제",
+    "2. 기기 온라인 시 → GPS 추적 시작 + 자동 백업 → MoA 데이터 삭제",
     "   (3중 덮어쓰기: 0x00 → 0xFF → 랜덤 → 삭제)",
-    "   (삭제 직전 마지막 위치 전송)",
-    "3. /기기위치로 실시간 위치 확인 → 기기 회수",
-    "4. 새 기기에서 → /동기화 다운로드로 복구",
+    "3. 삭제 후에도 GPS 추적 계속!",
+    "   (문자, 카톡, 사진 등 중요 데이터가 남아있으므로 회수 필수)",
+    "   (MoA 앱이 기기에 있는 한 위치 계속 전송)",
+    "4. /기기위치로 실시간 위치 확인 → 기기 회수",
+    "5. 기기 회수 후 /추적종료",
+    "6. 새 기기에서 → /동기화 다운로드로 복구",
     "",
     "━━ 예시 ━━",
     "/분실신고 내폰          — 휴대폰 분실 신고",
