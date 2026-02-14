@@ -22,10 +22,11 @@ import { EventEmitter } from "events";
 const GEMINI_MODEL = "gemini-2.5-flash-native-audio-preview-12-2025";
 const GEMINI_WS_URL = "wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContent";
 
-export type TranslationMode =
-  | "ja-to-ko"   // 일본어 → 한국어 (일본 여행 시 상대방 말 이해)
-  | "ko-to-ja"   // 한국어 → 일본어 (내가 말할 때)
-  | "bidirectional"; // 양방향 자동 감지
+/**
+ * TranslationMode: "소스-to-타겟" 형태 또는 "bidirectional:소스:타겟"
+ * 예: "ja-to-ko", "en-to-ko", "bidirectional:ja:ko", "bidirectional:zh:ko"
+ */
+export type TranslationMode = string;
 
 export type VoiceName =
   | "Kore"     // 따뜻한 여성 음성
@@ -38,7 +39,7 @@ export type VoiceName =
   | "Zephyr";  // 경쾌한 음성
 
 export interface LiveSessionConfig {
-  /** 번역 모드 */
+  /** 번역 모드 (예: "ja-to-ko", "en-to-ko", "bidirectional:ja:ko") */
   mode: TranslationMode;
   /** 출력 음성 (기본: Kore) */
   voice?: VoiceName;
@@ -50,6 +51,118 @@ export interface LiveSessionConfig {
   enableResumption?: boolean;
   /** 무제한 세션을 위한 컨텍스트 압축 (기본: true) */
   enableCompression?: boolean;
+}
+
+// ==================== 언어 레지스트리 ====================
+
+export interface LanguageInfo {
+  /** ISO 639-1 코드 (예: "ja", "en") */
+  code: string;
+  /** BCP-47 로케일 (예: "ja-JP", "en-US") */
+  locale: string;
+  /** 한국어 이름 */
+  nameKo: string;
+  /** 원어 이름 */
+  nameNative: string;
+  /** 국기 이모지 */
+  flag: string;
+  /** 한국어에서 사용하는 키워드 (의도 감지용) */
+  keywords: string[];
+}
+
+/**
+ * Gemini Live API가 지원하는 전체 언어 목록
+ * https://ai.google.dev/gemini-api/docs/live#supported-languages
+ */
+export const SUPPORTED_LANGUAGES: LanguageInfo[] = [
+  { code: "ko", locale: "ko-KR", nameKo: "한국어", nameNative: "한국어", flag: "🇰🇷", keywords: ["한국어", "한국", "korean"] },
+  { code: "ja", locale: "ja-JP", nameKo: "일본어", nameNative: "日本語", flag: "🇯🇵", keywords: ["일본어", "일본", "일어", "japanese"] },
+  { code: "en", locale: "en-US", nameKo: "영어", nameNative: "English", flag: "🇺🇸", keywords: ["영어", "영국어", "미국어", "english"] },
+  { code: "zh", locale: "zh-CN", nameKo: "중국어", nameNative: "中文", flag: "🇨🇳", keywords: ["중국어", "중국", "chinese", "중어"] },
+  { code: "es", locale: "es-ES", nameKo: "스페인어", nameNative: "Español", flag: "🇪🇸", keywords: ["스페인어", "스페인", "spanish"] },
+  { code: "fr", locale: "fr-FR", nameKo: "프랑스어", nameNative: "Français", flag: "🇫🇷", keywords: ["프랑스어", "프랑스", "french", "불어"] },
+  { code: "de", locale: "de-DE", nameKo: "독일어", nameNative: "Deutsch", flag: "🇩🇪", keywords: ["독일어", "독일", "german", "독어"] },
+  { code: "pt", locale: "pt-BR", nameKo: "포르투갈어", nameNative: "Português", flag: "🇧🇷", keywords: ["포르투갈어", "포르투갈", "브라질", "portuguese"] },
+  { code: "ru", locale: "ru-RU", nameKo: "러시아어", nameNative: "Русский", flag: "🇷🇺", keywords: ["러시아어", "러시아", "russian", "노어"] },
+  { code: "it", locale: "it-IT", nameKo: "이탈리아어", nameNative: "Italiano", flag: "🇮🇹", keywords: ["이탈리아어", "이탈리아", "italian"] },
+  { code: "ar", locale: "ar-SA", nameKo: "아랍어", nameNative: "العربية", flag: "🇸🇦", keywords: ["아랍어", "아랍", "arabic"] },
+  { code: "hi", locale: "hi-IN", nameKo: "힌디어", nameNative: "हिन्दी", flag: "🇮🇳", keywords: ["힌디어", "힌디", "인도어", "hindi"] },
+  { code: "th", locale: "th-TH", nameKo: "태국어", nameNative: "ภาษาไทย", flag: "🇹🇭", keywords: ["태국어", "태국", "타이어", "thai"] },
+  { code: "vi", locale: "vi-VN", nameKo: "베트남어", nameNative: "Tiếng Việt", flag: "🇻🇳", keywords: ["베트남어", "베트남", "vietnamese"] },
+  { code: "id", locale: "id-ID", nameKo: "인도네시아어", nameNative: "Bahasa Indonesia", flag: "🇮🇩", keywords: ["인도네시아어", "인도네시아", "indonesian"] },
+  { code: "ms", locale: "ms-MY", nameKo: "말레이어", nameNative: "Bahasa Melayu", flag: "🇲🇾", keywords: ["말레이어", "말레이시아", "malay"] },
+  { code: "tr", locale: "tr-TR", nameKo: "터키어", nameNative: "Türkçe", flag: "🇹🇷", keywords: ["터키어", "터키", "turkish"] },
+  { code: "nl", locale: "nl-NL", nameKo: "네덜란드어", nameNative: "Nederlands", flag: "🇳🇱", keywords: ["네덜란드어", "네덜란드", "dutch"] },
+  { code: "pl", locale: "pl-PL", nameKo: "폴란드어", nameNative: "Polski", flag: "🇵🇱", keywords: ["폴란드어", "폴란드", "polish"] },
+  { code: "sv", locale: "sv-SE", nameKo: "스웨덴어", nameNative: "Svenska", flag: "🇸🇪", keywords: ["스웨덴어", "스웨덴", "swedish"] },
+  { code: "da", locale: "da-DK", nameKo: "덴마크어", nameNative: "Dansk", flag: "🇩🇰", keywords: ["덴마크어", "덴마크", "danish"] },
+  { code: "no", locale: "no-NO", nameKo: "노르웨이어", nameNative: "Norsk", flag: "🇳🇴", keywords: ["노르웨이어", "노르웨이", "norwegian"] },
+  { code: "fi", locale: "fi-FI", nameKo: "핀란드어", nameNative: "Suomi", flag: "🇫🇮", keywords: ["핀란드어", "핀란드", "finnish"] },
+  { code: "el", locale: "el-GR", nameKo: "그리스어", nameNative: "Ελληνικά", flag: "🇬🇷", keywords: ["그리스어", "그리스", "greek"] },
+  { code: "cs", locale: "cs-CZ", nameKo: "체코어", nameNative: "Čeština", flag: "🇨🇿", keywords: ["체코어", "체코", "czech"] },
+  { code: "ro", locale: "ro-RO", nameKo: "루마니아어", nameNative: "Română", flag: "🇷🇴", keywords: ["루마니아어", "루마니아", "romanian"] },
+  { code: "hu", locale: "hu-HU", nameKo: "헝가리어", nameNative: "Magyar", flag: "🇭🇺", keywords: ["헝가리어", "헝가리", "hungarian"] },
+  { code: "uk", locale: "uk-UA", nameKo: "우크라이나어", nameNative: "Українська", flag: "🇺🇦", keywords: ["우크라이나어", "우크라이나", "ukrainian"] },
+  { code: "he", locale: "he-IL", nameKo: "히브리어", nameNative: "עברית", flag: "🇮🇱", keywords: ["히브리어", "이스라엘", "hebrew"] },
+  { code: "bn", locale: "bn-BD", nameKo: "벵골어", nameNative: "বাংলা", flag: "🇧🇩", keywords: ["벵골어", "방글라데시", "bengali"] },
+  { code: "ta", locale: "ta-IN", nameKo: "타밀어", nameNative: "தமிழ்", flag: "🇮🇳", keywords: ["타밀어", "tamil"] },
+  { code: "te", locale: "te-IN", nameKo: "텔루구어", nameNative: "తెలుగు", flag: "🇮🇳", keywords: ["텔루구어", "telugu"] },
+  { code: "ml", locale: "ml-IN", nameKo: "말라얄람어", nameNative: "മലയാളം", flag: "🇮🇳", keywords: ["말라얄람어", "malayalam"] },
+  { code: "tl", locale: "tl-PH", nameKo: "필리핀어", nameNative: "Filipino", flag: "🇵🇭", keywords: ["필리핀어", "필리핀", "타갈로그", "filipino"] },
+  { code: "sw", locale: "sw-KE", nameKo: "스와힐리어", nameNative: "Kiswahili", flag: "🇰🇪", keywords: ["스와힐리어", "swahili"] },
+  { code: "bg", locale: "bg-BG", nameKo: "불가리아어", nameNative: "Български", flag: "🇧🇬", keywords: ["불가리아어", "불가리아", "bulgarian"] },
+  { code: "hr", locale: "hr-HR", nameKo: "크로아티아어", nameNative: "Hrvatski", flag: "🇭🇷", keywords: ["크로아티아어", "크로아티아", "croatian"] },
+  { code: "sk", locale: "sk-SK", nameKo: "슬로바키아어", nameNative: "Slovenčina", flag: "🇸🇰", keywords: ["슬로바키아어", "슬로바키아", "slovak"] },
+  { code: "lt", locale: "lt-LT", nameKo: "리투아니아어", nameNative: "Lietuvių", flag: "🇱🇹", keywords: ["리투아니아어", "리투아니아", "lithuanian"] },
+  { code: "lv", locale: "lv-LV", nameKo: "라트비아어", nameNative: "Latviešu", flag: "🇱🇻", keywords: ["라트비아어", "라트비아", "latvian"] },
+  { code: "et", locale: "et-EE", nameKo: "에스토니아어", nameNative: "Eesti", flag: "🇪🇪", keywords: ["에스토니아어", "에스토니아", "estonian"] },
+  { code: "ca", locale: "ca-ES", nameKo: "카탈루냐어", nameNative: "Català", flag: "🇪🇸", keywords: ["카탈루냐어", "catalan"] },
+  { code: "sr", locale: "sr-RS", nameKo: "세르비아어", nameNative: "Српски", flag: "🇷🇸", keywords: ["세르비아어", "세르비아", "serbian"] },
+];
+
+/**
+ * 키워드로 언어 찾기 (한국어 이름/영어/코드)
+ */
+export function findLanguageByKeyword(keyword: string): LanguageInfo | undefined {
+  const lower = keyword.toLowerCase().trim();
+  return SUPPORTED_LANGUAGES.find(
+    (lang) =>
+      lang.code === lower ||
+      lang.keywords.some((kw) => kw === lower || lower.includes(kw) || kw.includes(lower)),
+  );
+}
+
+/**
+ * 언어 코드로 언어 찾기
+ */
+export function findLanguageByCode(code: string): LanguageInfo | undefined {
+  return SUPPORTED_LANGUAGES.find((lang) => lang.code === code);
+}
+
+/**
+ * TranslationMode 파싱: 소스/타겟 언어코드와 양방향 여부 추출
+ */
+export function parseTranslationMode(mode: TranslationMode): {
+  source: string;
+  target: string;
+  bidirectional: boolean;
+} {
+  // "bidirectional:ja:ko" 형태
+  if (mode.startsWith("bidirectional")) {
+    const parts = mode.split(":");
+    return {
+      source: parts[1] ?? "ja",
+      target: parts[2] ?? "ko",
+      bidirectional: true,
+    };
+  }
+  // "ja-to-ko" 형태
+  const match = mode.match(/^(\w+)-to-(\w+)$/);
+  if (match) {
+    return { source: match[1], target: match[2], bidirectional: false };
+  }
+  // 폴백: 양방향 일본어↔한국어
+  return { source: "ja", target: "ko", bidirectional: true };
 }
 
 export interface LiveSessionEvents {
@@ -74,52 +187,43 @@ export interface LiveSessionEvents {
 // ==================== System Instructions ====================
 
 function buildSystemInstruction(config: LiveSessionConfig): string {
+  const { source, target, bidirectional } = parseTranslationMode(config.mode);
+  const sourceLang = findLanguageByCode(source);
+  const targetLang = findLanguageByCode(target);
+
+  const sourceName = sourceLang?.nameKo ?? source;
+  const targetName = targetLang?.nameKo ?? target;
+
   const formalityNote = config.formal !== false
-    ? "번역 시 항상 정중한 존댓말(です/ます体, 합니다체)을 사용하세요."
-    : "번역 시 친근한 반말(タメ口, 해체)을 사용하세요.";
+    ? "번역 시 항상 정중하고 공손한 표현을 사용하세요."
+    : "번역 시 친근한 일상 표현을 사용하세요.";
 
   const contextNote = config.context
     ? `\n현재 상황: ${config.context}. 이 맥락에 맞는 적절한 용어와 표현을 사용하세요.`
     : "";
 
-  switch (config.mode) {
-    case "ja-to-ko":
-      return [
-        "당신은 전문 일본어→한국어 실시간 통역사입니다.",
-        "일본어 음성을 듣고 즉시 자연스러운 한국어로 통역하세요.",
-        formalityNote,
-        "통역만 하세요. 설명이나 주석을 추가하지 마세요.",
-        "고유명사(인명, 지명, 브랜드)는 원어 발음을 한국어로 표기하세요.",
-        "숫자, 단위, 통화는 한국식으로 변환하세요 (例: 千円 → 천엔).",
-        contextNote,
-      ].filter(Boolean).join("\n");
-
-    case "ko-to-ja":
-      return [
-        "あなたはプロの韓国語→日本語リアルタイム通訳者です。",
-        "韓国語の音声を聞いて、すぐに自然な日本語に通訳してください。",
-        config.formal !== false
-          ? "丁寧語（です・ます調）を使ってください。"
-          : "カジュアルな話し方（タメ口）を使ってください。",
-        "通訳だけしてください。説明やコメントは付けないでください。",
-        "固有名詞（人名、地名、ブランド）は原語の発音をカタカナで表記してください。",
-        contextNote,
-      ].filter(Boolean).join("\n");
-
-    case "bidirectional":
-      return [
-        "당신은 한국어↔일본어 양방향 실시간 통역사입니다.",
-        "화자가 일본어로 말하면 한국어로, 한국어로 말하면 일본어로 즉시 통역하세요.",
-        "언어를 자동으로 감지하여 반대 언어로 통역하세요.",
-        formalityNote,
-        "통역만 하세요. 설명이나 주석을 추가하지 마세요.",
-        "고유명사는 해당 언어의 발음 표기법을 따르세요.",
-        contextNote,
-      ].filter(Boolean).join("\n");
-
-    default:
-      return "You are a real-time translator. Translate speech immediately.";
+  if (bidirectional) {
+    return [
+      `당신은 ${sourceName}↔${targetName} 양방향 실시간 통역사입니다.`,
+      `화자가 ${sourceName}로 말하면 ${targetName}로, ${targetName}로 말하면 ${sourceName}로 즉시 통역하세요.`,
+      "언어를 자동으로 감지하여 반대 언어로 통역하세요.",
+      formalityNote,
+      "통역만 하세요. 설명이나 주석을 추가하지 마세요.",
+      "고유명사(인명, 지명, 브랜드)는 원어 발음에 가깝게 표기하세요.",
+      contextNote,
+    ].filter(Boolean).join("\n");
   }
+
+  // 단방향: 타겟 언어로 통역
+  return [
+    `당신은 전문 ${sourceName}→${targetName} 실시간 통역사입니다.`,
+    `${sourceName} 음성을 듣고 즉시 자연스러운 ${targetName}로 통역하세요.`,
+    formalityNote,
+    "통역만 하세요. 설명이나 주석을 추가하지 마세요.",
+    "고유명사(인명, 지명, 브랜드)는 원어 발음에 가깝게 표기하세요.",
+    "숫자, 단위, 통화는 타겟 언어의 관습에 맞게 변환하세요.",
+    contextNote,
+  ].filter(Boolean).join("\n");
 }
 
 // ==================== Live Translation Session ====================
@@ -325,8 +429,10 @@ export class GeminiLiveTranslator extends EventEmitter {
 
     const voiceName = this.config.voice ?? "Kore";
 
-    // 출력 언어 결정
-    const outputLang = this.config.mode === "ko-to-ja" ? "ja-JP" : "ko-KR";
+    // 출력 언어 결정 (mode에서 타겟 언어 추출)
+    const { target } = parseTranslationMode(this.config.mode);
+    const targetLang = findLanguageByCode(target);
+    const outputLang = targetLang?.locale ?? "ko-KR";
 
     const setup: Record<string, unknown> = {
       setup: {
@@ -460,7 +566,7 @@ export class GeminiLiveTranslator extends EventEmitter {
 export async function translateAudioClip(params: {
   /** Base64 인코딩된 PCM 16kHz 오디오 */
   audioBase64: string;
-  /** 번역 방향 */
+  /** 번역 방향 (예: "ja-to-ko", "en-to-ko", "bidirectional:ja:ko") */
   mode?: TranslationMode;
   /** 출력 음성 */
   voice?: VoiceName;
@@ -572,33 +678,73 @@ export function formatSessionStatus(session: GeminiLiveTranslator): string {
  * 사용 가이드 메시지
  */
 export function formatLiveTranslateGuide(): string {
+  // 주요 언어 10개만 표시
+  const popularLanguages = SUPPORTED_LANGUAGES.filter(
+    (l) => ["ja", "en", "zh", "es", "fr", "de", "th", "vi", "ru", "it"].includes(l.code),
+  );
+
+  const languageList = popularLanguages
+    .map((l) => `${l.flag} ${l.nameKo}`)
+    .join("  ");
+
   return [
     "🎙️ Gemini Live 실시간 통역",
     "",
-    "━━ 통역 모드 ━━",
-    "🇯🇵→🇰🇷  일본어→한국어 (상대방 말 이해하기)",
-    "🇰🇷→🇯🇵  한국어→일본어 (내가 말하기)",
-    "🔄      양방향 자동 감지 (전화 통화)",
+    "━━ 사용법 ━━",
+    "\"통역\" 한마디로 시작!",
+    "\"영어 통역\" — 영어↔한국어 통역",
+    "\"일본어 통역\" — 일본어↔한국어 통역",
+    "\"중국어 통역\" — 중국어↔한국어 통역",
     "",
-    "━━ 사용 방법 ━━",
-    "/통역시작              — 양방향 통역 시작",
-    "/통역시작 일→한        — 일본어→한국어 모드",
-    "/통역시작 한→일        — 한국어→일본어 모드",
-    "/통역종료              — 통역 세션 종료",
-    "/통역상태              — 세션 상태 확인",
-    "",
-    "━━ 통화 통역 ━━",
-    "/전화통역              — 전화 통역 모드 시작",
-    "  → 상대방 일본어 → 실시간 한국어 통역",
-    "  → 내 한국어 → 실시간 일본어 통역",
+    "━━ 명령어 ━━",
+    "/통역시작 [언어]        — 통역 시작 (기본: 양방향)",
+    "/전화통역 [언어]        — 전화 통역 모드",
+    "/통역종료               — 통역 세션 종료",
+    "/통역상태               — 세션 상태 확인",
     "",
     "━━ 상황별 모드 ━━",
-    "/통역시작 식당          — 식당 맥락 통역",
-    "/통역시작 교통          — 교통/택시 맥락",
-    "/통역시작 쇼핑          — 쇼핑/면세 맥락",
-    "/통역시작 긴급          — 긴급상황 맥락",
+    "/통역시작 일본어 식당   — 식당 맥락 통역",
+    "/통역시작 영어 비즈니스 — 비즈니스 맥락",
+    "",
+    `━━ 지원 언어 (${SUPPORTED_LANGUAGES.length}개) ━━`,
+    languageList,
+    `외 ${SUPPORTED_LANGUAGES.length - popularLanguages.length}개 언어`,
     "",
     "🤖 Gemini 2.5 Flash Native Audio",
     "⚡ 지연시간: 320~800ms | 💰 ~$0.005/분",
   ].join("\n");
+}
+
+/**
+ * 언어 선택 퀵 리플라이 목록 (카카오톡 버튼용)
+ */
+export function getLanguageQuickReplies(): string[] {
+  return [
+    "일본어 통역",
+    "영어 통역",
+    "중국어 통역",
+    "스페인어 통역",
+    "프랑스어 통역",
+    "태국어 통역",
+    "베트남어 통역",
+    "독일어 통역",
+  ];
+}
+
+/**
+ * 모드 라벨 생성 (소스→타겟 표시)
+ */
+export function formatModeLabel(mode: TranslationMode): string {
+  const { source, target, bidirectional } = parseTranslationMode(mode);
+  const sourceLang = findLanguageByCode(source);
+  const targetLang = findLanguageByCode(target);
+  const srcFlag = sourceLang?.flag ?? "🌐";
+  const tgtFlag = targetLang?.flag ?? "🌐";
+  const srcName = sourceLang?.nameKo ?? source;
+  const tgtName = targetLang?.nameKo ?? target;
+
+  if (bidirectional) {
+    return `${srcFlag}↔${tgtFlag} ${srcName}↔${tgtName} 양방향`;
+  }
+  return `${srcFlag}→${tgtFlag} ${srcName}→${tgtName}`;
 }

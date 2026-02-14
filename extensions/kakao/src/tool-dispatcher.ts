@@ -55,7 +55,12 @@ import {
   formatTravelHelp,
   detectTranslationRequest,
 } from './tools/realtime-translate.js';
-import { formatLiveTranslateGuide } from './tools/gemini-live-translate.js';
+import {
+  formatLiveTranslateGuide,
+  formatModeLabel,
+  getLanguageQuickReplies,
+  findLanguageByCode,
+} from './tools/gemini-live-translate.js';
 import { getConsultationButton, parseLawCallRoutes } from './lawcall-router.js';
 
 export interface ToolDispatchResult {
@@ -618,7 +623,7 @@ async function handleTranslate(
       handled: true,
       response,
       usedTool: 'translate',
-      quickReplies: ['일본어로', '한국어로', '통역시작', '여행 표현'],
+      quickReplies: ['일본어로', '한국어로', '통역', '여행 표현'],
     };
   } catch (error) {
     console.error('Translation error:', error);
@@ -649,10 +654,10 @@ async function handleLiveTranslate(
       response: [
         '🎙️ 실시간 통역 세션이 종료되었습니다.',
         '',
-        '다시 시작하려면 /통역시작 을 입력하세요.',
+        '다시 시작하려면 "통역" 이라고 말하세요.',
       ].join('\n'),
       usedTool: 'live_translate',
-      quickReplies: ['통역시작', '여행 표현', '번역'],
+      quickReplies: getLanguageQuickReplies().slice(0, 4),
     };
   }
 
@@ -661,13 +666,13 @@ async function handleLiveTranslate(
     return {
       ...result,
       handled: true,
-      response: '🎙️ 현재 활성 통역 세션이 없습니다.\n/통역시작 으로 새 세션을 시작하세요.',
+      response: '🎙️ 현재 활성 통역 세션이 없습니다.\n"통역" 이라고 말하면 새 세션을 시작합니다.',
       usedTool: 'live_translate',
-      quickReplies: ['통역시작', '전화통역'],
+      quickReplies: getLanguageQuickReplies().slice(0, 4),
     };
   }
 
-  // 통역 시작 — Gemini Live API 가이드 표시
+  // Gemini API 키 확인
   const hasGeminiKey = !!(process.env.GOOGLE_API_KEY ?? process.env.GEMINI_API_KEY);
 
   if (!hasGeminiKey) {
@@ -685,27 +690,55 @@ async function handleLiveTranslate(
     };
   }
 
-  // 모드 + 맥락 정보로 가이드 표시
-  const modeLabel = request.direction === 'ja-ko' ? '🇯🇵→🇰🇷 일본어→한국어'
-    : request.direction === 'ko-ja' ? '🇰🇷→🇯🇵 한국어→일본어'
-    : '🔄 양방향 자동 감지';
+  // 언어가 지정되지 않은 경우 — 언어 선택 UI 표시
+  if (!request.targetLangCode && !request.direction) {
+    return {
+      ...result,
+      handled: true,
+      response: [
+        '🎙️ 어떤 언어로 통역할까요?',
+        '',
+        '아래 버튼을 누르거나, "영어 통역" 처럼 말해주세요.',
+        '',
+        formatLiveTranslateGuide(),
+      ].join('\n'),
+      usedTool: 'live_translate',
+      quickReplies: getLanguageQuickReplies(),
+    };
+  }
 
+  // 언어가 지정된 경우 — 세션 시작 안내
+  const targetCode = request.targetLangCode ?? 'ja';
+  const targetLang = findLanguageByCode(targetCode);
+  const targetFlag = targetLang?.flag ?? '🌐';
+  const targetName = targetLang?.nameKo ?? targetCode;
+
+  // mode 결정: direction이 있으면 단방향, 없으면 양방향
+  const mode = request.direction
+    ? `${request.direction.split('-')[0]}-to-${request.direction.split('-')[1]}`
+    : `bidirectional:${targetCode}:ko`;
+
+  const modeLabel = formatModeLabel(mode);
   const contextLabel = request.liveContext ? `📋 맥락: ${request.liveContext}` : '';
 
   return {
     ...result,
     handled: true,
-    response: formatLiveTranslateGuide() + '\n\n' + [
+    response: [
+      `${targetFlag} ${targetName} 통역을 시작합니다!`,
+      '',
       '━━ 세션 설정 ━━',
       `🎯 모드: ${modeLabel}`,
       contextLabel,
       '',
       '🤖 Gemini 2.5 Flash Native Audio',
-      '⚡ 음성→음성 직접 변환 (STT/TTS 파이프라인 없음)',
-      '📱 MoA 모바일 앱에서 마이크 버튼으로 시작하세요.',
+      '⚡ 음성→음성 직접 변환 (320~800ms)',
+      '📱 MoA 앱에서 마이크 버튼을 눌러 말하세요.',
+      '',
+      '💡 /통역종료 로 세션을 종료할 수 있습니다.',
     ].filter(Boolean).join('\n'),
     usedTool: 'live_translate',
-    quickReplies: ['통역종료', '통역상태', '여행 표현'],
+    quickReplies: ['통역종료', '통역상태', `${targetName} 여행 표현`],
   };
 }
 

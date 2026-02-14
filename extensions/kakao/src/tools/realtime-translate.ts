@@ -240,9 +240,16 @@ export {
   translateAudioClip,
   formatSessionStatus,
   formatLiveTranslateGuide,
+  formatModeLabel,
+  getLanguageQuickReplies,
+  findLanguageByKeyword,
+  findLanguageByCode,
+  parseTranslationMode,
+  SUPPORTED_LANGUAGES,
   type TranslationMode,
   type VoiceName,
   type LiveSessionConfig,
+  type LanguageInfo,
 } from "./gemini-live-translate.js";
 
 /**
@@ -295,13 +302,11 @@ export async function translateVoice(params: {
 
 /**
  * TranslationDirection → Gemini TranslationMode 변환
+ * 모든 언어 쌍을 지원하는 범용 변환
  */
-function directionToGeminiMode(direction: TranslationDirection): "ja-to-ko" | "ko-to-ja" | "bidirectional" {
-  switch (direction) {
-    case "ja-ko": return "ja-to-ko";
-    case "ko-ja": return "ko-to-ja";
-    default: return "bidirectional";
-  }
+function directionToGeminiMode(direction: TranslationDirection): string {
+  const [source, target] = direction.split("-");
+  return `${source}-to-${target}`;
 }
 
 /**
@@ -638,32 +643,30 @@ export function formatTravelHelp(): string {
   };
 
   return [
-    "🇯🇵 일본 여행 통역 도우미",
+    "🌏 여행 통역 도우미",
     "",
-    "━━ 실시간 통역 (Gemini 2.5 Flash) ━━",
-    "/통역시작              — 양방향 실시간 통역 시작",
-    "/통역시작 일→한        — 일본어→한국어 모드",
-    "/통역시작 한→일        — 한국어→일본어 모드",
-    "/전화통역              — 전화 통화 양방향 통역",
-    "/통역시작 식당          — 식당 맥락 통역",
-    "⚡ 지연: 320~800ms | 네이티브 음성→음성",
+    "━━ 실시간 통역 (40+ 언어) ━━",
+    "\"통역\" — 언어 선택 메뉴",
+    "\"영어 통역\" — 영어↔한국어 즉시 시작",
+    "\"일본어 통역\" — 일본어↔한국어 즉시 시작",
+    "\"중국어 통역\" — 중국어↔한국어 즉시 시작",
+    "⚡ Gemini 2.5 Flash | 320~800ms | 음성→음성",
     "",
     "━━ 텍스트 번역 ━━",
-    "/번역 [일본어 또는 한국어]  — 즉석 번역",
+    "/번역 [텍스트]  — 즉석 번역 (자동 언어 감지)",
     "",
-    "━━ 상황별 회화 ━━",
+    "━━ 일본 여행 회화 ━━",
     ...categories.map(
       (c) => `/여행표현 ${c}  ${categoryIcons[c] ?? "📋"} — ${c} 관련 필수 표현`,
     ),
     "",
     "━━ 사용 예시 ━━",
-    "/번역 이 전철은 도쿄역에 가나요?",
+    "\"통역\" → 언어 선택 버튼 표시",
+    "\"영어 통역 비즈니스\" → 비즈니스 맥락 영어 통역",
     "/번역 すみません、トイレはどこですか？",
     "/여행표현 식당",
-    "/통역시작 쇼핑",
     "",
-    "💡 텍스트를 입력하면 자동으로 언어를 감지하여 번역합니다.",
-    "📞 실시간 통역은 /통역시작 으로 시작하세요 (Gemini Live API).",
+    "💡 \"통역\" 한 마디로 시작! 말이나 버튼으로 언어를 선택하세요.",
   ].join("\n");
 }
 
@@ -679,29 +682,78 @@ export function detectTranslationRequest(message: string): {
   category?: string;
   /** Gemini Live 세션 맥락 (식당, 교통, 쇼핑, 긴급 등) */
   liveContext?: string;
+  /** 타겟 언어 코드 (all-language 모드용) */
+  targetLangCode?: string;
 } {
+  // 자연어에서 타겟 언어 + 맥락 파싱 헬퍼
+  const parseLangAndContext = (text: string): {
+    direction?: TranslationDirection;
+    targetLangCode?: string;
+    liveContext?: string;
+  } => {
+    let direction: TranslationDirection | undefined;
+    let targetLangCode: string | undefined;
+    let liveContext: string | undefined;
+
+    // 화살표 형태 "일→한", "한→일", "영→한" 등
+    if (/일.*→.*한|일.*한|ja.*ko/i.test(text)) {
+      direction = "ja-ko";
+      targetLangCode = "ja";
+    } else if (/한.*→.*일|한.*일|ko.*ja/i.test(text)) {
+      direction = "ko-ja";
+      targetLangCode = "ja";
+    } else {
+      // 언어 키워드 직접 매핑 (순환 참조 방지를 위해 인라인)
+      const langKeywordMap: Record<string, string> = {
+        "일본어": "ja", "일어": "ja", "영어": "en", "중국어": "zh", "중어": "zh",
+        "스페인어": "es", "프랑스어": "fr", "불어": "fr", "독일어": "de", "독어": "de",
+        "포르투갈어": "pt", "러시아어": "ru", "노어": "ru", "이탈리아어": "it",
+        "아랍어": "ar", "힌디어": "hi", "태국어": "th", "타이어": "th",
+        "베트남어": "vi", "인도네시아어": "id", "터키어": "tr", "네덜란드어": "nl",
+        "폴란드어": "pl", "스웨덴어": "sv", "덴마크어": "da", "노르웨이어": "no",
+        "핀란드어": "fi", "그리스어": "el", "체코어": "cs", "말레이어": "ms",
+        "필리핀어": "tl", "우크라이나어": "uk", "헝가리어": "hu", "루마니아어": "ro",
+        "히브리어": "he", "벵골어": "bn",
+      };
+      for (const [kw, code] of Object.entries(langKeywordMap)) {
+        if (text.includes(kw)) {
+          targetLangCode = code;
+          break;
+        }
+      }
+    }
+
+    // 맥락 감지
+    if (/식당|레스토랑|음식/.test(text)) liveContext = "식당에서 주문 및 식사";
+    else if (/교통|택시|전철|지하철/.test(text)) liveContext = "교통수단 이용 및 이동";
+    else if (/쇼핑|가게|면세/.test(text)) liveContext = "쇼핑 및 구매";
+    else if (/긴급|응급|경찰|병원/.test(text)) liveContext = "긴급 상황 대응";
+    else if (/호텔|숙소|체크인/.test(text)) liveContext = "호텔 및 숙박";
+    else if (/비즈니스|회의|미팅|사업/.test(text)) liveContext = "비즈니스 미팅";
+    else if (/병원|진료|의료/.test(text)) liveContext = "의료 상황";
+    else if (/공항|비행기|탑승/.test(text)) liveContext = "공항 및 항공";
+
+    return { direction, targetLangCode, liveContext };
+  };
+
   // Gemini Live 실시간 통역 명령
   if (/^\/통역시작/.test(message)) {
     const arg = message.replace(/^\/통역시작\s*/, "").trim();
-    let direction: TranslationDirection | undefined;
-    let liveContext: string | undefined;
-
-    if (/일.*한|ja.*ko/i.test(arg)) direction = "ja-ko";
-    else if (/한.*일|ko.*ja/i.test(arg)) direction = "ko-ja";
-
-    // 맥락 감지
-    if (/식당|레스토랑|음식/.test(arg)) liveContext = "식당에서 주문 및 식사";
-    else if (/교통|택시|전철|지하철/.test(arg)) liveContext = "교통수단 이용 및 이동";
-    else if (/쇼핑|가게|면세/.test(arg)) liveContext = "쇼핑 및 구매";
-    else if (/긴급|응급|경찰|병원/.test(arg)) liveContext = "긴급 상황 대응";
-    else if (/호텔|숙소|체크인/.test(arg)) liveContext = "호텔 및 숙박";
-
-    return { type: "live_translate", text: message, direction, liveContext };
+    const parsed = parseLangAndContext(arg);
+    return { type: "live_translate", text: message, ...parsed };
   }
 
   // 전화 통역 (양방향 자동 감지)
   if (/^\/전화통역/.test(message)) {
-    return { type: "live_translate", text: message, liveContext: "전화 통화 통역" };
+    const arg = message.replace(/^\/전화통역\s*/, "").trim();
+    const parsed = parseLangAndContext(arg);
+    return {
+      type: "live_translate",
+      text: message,
+      liveContext: parsed.liveContext ?? "전화 통화 통역",
+      targetLangCode: parsed.targetLangCode,
+      direction: parsed.direction,
+    };
   }
 
   // 통역 세션 관리
@@ -736,15 +788,30 @@ export function detectTranslationRequest(message: string): {
     return { type: "travel_help", text: message };
   }
 
+  // "통역" 단독 또는 "[언어] 통역" 패턴 — 가장 간단한 활성화
+  if (/^(.*통역)(?:\s*해줘|\s*시작|\s*부탁)?$/.test(message) && message.length <= 30) {
+    const parsed = parseLangAndContext(message);
+    // "통역" 하나만 입력한 경우: 언어 선택 UI로
+    // "영어 통역", "일본어 통역" 등: 해당 언어 바로 시작
+    return {
+      type: "live_translate",
+      text: message,
+      targetLangCode: parsed.targetLangCode,
+      direction: parsed.direction,
+      liveContext: parsed.liveContext,
+    };
+  }
+
   // 실시간 통역 요청 (자연어)
   if (/실시간.*(통역|번역)|전화.*(통역|번역)/.test(message)) {
-    return { type: "live_translate", text: message };
+    const parsed = parseLangAndContext(message);
+    return { type: "live_translate", text: message, ...parsed };
   }
 
   // 암시적 번역 요청 (일본어 텍스트가 포함된 경우)
-  if (/번역|통역|뭐라고|무슨\s*뜻|일본어로|한국어로/.test(message)) {
+  if (/번역|뭐라고|무슨\s*뜻|일본어로|한국어로/.test(message)) {
     const text = message
-      .replace(/번역|통역|해줘|해\s*줘|알려줘|뭐라고|무슨\s*뜻/g, "")
+      .replace(/번역|해줘|해\s*줘|알려줘|뭐라고|무슨\s*뜻/g, "")
       .replace(/일본어로|한국어로|영어로/g, "")
       .trim();
 

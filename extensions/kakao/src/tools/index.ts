@@ -575,3 +575,16 @@ export {
   formatTravelHelp,
 } from "./realtime-translate.js";
 export type { TranslationResult, TranslationDirection } from "./realtime-translate.js";
+
+// Gemini Live multi-language exports
+export {
+  SUPPORTED_LANGUAGES,
+  findLanguageByKeyword,
+  findLanguageByCode,
+  formatModeLabel,
+  getLanguageQuickReplies,
+  formatLiveTranslateGuide,
+  formatSessionStatus,
+  GeminiLiveTranslator,
+} from "./gemini-live-translate.js";
+export type { LanguageInfo, LiveSessionConfig } from "./gemini-live-translate.js";
