@@ -588,3 +588,16 @@ export {
   GeminiLiveTranslator,
 } from "./gemini-live-translate.js";
 export type { LanguageInfo, LiveSessionConfig } from "./gemini-live-translate.js";
+
+// Translation session state management
+export {
+  getSessionState,
+  setAwaitingLanguage,
+  setSessionActive,
+  endSession,
+  isAwaitingLanguage,
+  parseLanguageResponse,
+  isTranslationIntent,
+  isLiveTranslationIntent,
+} from "./translation-session.js";
+export type { SessionPhase, TranslationSessionState } from "./translation-session.js";

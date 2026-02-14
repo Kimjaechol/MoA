@@ -56,11 +56,19 @@ import {
   detectTranslationRequest,
 } from './tools/realtime-translate.js';
 import {
-  formatLiveTranslateGuide,
   formatModeLabel,
   getLanguageQuickReplies,
   findLanguageByCode,
 } from './tools/gemini-live-translate.js';
+import {
+  getSessionState,
+  setAwaitingLanguage,
+  setSessionActive,
+  endSession,
+  isAwaitingLanguage,
+  parseLanguageResponse,
+  isLiveTranslationIntent,
+} from './tools/translation-session.js';
 import { getConsultationButton, parseLawCallRoutes } from './lawcall-router.js';
 
 export interface ToolDispatchResult {
@@ -75,6 +83,14 @@ export interface ToolDispatchResult {
   ragContext?: string; // LLM에 전달할 RAG 컨텍스트
   systemPrompt?: string; // 의도에 맞는 시스템 프롬프트
   intent: ClassifiedIntent;
+  /** Gemini Live 모드 시작 신호 — MoA 앱이 마이크를 활성화 */
+  liveTranslateMode?: {
+    enabled: boolean;
+    targetLangCode: string;
+    targetLangName: string;
+    mode: string; // "bidirectional:en:ko" 등
+    context?: string;
+  };
 }
 
 /**
@@ -94,6 +110,14 @@ export async function dispatchTool(
   };
 
   try {
+    // ━━ 통역 대화 흐름: "언어 선택 대기 중" 체크 ━━
+    // MoA가 "어느 나라 말로 통역할까요?" 라고 물은 후, 사용자 응답 처리
+    if (isAwaitingLanguage(userId)) {
+      const languageResult = handleLanguageSelection(userId, message, result);
+      if (languageResult) return languageResult;
+      // 언어를 파싱하지 못한 경우 → 일반 의도 분류로 폴스루
+    }
+
     switch (intent.type) {
       case 'weather':
         return await handleWeather(message, intent, result);
@@ -137,7 +161,7 @@ export async function dispatchTool(
         return await handleFreepikSearch(message, intent, result);
 
       case 'translate':
-        return await handleTranslate(message, intent, result);
+        return await handleTranslate(userId, message, intent, result);
 
       case 'travel_help':
         return await handleTravelHelp(message, intent, result);
@@ -158,6 +182,89 @@ export async function dispatchTool(
       handled: false,
     };
   }
+}
+
+// ==================== 통역 대화 흐름 핸들러 ====================
+
+/**
+ * "어느 나라 말로 통역할까요?" 후 사용자의 언어 선택 응답 처리
+ * 언어를 파싱할 수 있으면 세션 시작, 못하면 null 리턴 (폴스루)
+ */
+function handleLanguageSelection(
+  userId: string,
+  message: string,
+  result: ToolDispatchResult,
+): ToolDispatchResult | null {
+  // 통역 종료/취소 의도
+  if (/취소|그만|됐어|안\s*할래|괜찮아/.test(message)) {
+    endSession(userId);
+    return {
+      ...result,
+      handled: true,
+      response: '통역을 취소했습니다. 필요하시면 언제든 "통역"이라고 말씀해주세요!',
+      usedTool: 'live_translate',
+    };
+  }
+
+  const language = parseLanguageResponse(message);
+  if (!language) {
+    // 언어를 인식하지 못한 경우 → 다시 물어봄
+    return {
+      ...result,
+      handled: true,
+      response: [
+        '죄송해요, 어떤 언어인지 잘 모르겠어요.',
+        '',
+        '아래 버튼을 누르거나 언어 이름을 말씀해주세요.',
+        '(예: "영어", "일본어", "중국어", "스페인어" 등)',
+      ].join('\n'),
+      usedTool: 'live_translate',
+      quickReplies: getLanguageQuickReplies(),
+    };
+  }
+
+  // 한국어를 선택한 경우 (자기 모국어)
+  if (language.code === 'ko') {
+    return {
+      ...result,
+      handled: true,
+      response: [
+        '한국어는 이미 사용 중이시네요! 😊',
+        '통역할 상대방의 언어를 선택해주세요.',
+      ].join('\n'),
+      usedTool: 'live_translate',
+      quickReplies: getLanguageQuickReplies(),
+    };
+  }
+
+  // 언어 선택 완료 → 세션 활성화 + Live API 시작
+  const session = getSessionState(userId);
+  setSessionActive(userId, language, session.context);
+
+  const mode = `bidirectional:${language.code}:ko`;
+
+  return {
+    ...result,
+    handled: true,
+    response: [
+      `지금부터 요청하신 ${language.flag} ${language.nameKo}로 통역을 하겠습니다.`,
+      '',
+      `🎯 모드: ${formatModeLabel(mode)}`,
+      '⚡ Gemini 2.5 Flash Native Audio (320~800ms)',
+      '',
+      '📱 마이크 버튼을 눌러 말씀하세요.',
+      '통역을 끝내려면 "통역 종료"라고 말씀해주세요.',
+    ].join('\n'),
+    usedTool: 'live_translate',
+    quickReplies: ['통역 종료', '통역 상태'],
+    liveTranslateMode: {
+      enabled: true,
+      targetLangCode: language.code,
+      targetLangName: language.nameKo,
+      mode,
+      context: session.context,
+    },
+  };
 }
 
 // ==================== 도구별 핸들러 ====================
@@ -600,18 +707,115 @@ async function handleFreepikSearch(
 // ==================== 번역 / 여행 통역 핸들러 ====================
 
 async function handleTranslate(
+  userId: string,
   message: string,
   intent: ClassifiedIntent,
   result: ToolDispatchResult,
 ): Promise<ToolDispatchResult> {
   const request = detectTranslationRequest(message);
 
-  // Gemini Live 실시간 통역 요청
-  if (request.type === 'live_translate') {
-    return handleLiveTranslate(message, request, result);
+  // 통역 종료 요청
+  if (/통역\s*(종료|끝|그만|멈춰|스탑|stop)/i.test(message) || /^\/통역종료/.test(message)) {
+    endSession(userId);
+    return {
+      ...result,
+      handled: true,
+      response: [
+        '🎙️ 통역을 종료했습니다.',
+        '',
+        '다시 필요하시면 "통역"이라고 말씀해주세요!',
+      ].join('\n'),
+      usedTool: 'live_translate',
+      liveTranslateMode: { enabled: false, targetLangCode: '', targetLangName: '', mode: '' },
+    };
   }
 
-  // 텍스트 번역
+  // 통역 상태 요청
+  if (/통역\s*상태/.test(message) || /^\/통역상태/.test(message)) {
+    const session = getSessionState(userId);
+    if (session.phase === 'active' && session.targetLanguage) {
+      const lang = session.targetLanguage;
+      return {
+        ...result,
+        handled: true,
+        response: `🎙️ ${lang.flag} ${lang.nameKo} 통역 세션 활성 중\n"통역 종료"로 종료할 수 있습니다.`,
+        usedTool: 'live_translate',
+        quickReplies: ['통역 종료'],
+      };
+    }
+    return {
+      ...result,
+      handled: true,
+      response: '현재 활성 통역 세션이 없습니다.\n"통역"이라고 말하면 시작합니다.',
+      usedTool: 'live_translate',
+    };
+  }
+
+  // Gemini API 키 확인
+  const hasGeminiKey = !!(process.env.GOOGLE_API_KEY ?? process.env.GEMINI_API_KEY);
+  if (!hasGeminiKey) {
+    return {
+      ...result,
+      handled: true,
+      response: [
+        '🎙️ 실시간 통역을 사용하려면 Google API 키가 필요합니다.',
+        '',
+        'GOOGLE_API_KEY 또는 GEMINI_API_KEY를 설정해주세요.',
+        'Google AI Studio에서 무료로 발급받을 수 있습니다:',
+        'https://aistudio.google.com',
+      ].join('\n'),
+      quickReplies: ['텍스트 번역', '여행 표현'],
+    };
+  }
+
+  // ━━ 핵심 흐름: 라이브 통역 의도인지 텍스트 번역인지 판별 ━━
+  const wantsLiveTranslation = isLiveTranslationIntent(message)
+    || request.type === 'live_translate';
+
+  if (wantsLiveTranslation) {
+    // 언어가 이미 지정된 경우 → 바로 세션 시작
+    if (request.targetLangCode) {
+      const targetLang = findLanguageByCode(request.targetLangCode);
+      if (targetLang && targetLang.code !== 'ko') {
+        setSessionActive(userId, targetLang, request.liveContext);
+        const mode = `bidirectional:${targetLang.code}:ko`;
+        return {
+          ...result,
+          handled: true,
+          response: [
+            `지금부터 요청하신 ${targetLang.flag} ${targetLang.nameKo}로 통역을 하겠습니다.`,
+            '',
+            `🎯 모드: ${formatModeLabel(mode)}`,
+            '⚡ Gemini 2.5 Flash Native Audio (320~800ms)',
+            '',
+            '📱 마이크 버튼을 눌러 말씀하세요.',
+            '통역을 끝내려면 "통역 종료"라고 말씀해주세요.',
+          ].join('\n'),
+          usedTool: 'live_translate',
+          quickReplies: ['통역 종료', '통역 상태'],
+          liveTranslateMode: {
+            enabled: true,
+            targetLangCode: targetLang.code,
+            targetLangName: targetLang.nameKo,
+            mode,
+            context: request.liveContext,
+          },
+        };
+      }
+    }
+
+    // 언어가 지정되지 않은 경우 → "어느 나라 말로 통역할까요?" 질문
+    setAwaitingLanguage(userId, request.liveContext);
+    return {
+      ...result,
+      handled: true,
+      response: '어느 나라 말로 통역할까요?',
+      usedTool: 'live_translate',
+      quickReplies: getLanguageQuickReplies(),
+    };
+  }
+
+  // ━━ 텍스트 번역 (통역이 아닌 번역 요청) ━━
   try {
     const translationResult = await translateText(request.text, {
       direction: request.direction,
@@ -639,107 +843,6 @@ async function handleTranslate(
       quickReplies: ['다시 시도'],
     };
   }
-}
-
-async function handleLiveTranslate(
-  message: string,
-  request: ReturnType<typeof detectTranslationRequest>,
-  result: ToolDispatchResult,
-): Promise<ToolDispatchResult> {
-  // 통역 종료 요청
-  if (/^\/통역종료/.test(message)) {
-    return {
-      ...result,
-      handled: true,
-      response: [
-        '🎙️ 실시간 통역 세션이 종료되었습니다.',
-        '',
-        '다시 시작하려면 "통역" 이라고 말하세요.',
-      ].join('\n'),
-      usedTool: 'live_translate',
-      quickReplies: getLanguageQuickReplies().slice(0, 4),
-    };
-  }
-
-  // 통역 상태 요청
-  if (/^\/통역상태/.test(message)) {
-    return {
-      ...result,
-      handled: true,
-      response: '🎙️ 현재 활성 통역 세션이 없습니다.\n"통역" 이라고 말하면 새 세션을 시작합니다.',
-      usedTool: 'live_translate',
-      quickReplies: getLanguageQuickReplies().slice(0, 4),
-    };
-  }
-
-  // Gemini API 키 확인
-  const hasGeminiKey = !!(process.env.GOOGLE_API_KEY ?? process.env.GEMINI_API_KEY);
-
-  if (!hasGeminiKey) {
-    return {
-      ...result,
-      handled: true,
-      response: [
-        '🎙️ 실시간 통역을 사용하려면 Google API 키가 필요합니다.',
-        '',
-        'GOOGLE_API_KEY 또는 GEMINI_API_KEY를 설정해주세요.',
-        'Google AI Studio에서 무료로 발급받을 수 있습니다:',
-        'https://aistudio.google.com',
-      ].join('\n'),
-      quickReplies: ['텍스트 번역', '여행 표현'],
-    };
-  }
-
-  // 언어가 지정되지 않은 경우 — 언어 선택 UI 표시
-  if (!request.targetLangCode && !request.direction) {
-    return {
-      ...result,
-      handled: true,
-      response: [
-        '🎙️ 어떤 언어로 통역할까요?',
-        '',
-        '아래 버튼을 누르거나, "영어 통역" 처럼 말해주세요.',
-        '',
-        formatLiveTranslateGuide(),
-      ].join('\n'),
-      usedTool: 'live_translate',
-      quickReplies: getLanguageQuickReplies(),
-    };
-  }
-
-  // 언어가 지정된 경우 — 세션 시작 안내
-  const targetCode = request.targetLangCode ?? 'ja';
-  const targetLang = findLanguageByCode(targetCode);
-  const targetFlag = targetLang?.flag ?? '🌐';
-  const targetName = targetLang?.nameKo ?? targetCode;
-
-  // mode 결정: direction이 있으면 단방향, 없으면 양방향
-  const mode = request.direction
-    ? `${request.direction.split('-')[0]}-to-${request.direction.split('-')[1]}`
-    : `bidirectional:${targetCode}:ko`;
-
-  const modeLabel = formatModeLabel(mode);
-  const contextLabel = request.liveContext ? `📋 맥락: ${request.liveContext}` : '';
-
-  return {
-    ...result,
-    handled: true,
-    response: [
-      `${targetFlag} ${targetName} 통역을 시작합니다!`,
-      '',
-      '━━ 세션 설정 ━━',
-      `🎯 모드: ${modeLabel}`,
-      contextLabel,
-      '',
-      '🤖 Gemini 2.5 Flash Native Audio',
-      '⚡ 음성→음성 직접 변환 (320~800ms)',
-      '📱 MoA 앱에서 마이크 버튼을 눌러 말하세요.',
-      '',
-      '💡 /통역종료 로 세션을 종료할 수 있습니다.',
-    ].filter(Boolean).join('\n'),
-    usedTool: 'live_translate',
-    quickReplies: ['통역종료', '통역상태', `${targetName} 여행 표현`],
-  };
 }
 
 async function handleTravelHelp(
