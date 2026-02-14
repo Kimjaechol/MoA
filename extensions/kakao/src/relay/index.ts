@@ -92,14 +92,24 @@ export {
   type DeviceStatus,
 } from "./device-status.js";
 
+// Conversation relay (Device-First Memory Engine)
+export {
+  relayConversationToDevice,
+  routeConversation,
+  selectBestDevice,
+} from "./conversation-relay.js";
+
 // Types
 export type {
   CommandPayload,
   CommandResult,
   CommandStatus,
+  ConversationRelayPayload,
+  ConversationRelayResult,
   DeviceCapability,
   DeviceListResponse,
   DeviceRegistration,
+  DeviceSecurityConfig,
   DeviceType,
   HeartbeatResponse,
   PairRequest,
@@ -107,12 +117,18 @@ export type {
   PairingCode,
   PairingResult,
   PollResponse,
+  QueuedMessage,
   RelayBillingConfig,
   RelayCallbacks,
   RelayCommand,
   RelayDevice,
+  RelayEntryType,
+  ResponseStrategy,
+  ResponseTier,
   ResultResponse,
   ResultSubmission,
+  WipeCommand,
+  WipeStatus,
 } from "./types.js";
 
 export { DEFAULT_RELAY_BILLING } from "./types.js";
