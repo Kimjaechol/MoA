@@ -55,6 +55,7 @@ import {
   formatTravelHelp,
   detectTranslationRequest,
 } from './tools/realtime-translate.js';
+import { formatLiveTranslateGuide } from './tools/gemini-live-translate.js';
 import { getConsultationButton, parseLawCallRoutes } from './lawcall-router.js';
 
 export interface ToolDispatchResult {
@@ -598,8 +599,15 @@ async function handleTranslate(
   intent: ClassifiedIntent,
   result: ToolDispatchResult,
 ): Promise<ToolDispatchResult> {
+  const request = detectTranslationRequest(message);
+
+  // Gemini Live 실시간 통역 요청
+  if (request.type === 'live_translate') {
+    return handleLiveTranslate(message, request, result);
+  }
+
+  // 텍스트 번역
   try {
-    const request = detectTranslationRequest(message);
     const translationResult = await translateText(request.text, {
       direction: request.direction,
     });
@@ -610,7 +618,7 @@ async function handleTranslate(
       handled: true,
       response,
       usedTool: 'translate',
-      quickReplies: ['일본어로', '한국어로', '여행 표현'],
+      quickReplies: ['일본어로', '한국어로', '통역시작', '여행 표현'],
     };
   } catch (error) {
     console.error('Translation error:', error);
@@ -626,6 +634,79 @@ async function handleTranslate(
       quickReplies: ['다시 시도'],
     };
   }
+}
+
+async function handleLiveTranslate(
+  message: string,
+  request: ReturnType<typeof detectTranslationRequest>,
+  result: ToolDispatchResult,
+): Promise<ToolDispatchResult> {
+  // 통역 종료 요청
+  if (/^\/통역종료/.test(message)) {
+    return {
+      ...result,
+      handled: true,
+      response: [
+        '🎙️ 실시간 통역 세션이 종료되었습니다.',
+        '',
+        '다시 시작하려면 /통역시작 을 입력하세요.',
+      ].join('\n'),
+      usedTool: 'live_translate',
+      quickReplies: ['통역시작', '여행 표현', '번역'],
+    };
+  }
+
+  // 통역 상태 요청
+  if (/^\/통역상태/.test(message)) {
+    return {
+      ...result,
+      handled: true,
+      response: '🎙️ 현재 활성 통역 세션이 없습니다.\n/통역시작 으로 새 세션을 시작하세요.',
+      usedTool: 'live_translate',
+      quickReplies: ['통역시작', '전화통역'],
+    };
+  }
+
+  // 통역 시작 — Gemini Live API 가이드 표시
+  const hasGeminiKey = !!(process.env.GOOGLE_API_KEY ?? process.env.GEMINI_API_KEY);
+
+  if (!hasGeminiKey) {
+    return {
+      ...result,
+      handled: true,
+      response: [
+        '🎙️ 실시간 통역을 사용하려면 Google API 키가 필요합니다.',
+        '',
+        'GOOGLE_API_KEY 또는 GEMINI_API_KEY를 설정해주세요.',
+        'Google AI Studio에서 무료로 발급받을 수 있습니다:',
+        'https://aistudio.google.com',
+      ].join('\n'),
+      quickReplies: ['텍스트 번역', '여행 표현'],
+    };
+  }
+
+  // 모드 + 맥락 정보로 가이드 표시
+  const modeLabel = request.direction === 'ja-ko' ? '🇯🇵→🇰🇷 일본어→한국어'
+    : request.direction === 'ko-ja' ? '🇰🇷→🇯🇵 한국어→일본어'
+    : '🔄 양방향 자동 감지';
+
+  const contextLabel = request.liveContext ? `📋 맥락: ${request.liveContext}` : '';
+
+  return {
+    ...result,
+    handled: true,
+    response: formatLiveTranslateGuide() + '\n\n' + [
+      '━━ 세션 설정 ━━',
+      `🎯 모드: ${modeLabel}`,
+      contextLabel,
+      '',
+      '🤖 Gemini 2.5 Flash Native Audio',
+      '⚡ 음성→음성 직접 변환 (STT/TTS 파이프라인 없음)',
+      '📱 MoA 모바일 앱에서 마이크 버튼으로 시작하세요.',
+    ].filter(Boolean).join('\n'),
+    usedTool: 'live_translate',
+    quickReplies: ['통역종료', '통역상태', '여행 표현'],
+  };
 }
 
 async function handleTravelHelp(

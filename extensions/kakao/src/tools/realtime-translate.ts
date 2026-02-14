@@ -8,10 +8,10 @@
  *   - DeepL API (폴백)
  *   - Google Translate API (최종 폴백)
  *
- * Tier 2: 음성→텍스트→번역→음성 (통화 통역)
- *   - STT: OpenAI Whisper / Deepgram Nova-3 (일본어 인식)
- *   - Translation: Papago (JA→KO)
- *   - TTS: 자연스러운 한국어 음성 출력
+ * Tier 2: 음성 통역 (통화/대면)
+ *   - Gemini 2.5 Flash Native Audio Live API (음성→음성 직접 변환)
+ *   - WebSocket 양방향 스트리밍, 320~800ms 지연
+ *   - 폴백: OpenAI Whisper STT → Papago → TTS
  *
  * Tier 3: 여행 도우미 모드
  *   - 자주 쓰는 여행 표현 즉석 번역
@@ -231,29 +231,93 @@ async function translateWithGoogle(
   return data.data?.translations?.[0]?.translatedText ?? "";
 }
 
-// ==================== Voice Translation (통화 통역) ====================
+// ==================== Voice Translation (Gemini Live API 기반) ====================
+
+// Re-export Gemini Live API for direct session control
+export {
+  GeminiLiveTranslator,
+  createCallTranslationSession,
+  translateAudioClip,
+  formatSessionStatus,
+  formatLiveTranslateGuide,
+  type TranslationMode,
+  type VoiceName,
+  type LiveSessionConfig,
+} from "./gemini-live-translate.js";
 
 /**
- * 음성 번역 파이프라인: 음성 → STT → 번역 → TTS
+ * 음성 번역 — Gemini Live API 우선, 레거시 폴백
  *
- * 전화 통화 시나리오:
- * 1. 일본어 음성 → Whisper/Deepgram으로 텍스트 변환
- * 2. 일본어 텍스트 → Papago로 한국어 번역
- * 3. 한국어 텍스트 → TTS로 음성 출력
+ * 우선순위:
+ * 1. Gemini 2.5 Flash Native Audio (음성→음성 직접, 320~800ms)
+ * 2. Legacy: Whisper STT → Papago → OpenAI TTS (~2000ms)
  */
 export async function translateVoice(params: {
-  /** Base64 encoded audio data */
+  /** Base64 encoded audio data (PCM 16kHz for Gemini, any format for legacy) */
   audioBase64: string;
-  /** Audio format */
-  audioFormat?: "wav" | "mp3" | "webm" | "ogg";
+  /** Audio format (legacy only — Gemini expects PCM 16kHz) */
+  audioFormat?: "wav" | "mp3" | "webm" | "ogg" | "pcm";
   /** Translation direction */
+  direction?: TranslationDirection;
+}): Promise<VoiceTranslationResult> {
+  const direction = params.direction ?? "ja-ko";
+
+  // Tier 1: Gemini Live API (Native Audio — 최고 성능)
+  const geminiKey = process.env.GOOGLE_API_KEY ?? process.env.GEMINI_API_KEY;
+  if (geminiKey) {
+    try {
+      const { translateAudioClip: geminiTranslate } = await import("./gemini-live-translate.js");
+      const geminiMode = directionToGeminiMode(direction);
+      const result = await geminiTranslate({
+        audioBase64: params.audioBase64,
+        mode: geminiMode,
+        voice: "Kore",
+      });
+
+      return {
+        recognizedText: result.transcriptText || "(Gemini 네이티브 오디오)",
+        translatedText: result.transcriptText,
+        audioUrl: result.translatedAudioBase64
+          ? `data:audio/pcm;rate=24000;base64,${result.translatedAudioBase64}`
+          : undefined,
+        direction,
+        totalLatencyMs: result.latencyMs,
+      };
+    } catch (err) {
+      console.warn("Gemini Live API 폴백:", err);
+      // Fall through to legacy pipeline
+    }
+  }
+
+  // Tier 2: Legacy pipeline (Whisper + Papago + OpenAI TTS)
+  return translateVoiceLegacy(params);
+}
+
+/**
+ * TranslationDirection → Gemini TranslationMode 변환
+ */
+function directionToGeminiMode(direction: TranslationDirection): "ja-to-ko" | "ko-to-ja" | "bidirectional" {
+  switch (direction) {
+    case "ja-ko": return "ja-to-ko";
+    case "ko-ja": return "ko-to-ja";
+    default: return "bidirectional";
+  }
+}
+
+/**
+ * 레거시 음성 번역 파이프라인: Whisper STT → Papago → OpenAI TTS
+ * Gemini API 키가 없을 때 폴백으로 사용
+ */
+async function translateVoiceLegacy(params: {
+  audioBase64: string;
+  audioFormat?: "wav" | "mp3" | "webm" | "ogg" | "pcm";
   direction?: TranslationDirection;
 }): Promise<VoiceTranslationResult> {
   const start = Date.now();
   const direction = params.direction ?? "ja-ko";
   const [sourceLang] = parseLangPair(direction);
 
-  // Step 1: STT — 음성을 텍스트로 변환
+  // Step 1: STT
   const recognizedText = await speechToText(
     params.audioBase64,
     sourceLang,
@@ -263,7 +327,7 @@ export async function translateVoice(params: {
   // Step 2: Translation
   const translationResult = await translateText(recognizedText, { direction });
 
-  // Step 3: TTS — 번역된 텍스트를 음성으로
+  // Step 3: TTS
   const audioUrl = await textToSpeech(
     translationResult.translatedText,
     direction.split("-")[1],
@@ -286,13 +350,11 @@ async function speechToText(
   language: string,
   format: string,
 ): Promise<string> {
-  // Try OpenAI Whisper first
   const openaiKey = process.env.OPENAI_API_KEY;
   if (openaiKey) {
     return sttWithWhisper(audioBase64, language, format, openaiKey);
   }
 
-  // Fallback to Deepgram
   const deepgramKey = process.env.DEEPGRAM_API_KEY;
   if (deepgramKey) {
     return sttWithDeepgram(audioBase64, language, format, deepgramKey);
@@ -307,7 +369,6 @@ async function sttWithWhisper(
   format: string,
   apiKey: string,
 ): Promise<string> {
-  // Convert base64 to blob for form upload
   const audioBuffer = Buffer.from(audioBase64, "base64");
   const blob = new Blob([audioBuffer], { type: `audio/${format}` });
 
@@ -319,15 +380,12 @@ async function sttWithWhisper(
 
   const response = await fetch("https://api.openai.com/v1/audio/transcriptions", {
     method: "POST",
-    headers: {
-      Authorization: `Bearer ${apiKey}`,
-    },
+    headers: { Authorization: `Bearer ${apiKey}` },
     body: formData,
   });
 
   if (!response.ok) {
-    const error = await response.text();
-    throw new Error(`Whisper STT 오류: ${response.status} - ${error}`);
+    throw new Error(`Whisper STT 오류: ${response.status}`);
   }
 
   const data = await response.json();
@@ -340,13 +398,7 @@ async function sttWithDeepgram(
   format: string,
   apiKey: string,
 ): Promise<string> {
-  const langMap: Record<string, string> = {
-    ja: "ja",
-    ko: "ko",
-    en: "en",
-    zh: "zh",
-  };
-
+  const langMap: Record<string, string> = { ja: "ja", ko: "ko", en: "en", zh: "zh" };
   const audioBuffer = Buffer.from(audioBase64, "base64");
 
   const response = await fetch(
@@ -362,8 +414,7 @@ async function sttWithDeepgram(
   );
 
   if (!response.ok) {
-    const error = await response.text();
-    throw new Error(`Deepgram STT 오류: ${response.status} - ${error}`);
+    throw new Error(`Deepgram STT 오류: ${response.status}`);
   }
 
   const data = await response.json();
@@ -371,47 +422,32 @@ async function sttWithDeepgram(
 }
 
 /**
- * Text-to-Speech — 번역된 텍스트를 자연스러운 음성으로
+ * Text-to-Speech (OpenAI TTS, 레거시 폴백용)
  */
 async function textToSpeech(
   text: string,
   targetLanguage: string,
 ): Promise<string | undefined> {
-  // OpenAI TTS
   const openaiKey = process.env.OPENAI_API_KEY;
-  if (openaiKey) {
-    return ttsWithOpenAI(text, targetLanguage, openaiKey);
-  }
+  if (!openaiKey) return undefined;
 
-  // Skip TTS if no API key — text-only mode
-  return undefined;
-}
-
-async function ttsWithOpenAI(
-  text: string,
-  language: string,
-  apiKey: string,
-): Promise<string> {
   const response = await fetch("https://api.openai.com/v1/audio/speech", {
     method: "POST",
     headers: {
-      Authorization: `Bearer ${apiKey}`,
+      Authorization: `Bearer ${openaiKey}`,
       "Content-Type": "application/json",
     },
     body: JSON.stringify({
       model: "tts-1",
       input: text,
-      voice: language === "ko" ? "nova" : language === "ja" ? "shimmer" : "alloy",
+      voice: targetLanguage === "ko" ? "nova" : targetLanguage === "ja" ? "shimmer" : "alloy",
       response_format: "mp3",
       speed: 1.0,
     }),
   });
 
-  if (!response.ok) {
-    throw new Error(`OpenAI TTS 오류: ${response.status}`);
-  }
+  if (!response.ok) return undefined;
 
-  // Return base64 data URI
   const buffer = await response.arrayBuffer();
   const base64 = Buffer.from(buffer).toString("base64");
   return `data:audio/mp3;base64,${base64}`;
@@ -604,9 +640,16 @@ export function formatTravelHelp(): string {
   return [
     "🇯🇵 일본 여행 통역 도우미",
     "",
-    "━━ 실시간 번역 ━━",
+    "━━ 실시간 통역 (Gemini 2.5 Flash) ━━",
+    "/통역시작              — 양방향 실시간 통역 시작",
+    "/통역시작 일→한        — 일본어→한국어 모드",
+    "/통역시작 한→일        — 한국어→일본어 모드",
+    "/전화통역              — 전화 통화 양방향 통역",
+    "/통역시작 식당          — 식당 맥락 통역",
+    "⚡ 지연: 320~800ms | 네이티브 음성→음성",
+    "",
+    "━━ 텍스트 번역 ━━",
     "/번역 [일본어 또는 한국어]  — 즉석 번역",
-    "/음성번역                  — 음성 통역 (통화 모드)",
     "",
     "━━ 상황별 회화 ━━",
     ...categories.map(
@@ -617,9 +660,10 @@ export function formatTravelHelp(): string {
     "/번역 이 전철은 도쿄역에 가나요?",
     "/번역 すみません、トイレはどこですか？",
     "/여행표현 식당",
+    "/통역시작 쇼핑",
     "",
     "💡 텍스트를 입력하면 자동으로 언어를 감지하여 번역합니다.",
-    "📞 통화 중 실시간 통역은 /음성번역 으로 시작하세요.",
+    "📞 실시간 통역은 /통역시작 으로 시작하세요 (Gemini Live API).",
   ].join("\n");
 }
 
@@ -629,11 +673,42 @@ export function formatTravelHelp(): string {
  * 번역 관련 요청 감지
  */
 export function detectTranslationRequest(message: string): {
-  type: "translate" | "voice_translate" | "travel_phrases" | "travel_help" | null;
+  type: "translate" | "voice_translate" | "live_translate" | "travel_phrases" | "travel_help" | null;
   text: string;
   direction?: TranslationDirection;
   category?: string;
+  /** Gemini Live 세션 맥락 (식당, 교통, 쇼핑, 긴급 등) */
+  liveContext?: string;
 } {
+  // Gemini Live 실시간 통역 명령
+  if (/^\/통역시작/.test(message)) {
+    const arg = message.replace(/^\/통역시작\s*/, "").trim();
+    let direction: TranslationDirection | undefined;
+    let liveContext: string | undefined;
+
+    if (/일.*한|ja.*ko/i.test(arg)) direction = "ja-ko";
+    else if (/한.*일|ko.*ja/i.test(arg)) direction = "ko-ja";
+
+    // 맥락 감지
+    if (/식당|레스토랑|음식/.test(arg)) liveContext = "식당에서 주문 및 식사";
+    else if (/교통|택시|전철|지하철/.test(arg)) liveContext = "교통수단 이용 및 이동";
+    else if (/쇼핑|가게|면세/.test(arg)) liveContext = "쇼핑 및 구매";
+    else if (/긴급|응급|경찰|병원/.test(arg)) liveContext = "긴급 상황 대응";
+    else if (/호텔|숙소|체크인/.test(arg)) liveContext = "호텔 및 숙박";
+
+    return { type: "live_translate", text: message, direction, liveContext };
+  }
+
+  // 전화 통역 (양방향 자동 감지)
+  if (/^\/전화통역/.test(message)) {
+    return { type: "live_translate", text: message, liveContext: "전화 통화 통역" };
+  }
+
+  // 통역 세션 관리
+  if (/^\/통역종료|^\/통역상태/.test(message)) {
+    return { type: "live_translate", text: message };
+  }
+
   // 명시적 번역 명령
   if (/^\/번역\s+/.test(message)) {
     const text = message.replace(/^\/번역\s+/, "").trim();
@@ -659,6 +734,11 @@ export function detectTranslationRequest(message: string): {
   // 여행 도우미 메뉴
   if (/^\/여행도우미|^\/여행통역|^\/일본어/.test(message)) {
     return { type: "travel_help", text: message };
+  }
+
+  // 실시간 통역 요청 (자연어)
+  if (/실시간.*(통역|번역)|전화.*(통역|번역)/.test(message)) {
+    return { type: "live_translate", text: message };
   }
 
   // 암시적 번역 요청 (일본어 텍스트가 포함된 경우)
