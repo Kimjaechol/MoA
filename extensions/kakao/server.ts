@@ -347,6 +347,9 @@ function detectLlmProvider(): {
   return null;
 }
 
+/** Max response tokens — configurable via MOA_MAX_TOKENS (default 1000, lower = faster for Kakao 5s limit) */
+const MOA_MAX_TOKENS = Math.max(1, Math.min(4096, Number(process.env.MOA_MAX_TOKENS) || 1000));
+
 /**
  * Call Anthropic API
  */
@@ -365,7 +368,7 @@ async function callAnthropic(
     },
     body: JSON.stringify({
       model,
-      max_tokens: 1000,
+      max_tokens: MOA_MAX_TOKENS,
       system: systemPrompt,
       messages: [{ role: "user", content: userMessage }],
     }),
@@ -401,7 +404,7 @@ async function callOpenAICompatible(
     },
     body: JSON.stringify({
       model,
-      max_tokens: 1000,
+      max_tokens: MOA_MAX_TOKENS,
       messages: [
         { role: "system", content: systemPrompt },
         { role: "user", content: userMessage },
@@ -438,7 +441,7 @@ async function callGemini(
       body: JSON.stringify({
         systemInstruction: { parts: [{ text: systemPrompt }] },
         contents: [{ role: "user", parts: [{ text: userMessage }] }],
-        generationConfig: { maxOutputTokens: 1000 },
+        generationConfig: { maxOutputTokens: MOA_MAX_TOKENS },
       }),
       signal: AbortSignal.timeout(25000),
     },
