@@ -1,13 +1,19 @@
 /**
- * Device Security Module — Protects data on lost/stolen devices
+ * Device Security Module — Protects data on ALL lost/stolen devices
  *
- * Threat model:
- * 1. Phone lost/stolen → thief has physical access
- * 2. Thief connects phone to computer → tries to extract DB files
- * 3. Thief opens chat apps → tries to read conversation history
- * 4. Thief impersonates user → tries to chat with MoA
+ * 모든 기기(휴대폰, 노트북, PC, 태블릿, 서버)에 동일하게 적용됩니다.
  *
- * Defense layers:
+ * Threat model (모든 기기 공통):
+ * 1. 기기 분실/절취 → 제3자가 물리적 접근 확보
+ *    - 📱 거리에서 휴대폰 소매치기
+ *    - 💻 카페에서 노트북 절도
+ *    - 🖥 사무실에서 PC 하드디스크 탈취
+ *    - 📱 호텔에서 태블릿 분실
+ * 2. 절취자가 기기를 다른 컴퓨터에 연결 → DB 파일 추출 시도
+ * 3. 절취자가 기기의 채팅 앱을 열어 대화 내역 열람 시도
+ * 4. 절취자가 이용자를 사칭하여 MoA와 대화 시도
+ *
+ * Defense layers (5-Layer, 모든 기기 동일):
  *
  * Layer 1: User Authentication (already implemented)
  *   - Only verified user can chat with MoA
@@ -19,19 +25,28 @@
  *   - DB file is meaningless without the correct key
  *   - Even if someone copies the file, they can't read it
  *
- * Layer 3: Device Binding
+ * Layer 3: Device Binding (platform-specific fingerprint)
  *   - DB encryption key is partly derived from hardware fingerprint
  *   - Moving the encrypted DB to another device makes it unreadable
- *   - Fingerprint includes: device ID, OS, model hash
+ *   - macOS: IOPlatformSerialNumber + Hardware UUID + model
+ *   - Windows: CSPRODUCT UUID + BIOS serial + model
+ *   - Linux: /etc/machine-id + DMI product UUID
+ *   - iOS: identifierForVendor + install ID
+ *   - Android: ANDROID_ID + install ID
  *
- * Layer 4: Chat History Protection
+ * Layer 4: Chat History Protection (see chat-history-guard.ts)
  *   - Auto-purge chat history after configurable interval
  *   - Conversations stored only as embeddings (not readable text)
  *   - Readable text stored temporarily, purged after embedding
+ *   - Sensitive data (phone, account#, passwords) auto-masked in channel
  *
- * Layer 5: Remote Wipe (see remote-wipe.ts)
- *   - User can trigger wipe from any channel
+ * Layer 5: Remote Wipe (see remote-wipe.ts + lost-device-handler.ts)
+ *   - User can trigger wipe from any channel for any device type
+ *   - backup_then_wipe: emergency backup → verify → secure delete
  *   - Wipe command queued, executed when device comes online
+ *   - 3-pass secure delete: 0x00 → 0xFF → random → unlink
+ *
+ * Platform-specific paths: see platform-security.ts
  */
 
 import { createCipheriv, createDecipheriv, createHash, pbkdf2Sync, randomBytes } from "node:crypto";

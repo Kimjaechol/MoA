@@ -56,5 +56,16 @@ export {
   type ChatGuardConfig,
 } from "./chat-history-guard.js";
 
+// Platform security (OS-specific fingerprint, data paths, device detection)
+export {
+  collectPlatformFingerprint,
+  detectPlatform,
+  formatAllDeviceSecurityInfo,
+  getDeviceDescription,
+  resolvePlatformDataPaths,
+  type PlatformDataPaths,
+  type PlatformInfo,
+} from "./platform-security.js";
+
 // Re-export types
 export type { DeviceSecurityConfig, WipeCommand, WipeStatus } from "../relay/types.js";
