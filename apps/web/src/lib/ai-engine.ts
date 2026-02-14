@@ -5,6 +5,7 @@
  *   1. No internal HTTP call — webhook handlers import this directly
  *   2. DB queries parallelized with Promise.all
  *   3. Semantic cache integration (optional, via @/lib/semantic-cache)
+ *   4. Multi-turn conversation context with cross-channel history
  *
  * This module runs on Node.js runtime (needs node:crypto for key decryption).
  */
@@ -30,6 +31,90 @@ export interface ChatResult {
   credits_remaining?: number;
   key_source: "moa" | "user";
   timestamp: string;
+}
+
+/** Message format for LLM multi-turn conversation */
+interface LLMMessage {
+  role: "user" | "assistant";
+  content: string;
+}
+
+// ────────────────────────────────────────────
+// Conversation History
+// ────────────────────────────────────────────
+
+/** Max messages to load from DB for context (controls token budget) */
+const MAX_HISTORY_MESSAGES = 20;
+
+/** Max chars per historical message (truncate long ones to save tokens) */
+const MAX_MESSAGE_LENGTH = 500;
+
+/**
+ * Merge consecutive same-role messages (required by Gemini, safe for all APIs).
+ * Example: two consecutive "user" messages → one with content joined by newline.
+ */
+function normalizeMessages(messages: LLMMessage[]): LLMMessage[] {
+  if (messages.length === 0) return messages;
+  const result: LLMMessage[] = [{ ...messages[0] }];
+  for (let i = 1; i < messages.length; i++) {
+    const prev = result[result.length - 1];
+    if (messages[i].role === prev.role) {
+      prev.content += `\n${messages[i].content}`;
+    } else {
+      result.push({ ...messages[i] });
+    }
+  }
+  return result;
+}
+
+/**
+ * Load conversation history from Supabase.
+ * Loads by user_id (cross-channel) so the AI can reference any channel's context.
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+async function loadConversationHistory(supabase: any, userId: string): Promise<LLMMessage[]> {
+  try {
+    const { data } = await supabase
+      .from("moa_chat_messages")
+      .select("role, content, channel, created_at")
+      .eq("user_id", userId)
+      .order("created_at", { ascending: false })
+      .limit(MAX_HISTORY_MESSAGES);
+
+    if (!data || data.length === 0) return [];
+
+    // Reverse to chronological order (oldest first) and build LLMMessage[]
+    return (data as { role: string; content: string; channel: string; created_at: string }[])
+      .reverse()
+      .map((msg) => {
+        const truncated = msg.content.length > MAX_MESSAGE_LENGTH
+          ? msg.content.slice(0, MAX_MESSAGE_LENGTH) + "..."
+          : msg.content;
+        return {
+          role: msg.role as "user" | "assistant",
+          content: `[${msg.channel}] ${truncated}`,
+        };
+      });
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Build the full LLM messages array:
+ *   history (from DB, cross-channel) + current user message.
+ */
+function buildLLMMessages(
+  history: LLMMessage[],
+  currentMessage: string,
+  currentChannel: string,
+): LLMMessage[] {
+  const messages: LLMMessage[] = [...history];
+  messages.push({
+    role: "user",
+    content: `[${currentChannel}] ${currentMessage}`,
+  });
+  return messages;
 }
 
 // ────────────────────────────────────────────
@@ -64,14 +149,24 @@ You MUST respond in the SAME language as the user's message.
 - ABSOLUTELY DO NOT mix different languages in a single response.
 `;
 
+const CROSS_CHANNEL_CONTEXT = `
+
+[MULTI-CHANNEL CONVERSATION]
+The user communicates through multiple channels (App, Telegram, Discord, KakaoTalk, Slack, LINE, WhatsApp, Signal, etc.).
+Each message in the history is tagged with [channel_name] to indicate its origin.
+Even across different channels, this is the SAME user's continuous conversation — always reference prior context when relevant.
+Do NOT include a [channel_name] tag in your response — just reply naturally.
+If the user references a prior conversation from another channel (e.g., "아까 텔레그램에서 물어본 것"), look up that channel's history and continue seamlessly.
+`;
+
 const CATEGORY_SYSTEM_PROMPTS: Record<string, string> = {
-  daily: `You are a daily life assistant. Help with schedules, weather, translations, lifestyle tips, and general questions.${LANGUAGE_RULE}`,
-  work: `You are a professional work assistant. Help with emails, reports, meeting notes, data analysis, and business tasks.${LANGUAGE_RULE}`,
-  document: `You are a document specialist. Help with document creation, summarization, conversion, synthesis, and formatting.${LANGUAGE_RULE}`,
-  coding: `You are an expert software engineer. Help with code writing, debugging, code review, and automated coding tasks. Include code snippets and technical details.${LANGUAGE_RULE}`,
-  image: `You are an image/visual AI assistant. Help with image generation prompts, editing instructions, image analysis, and style transfer.${LANGUAGE_RULE}`,
-  music: `You are a music AI assistant. Help with composition, lyrics writing, TTS, and music analysis.${LANGUAGE_RULE}`,
-  other: `You are MoA, a versatile AI assistant with 100+ skills across 15 channels. Help with any request.${LANGUAGE_RULE}`,
+  daily: `You are a daily life assistant. Help with schedules, weather, translations, lifestyle tips, and general questions.${LANGUAGE_RULE}${CROSS_CHANNEL_CONTEXT}`,
+  work: `You are a professional work assistant. Help with emails, reports, meeting notes, data analysis, and business tasks.${LANGUAGE_RULE}${CROSS_CHANNEL_CONTEXT}`,
+  document: `You are a document specialist. Help with document creation, summarization, conversion, synthesis, and formatting.${LANGUAGE_RULE}${CROSS_CHANNEL_CONTEXT}`,
+  coding: `You are an expert software engineer. Help with code writing, debugging, code review, and automated coding tasks. Include code snippets and technical details.${LANGUAGE_RULE}${CROSS_CHANNEL_CONTEXT}`,
+  image: `You are an image/visual AI assistant. Help with image generation prompts, editing instructions, image analysis, and style transfer.${LANGUAGE_RULE}${CROSS_CHANNEL_CONTEXT}`,
+  music: `You are a music AI assistant. Help with composition, lyrics writing, TTS, and music analysis.${LANGUAGE_RULE}${CROSS_CHANNEL_CONTEXT}`,
+  other: `You are MoA, a versatile AI assistant with 100+ skills across 15 channels. Help with any request.${LANGUAGE_RULE}${CROSS_CHANNEL_CONTEXT}`,
 };
 
 export const CATEGORY_SKILLS: Record<string, string[]> = {
@@ -159,15 +254,16 @@ async function deductCredits(supabase: any, userId: string, model: string, usedE
 }
 
 // ────────────────────────────────────────────
-// LLM Provider Calls
+// LLM Provider Calls (Multi-turn)
 // ────────────────────────────────────────────
 
-async function callAnthropic(key: string, system: string, message: string, model: string): Promise<string | null> {
+async function callAnthropic(key: string, system: string, messages: LLMMessage[], model: string): Promise<string | null> {
   try {
+    const normalized = normalizeMessages(messages);
     const res = await fetch("https://api.anthropic.com/v1/messages", {
       method: "POST",
       headers: { "Content-Type": "application/json", "x-api-key": key, "anthropic-version": "2023-06-01" },
-      body: JSON.stringify({ model, max_tokens: 4096, system, messages: [{ role: "user", content: message }] }),
+      body: JSON.stringify({ model, max_tokens: 4096, system, messages: normalized }),
     });
     if (res.ok) {
       const data = await res.json();
@@ -177,12 +273,17 @@ async function callAnthropic(key: string, system: string, message: string, model
   return null;
 }
 
-async function callOpenAI(key: string, system: string, message: string, model: string): Promise<string | null> {
+async function callOpenAI(key: string, system: string, messages: LLMMessage[], model: string): Promise<string | null> {
   try {
+    const normalized = normalizeMessages(messages);
     const res = await fetch("https://api.openai.com/v1/chat/completions", {
       method: "POST",
       headers: { "Content-Type": "application/json", Authorization: `Bearer ${key}` },
-      body: JSON.stringify({ model, messages: [{ role: "system", content: system }, { role: "user", content: message }], max_tokens: 4096 }),
+      body: JSON.stringify({
+        model,
+        messages: [{ role: "system" as const, content: system }, ...normalized],
+        max_tokens: 4096,
+      }),
     });
     if (res.ok) {
       const data = await res.json();
@@ -194,14 +295,18 @@ async function callOpenAI(key: string, system: string, message: string, model: s
 
 const GEMINI_MODEL = "gemini-3.0-flash";
 
-async function callGemini(key: string, system: string, message: string): Promise<string | null> {
+async function callGemini(key: string, system: string, messages: LLMMessage[]): Promise<string | null> {
   try {
+    const normalized = normalizeMessages(messages);
     const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${key}`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         systemInstruction: { parts: [{ text: system }] },
-        contents: [{ role: "user", parts: [{ text: message }] }],
+        contents: normalized.map((m) => ({
+          role: m.role === "assistant" ? "model" : "user",
+          parts: [{ text: m.content }],
+        })),
         generationConfig: { maxOutputTokens: 4096 },
       }),
     });
@@ -213,12 +318,17 @@ async function callGemini(key: string, system: string, message: string): Promise
   return null;
 }
 
-async function callGroq(key: string, system: string, message: string): Promise<string | null> {
+async function callGroq(key: string, system: string, messages: LLMMessage[]): Promise<string | null> {
   try {
+    const normalized = normalizeMessages(messages);
     const res = await fetch("https://api.groq.com/openai/v1/chat/completions", {
       method: "POST",
       headers: { "Content-Type": "application/json", Authorization: `Bearer ${key}` },
-      body: JSON.stringify({ model: "llama-3.3-70b-versatile", messages: [{ role: "system", content: system }, { role: "user", content: message }], max_tokens: 4096 }),
+      body: JSON.stringify({
+        model: "llama-3.3-70b-versatile",
+        messages: [{ role: "system" as const, content: system }, ...normalized],
+        max_tokens: 4096,
+      }),
     });
     if (res.ok) {
       const data = await res.json();
@@ -228,12 +338,17 @@ async function callGroq(key: string, system: string, message: string): Promise<s
   return null;
 }
 
-async function callDeepSeek(key: string, system: string, message: string): Promise<string | null> {
+async function callDeepSeek(key: string, system: string, messages: LLMMessage[]): Promise<string | null> {
   try {
+    const normalized = normalizeMessages(messages);
     const res = await fetch("https://api.deepseek.com/chat/completions", {
       method: "POST",
       headers: { "Content-Type": "application/json", Authorization: `Bearer ${key}` },
-      body: JSON.stringify({ model: "deepseek-chat", messages: [{ role: "system", content: system }, { role: "user", content: message }], max_tokens: 4096 }),
+      body: JSON.stringify({
+        model: "deepseek-chat",
+        messages: [{ role: "system" as const, content: system }, ...normalized],
+        max_tokens: 4096,
+      }),
     });
     if (res.ok) {
       const data = await res.json();
@@ -243,12 +358,17 @@ async function callDeepSeek(key: string, system: string, message: string): Promi
   return null;
 }
 
-async function callXai(key: string, system: string, message: string, model: string): Promise<string | null> {
+async function callXai(key: string, system: string, messages: LLMMessage[], model: string): Promise<string | null> {
   try {
+    const normalized = normalizeMessages(messages);
     const res = await fetch("https://api.x.ai/v1/chat/completions", {
       method: "POST",
       headers: { "Content-Type": "application/json", Authorization: `Bearer ${key}` },
-      body: JSON.stringify({ model, messages: [{ role: "system", content: system }, { role: "user", content: message }], max_tokens: 4096 }),
+      body: JSON.stringify({
+        model,
+        messages: [{ role: "system" as const, content: system }, ...normalized],
+        max_tokens: 4096,
+      }),
     });
     if (res.ok) {
       const data = await res.json();
@@ -258,12 +378,17 @@ async function callXai(key: string, system: string, message: string, model: stri
   return null;
 }
 
-async function callMistral(key: string, system: string, message: string, model: string): Promise<string | null> {
+async function callMistral(key: string, system: string, messages: LLMMessage[], model: string): Promise<string | null> {
   try {
+    const normalized = normalizeMessages(messages);
     const res = await fetch("https://api.mistral.ai/v1/chat/completions", {
       method: "POST",
       headers: { "Content-Type": "application/json", Authorization: `Bearer ${key}` },
-      body: JSON.stringify({ model, messages: [{ role: "system", content: system }, { role: "user", content: message }], max_tokens: 4096 }),
+      body: JSON.stringify({
+        model,
+        messages: [{ role: "system" as const, content: system }, ...normalized],
+        max_tokens: 4096,
+      }),
     });
     if (res.ok) {
       const data = await res.json();
@@ -278,13 +403,13 @@ async function callMistral(key: string, system: string, message: string, model: 
 // ────────────────────────────────────────────
 
 /**
- * 3-phase model selection:
+ * 3-phase model selection with multi-turn messages:
  *   Phase 1: User's own API keys (1x credit) — best quality first
  *   Phase 2: MoA server env keys (2x credit) — strategy defaults
  *   Phase 3: Groq/DeepSeek — user keys ONLY (CJK mixing issues)
  */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-async function tryLlmCall(message: string, category: string, strategy: string, keys: any[]): Promise<AIResponse | null> {
+async function tryLlmCall(messages: LLMMessage[], category: string, strategy: string, keys: any[]): Promise<AIResponse | null> {
   const systemPrompt = CATEGORY_SYSTEM_PROMPTS[category] ?? CATEGORY_SYSTEM_PROMPTS.other;
   const skills = CATEGORY_SKILLS[category] ?? CATEGORY_SKILLS.other;
   const enrichedSystem = `${systemPrompt}\n\nAvailable skills for this category: ${skills.join(", ")}`;
@@ -310,34 +435,34 @@ async function tryLlmCall(message: string, category: string, strategy: string, k
   // Phase 1: User's own API keys — best quality first
   if (hasUserQualityKeys) {
     if (strategy === "max-performance") {
-      if (userAnthropicKey) { const r = await callAnthropic(userAnthropicKey, enrichedSystem, message, "claude-opus-4-6"); if (r) return { text: r, model: "anthropic/claude-opus-4-6", usedEnvKey: false }; }
-      if (userOpenaiKey) { const r = await callOpenAI(userOpenaiKey, enrichedSystem, message, "gpt-5"); if (r) return { text: r, model: "openai/gpt-5", usedEnvKey: false }; }
-      if (userGeminiKey) { const r = await callGemini(userGeminiKey, enrichedSystem, message); if (r) return { text: r, model: "gemini/gemini-3.0-flash", usedEnvKey: false }; }
-      if (userXaiKey) { const r = await callXai(userXaiKey, enrichedSystem, message, "grok-3"); if (r) return { text: r, model: "xai/grok-3", usedEnvKey: false }; }
-      if (userMistralKey) { const r = await callMistral(userMistralKey, enrichedSystem, message, "mistral-large-latest"); if (r) return { text: r, model: "mistral/mistral-large", usedEnvKey: false }; }
+      if (userAnthropicKey) { const r = await callAnthropic(userAnthropicKey, enrichedSystem, messages, "claude-opus-4-6"); if (r) return { text: r, model: "anthropic/claude-opus-4-6", usedEnvKey: false }; }
+      if (userOpenaiKey) { const r = await callOpenAI(userOpenaiKey, enrichedSystem, messages, "gpt-5"); if (r) return { text: r, model: "openai/gpt-5", usedEnvKey: false }; }
+      if (userGeminiKey) { const r = await callGemini(userGeminiKey, enrichedSystem, messages); if (r) return { text: r, model: "gemini/gemini-3.0-flash", usedEnvKey: false }; }
+      if (userXaiKey) { const r = await callXai(userXaiKey, enrichedSystem, messages, "grok-3"); if (r) return { text: r, model: "xai/grok-3", usedEnvKey: false }; }
+      if (userMistralKey) { const r = await callMistral(userMistralKey, enrichedSystem, messages, "mistral-large-latest"); if (r) return { text: r, model: "mistral/mistral-large", usedEnvKey: false }; }
     } else {
-      if (userAnthropicKey) { const r = await callAnthropic(userAnthropicKey, enrichedSystem, message, "claude-sonnet-4-5-20250929"); if (r) return { text: r, model: "anthropic/claude-sonnet-4-5", usedEnvKey: false }; }
-      if (userOpenaiKey) { const r = await callOpenAI(userOpenaiKey, enrichedSystem, message, "gpt-4o-mini"); if (r) return { text: r, model: "openai/gpt-4o-mini", usedEnvKey: false }; }
-      if (userGeminiKey) { const r = await callGemini(userGeminiKey, enrichedSystem, message); if (r) return { text: r, model: "gemini/gemini-3.0-flash", usedEnvKey: false }; }
-      if (userXaiKey) { const r = await callXai(userXaiKey, enrichedSystem, message, "grok-3-mini"); if (r) return { text: r, model: "xai/grok-3-mini", usedEnvKey: false }; }
-      if (userMistralKey) { const r = await callMistral(userMistralKey, enrichedSystem, message, "mistral-small-latest"); if (r) return { text: r, model: "mistral/mistral-small", usedEnvKey: false }; }
+      if (userAnthropicKey) { const r = await callAnthropic(userAnthropicKey, enrichedSystem, messages, "claude-sonnet-4-5-20250929"); if (r) return { text: r, model: "anthropic/claude-sonnet-4-5", usedEnvKey: false }; }
+      if (userOpenaiKey) { const r = await callOpenAI(userOpenaiKey, enrichedSystem, messages, "gpt-4o-mini"); if (r) return { text: r, model: "openai/gpt-4o-mini", usedEnvKey: false }; }
+      if (userGeminiKey) { const r = await callGemini(userGeminiKey, enrichedSystem, messages); if (r) return { text: r, model: "gemini/gemini-3.0-flash", usedEnvKey: false }; }
+      if (userXaiKey) { const r = await callXai(userXaiKey, enrichedSystem, messages, "grok-3-mini"); if (r) return { text: r, model: "xai/grok-3-mini", usedEnvKey: false }; }
+      if (userMistralKey) { const r = await callMistral(userMistralKey, enrichedSystem, messages, "mistral-small-latest"); if (r) return { text: r, model: "mistral/mistral-small", usedEnvKey: false }; }
     }
   }
 
   // Phase 2: MoA server env keys (2x credit)
   if (strategy === "max-performance") {
-    if (envAnthropicKey) { const r = await callAnthropic(envAnthropicKey, enrichedSystem, message, "claude-opus-4-6"); if (r) return { text: r, model: "anthropic/claude-opus-4-6", usedEnvKey: true }; }
-    if (envOpenaiKey) { const r = await callOpenAI(envOpenaiKey, enrichedSystem, message, "gpt-5"); if (r) return { text: r, model: "openai/gpt-5", usedEnvKey: true }; }
-    if (envGeminiKey) { const r = await callGemini(envGeminiKey, enrichedSystem, message); if (r) return { text: r, model: "gemini/gemini-3.0-flash", usedEnvKey: true }; }
+    if (envAnthropicKey) { const r = await callAnthropic(envAnthropicKey, enrichedSystem, messages, "claude-opus-4-6"); if (r) return { text: r, model: "anthropic/claude-opus-4-6", usedEnvKey: true }; }
+    if (envOpenaiKey) { const r = await callOpenAI(envOpenaiKey, enrichedSystem, messages, "gpt-5"); if (r) return { text: r, model: "openai/gpt-5", usedEnvKey: true }; }
+    if (envGeminiKey) { const r = await callGemini(envGeminiKey, enrichedSystem, messages); if (r) return { text: r, model: "gemini/gemini-3.0-flash", usedEnvKey: true }; }
   } else {
-    if (envGeminiKey) { const r = await callGemini(envGeminiKey, enrichedSystem, message); if (r) return { text: r, model: "gemini/gemini-3.0-flash", usedEnvKey: true }; }
-    if (envOpenaiKey) { const r = await callOpenAI(envOpenaiKey, enrichedSystem, message, "gpt-4o-mini"); if (r) return { text: r, model: "openai/gpt-4o-mini", usedEnvKey: true }; }
-    if (envAnthropicKey) { const r = await callAnthropic(envAnthropicKey, enrichedSystem, message, "claude-haiku-4-5"); if (r) return { text: r, model: "anthropic/claude-haiku-4-5", usedEnvKey: true }; }
+    if (envGeminiKey) { const r = await callGemini(envGeminiKey, enrichedSystem, messages); if (r) return { text: r, model: "gemini/gemini-3.0-flash", usedEnvKey: true }; }
+    if (envOpenaiKey) { const r = await callOpenAI(envOpenaiKey, enrichedSystem, messages, "gpt-4o-mini"); if (r) return { text: r, model: "openai/gpt-4o-mini", usedEnvKey: true }; }
+    if (envAnthropicKey) { const r = await callAnthropic(envAnthropicKey, enrichedSystem, messages, "claude-haiku-4-5"); if (r) return { text: r, model: "anthropic/claude-haiku-4-5", usedEnvKey: true }; }
   }
 
   // Phase 3: Groq/DeepSeek — user keys ONLY (CJK mixing issues)
-  if (userGroqKey) { const r = await callGroq(userGroqKey, enrichedSystem, message); if (r) return { text: r, model: "groq/llama-3.3-70b-versatile", usedEnvKey: false }; }
-  if (userDeepseekKey) { const r = await callDeepSeek(userDeepseekKey, enrichedSystem, message); if (r) return { text: r, model: "deepseek/deepseek-chat", usedEnvKey: false }; }
+  if (userGroqKey) { const r = await callGroq(userGroqKey, enrichedSystem, messages); if (r) return { text: r, model: "groq/llama-3.3-70b-versatile", usedEnvKey: false }; }
+  if (userDeepseekKey) { const r = await callDeepSeek(userDeepseekKey, enrichedSystem, messages); if (r) return { text: r, model: "deepseek/deepseek-chat", usedEnvKey: false }; }
 
   return null;
 }
@@ -414,6 +539,9 @@ function generateSmartResponse(message: string, category: string, model: string,
  * Generate an AI response for any channel.
  * This is the shared core — called directly by webhooks (no internal HTTP).
  *
+ * Multi-turn: Loads recent conversation history (cross-channel, by user_id)
+ * and passes it to the LLM for contextual responses.
+ *
  * Optimization 4: DB queries parallelized with Promise.all.
  */
 export async function generateAIResponse(params: {
@@ -440,13 +568,14 @@ export async function generateAIResponse(params: {
   } catch { /* Supabase not configured */ }
 
   // ── Optimization 4: Parallelize DB lookups ──
-  // Fetch user keys + settings + save message simultaneously
+  // Fetch user keys + settings + conversation history + save user message simultaneously
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   let activeKeys: any[] = [];
   let strategy = "cost-efficient";
+  let conversationHistory: LLMMessage[] = [];
 
   if (supabase && userId) {
-    const [keysResult, settingsResult] = await Promise.all([
+    const [keysResult, settingsResult, historyResult] = await Promise.all([
       supabase
         .from("moa_user_api_keys")
         .select("provider, encrypted_key, is_active")
@@ -461,6 +590,8 @@ export async function generateAIResponse(params: {
         .single()
         .then((r: { data: unknown }) => r.data)
         .catch(() => null),
+      // Load conversation history (cross-channel, by user_id, recent first)
+      loadConversationHistory(supabase, userId),
       // Save user message in parallel (best-effort)
       sessionId ? supabase.from("moa_chat_messages").insert({
         user_id: userId, session_id: sessionId, role: "user",
@@ -470,9 +601,13 @@ export async function generateAIResponse(params: {
 
     activeKeys = keysResult ?? [];
     strategy = settingsResult?.model_strategy ?? "cost-efficient";
+    conversationHistory = historyResult;
   }
 
-  // ── Try semantic cache first ──
+  // ── Build multi-turn messages for LLM ──
+  const llmMessages = buildLLMMessages(conversationHistory, message.trim(), channel);
+
+  // ── Try semantic cache first (based on current message only) ──
   let aiResponse: AIResponse | null = null;
   try {
     const { getCachedResponse, setCachedResponse } = await import("@/lib/semantic-cache");
@@ -481,10 +616,10 @@ export async function generateAIResponse(params: {
       aiResponse = { text: cached, model: "cache/hit", usedEnvKey: false };
     }
 
-    // If cache miss, call LLM and cache the result
+    // If cache miss, call LLM with full history and cache the result
     if (!aiResponse) {
       try {
-        aiResponse = await tryLlmCall(message, category, strategy, activeKeys);
+        aiResponse = await tryLlmCall(llmMessages, category, strategy, activeKeys);
         if (aiResponse) {
           // Cache in background (don't await)
           setCachedResponse(message, category, aiResponse.text).catch(() => {});
@@ -492,9 +627,9 @@ export async function generateAIResponse(params: {
       } catch { /* LLM failed */ }
     }
   } catch {
-    // Semantic cache not available — call LLM directly
+    // Semantic cache not available — call LLM directly with full history
     try {
-      aiResponse = await tryLlmCall(message, category, strategy, activeKeys);
+      aiResponse = await tryLlmCall(llmMessages, category, strategy, activeKeys);
     } catch { /* LLM failed */ }
   }
 
