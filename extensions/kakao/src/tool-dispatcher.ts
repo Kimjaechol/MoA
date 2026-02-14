@@ -39,6 +39,22 @@ import {
   generateQRCode,
   formatCreativeMessage,
 } from './tools/creative.js';
+import {
+  generateImage as freepikGenerateImage,
+  searchResources as freepikSearchResources,
+  formatGenerateMessage as formatFreepikGenerateMessage,
+  formatSearchMessage as formatFreepikSearchMessage,
+  detectFreepikRequest,
+} from './tools/freepik.js';
+import {
+  translateText,
+  searchTravelPhrases,
+  getTravelPhrasesByCategory,
+  formatTranslationMessage,
+  formatTravelPhrases,
+  formatTravelHelp,
+  detectTranslationRequest,
+} from './tools/realtime-translate.js';
 import { getConsultationButton, parseLawCallRoutes } from './lawcall-router.js';
 
 export interface ToolDispatchResult {
@@ -107,6 +123,18 @@ export async function dispatchTool(
 
       case 'creative_qrcode':
         return await handleCreativeQRCode(message, intent, result);
+
+      case 'freepik_generate':
+        return await handleFreepikGenerate(message, intent, result);
+
+      case 'freepik_search':
+        return await handleFreepikSearch(message, intent, result);
+
+      case 'translate':
+        return await handleTranslate(message, intent, result);
+
+      case 'travel_help':
+        return await handleTravelHelp(message, intent, result);
 
       case 'chat':
       default:
@@ -499,6 +527,148 @@ async function handleCreativeQRCode(
       quickReplies: ['다시 시도'],
     };
   }
+}
+
+// ==================== Freepik 핸들러 ====================
+
+async function handleFreepikGenerate(
+  message: string,
+  intent: ClassifiedIntent,
+  result: ToolDispatchResult,
+): Promise<ToolDispatchResult> {
+  try {
+    const request = detectFreepikRequest(message);
+    const generateResult = await freepikGenerateImage(request.prompt, {
+      model: request.model,
+      aspectRatio: request.aspectRatio,
+    });
+    const response = formatFreepikGenerateMessage(generateResult);
+
+    return {
+      ...result,
+      handled: true,
+      response,
+      imageUrl: generateResult.images[0]?.url,
+      usedTool: 'freepik_generate',
+      quickReplies: ['다시 생성', '다른 모델로', '업스케일'],
+    };
+  } catch (error) {
+    console.error('Freepik generate error:', error);
+    return {
+      ...result,
+      handled: true,
+      response: '죄송합니다. Freepik 이미지 생성에 실패했습니다.\nFREEPIK_API_KEY를 확인해주세요.',
+      quickReplies: ['다시 시도', 'DALL-E로 생성'],
+    };
+  }
+}
+
+async function handleFreepikSearch(
+  message: string,
+  intent: ClassifiedIntent,
+  result: ToolDispatchResult,
+): Promise<ToolDispatchResult> {
+  try {
+    const request = detectFreepikRequest(message);
+    const searchResult = await freepikSearchResources(request.prompt, { limit: 5 });
+    const response = formatFreepikSearchMessage(searchResult);
+
+    return {
+      ...result,
+      handled: true,
+      response,
+      usedTool: 'freepik_search',
+      quickReplies: ['더 보기', '벡터만', '사진만'],
+    };
+  } catch (error) {
+    console.error('Freepik search error:', error);
+    return {
+      ...result,
+      handled: true,
+      response: '죄송합니다. Freepik 검색에 실패했습니다.\nFREEPIK_API_KEY를 확인해주세요.',
+      quickReplies: ['다시 시도'],
+    };
+  }
+}
+
+// ==================== 번역 / 여행 통역 핸들러 ====================
+
+async function handleTranslate(
+  message: string,
+  intent: ClassifiedIntent,
+  result: ToolDispatchResult,
+): Promise<ToolDispatchResult> {
+  try {
+    const request = detectTranslationRequest(message);
+    const translationResult = await translateText(request.text, {
+      direction: request.direction,
+    });
+    const response = formatTranslationMessage(translationResult);
+
+    return {
+      ...result,
+      handled: true,
+      response,
+      usedTool: 'translate',
+      quickReplies: ['일본어로', '한국어로', '여행 표현'],
+    };
+  } catch (error) {
+    console.error('Translation error:', error);
+    return {
+      ...result,
+      handled: true,
+      response:
+        '죄송합니다. 번역에 실패했습니다.\n' +
+        '번역 API 키를 확인해주세요:\n' +
+        '• Papago: NAVER_CLIENT_ID, NAVER_CLIENT_SECRET\n' +
+        '• DeepL: DEEPL_API_KEY\n' +
+        '• Google: GOOGLE_TRANSLATE_API_KEY',
+      quickReplies: ['다시 시도'],
+    };
+  }
+}
+
+async function handleTravelHelp(
+  message: string,
+  intent: ClassifiedIntent,
+  result: ToolDispatchResult,
+): Promise<ToolDispatchResult> {
+  const request = detectTranslationRequest(message);
+
+  // 특정 카테고리의 여행 표현 요청
+  if (request.category) {
+    const phrases = getTravelPhrasesByCategory(request.category);
+    if (phrases.length > 0) {
+      return {
+        ...result,
+        handled: true,
+        response: formatTravelPhrases(phrases, request.category),
+        usedTool: 'travel_phrases',
+        quickReplies: ['식당 표현', '교통 표현', '긴급 표현', '쇼핑 표현'],
+      };
+    }
+
+    // 카테고리 검색 폴백
+    const searchResults = searchTravelPhrases(request.category);
+    if (searchResults.length > 0) {
+      return {
+        ...result,
+        handled: true,
+        response: formatTravelPhrases(searchResults),
+        usedTool: 'travel_phrases',
+        quickReplies: ['식당 표현', '교통 표현', '긴급 표현'],
+      };
+    }
+  }
+
+  // 전체 여행 도우미 메뉴
+  return {
+    ...result,
+    handled: true,
+    response: formatTravelHelp(),
+    usedTool: 'travel_help',
+    quickReplies: ['식당 표현', '교통 표현', '긴급 표현', '번역 해줘'],
+  };
 }
 
 // ==================== 헬퍼 함수 ====================

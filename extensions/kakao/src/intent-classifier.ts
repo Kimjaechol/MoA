@@ -25,6 +25,10 @@ export type IntentType =
   | 'creative_music' // 음악 생성
   | 'creative_emoticon' // 이모티콘 생성
   | 'creative_qrcode' // QR 코드 생성
+  | 'freepik_generate' // Freepik AI 이미지 생성
+  | 'freepik_search' // Freepik 리소스 검색
+  | 'translate' // 실시간 번역
+  | 'travel_help' // 여행 통역 도우미
   | 'billing'; // 과금 관련
 
 export interface ClassifiedIntent {
@@ -51,6 +55,55 @@ const INTENT_PATTERNS: {
     type: 'billing',
     patterns: [/^(잔액|크레딧|충전|요금|결제|결제내역|api\s*키)/i],
     priority: 100,
+  },
+
+  // Freepik 요청 (이미지 생성 + 리소스 검색)
+  {
+    type: 'freepik_generate',
+    patterns: [
+      /freepik.*(생성|만들|그려)/i,
+      /프리픽.*(생성|만들|그려)/i,
+      /freepik.*image/i,
+      /프리픽.*이미지/,
+    ],
+    priority: 95,
+  },
+  {
+    type: 'freepik_search',
+    patterns: [
+      /freepik.*(검색|찾아|search)/i,
+      /프리픽.*(검색|찾아|리소스)/i,
+      /freepik.*(벡터|사진|템플릿|소스)/i,
+    ],
+    priority: 95,
+  },
+
+  // 번역 / 여행 통역
+  {
+    type: 'translate',
+    patterns: [
+      /^\/번역/,
+      /^\/음성번역/,
+      /번역.*(해줘|해\s*줘|부탁)/,
+      /통역.*(해줘|해\s*줘|부탁)/,
+      /일본어로.*(뭐|어떻게|말해)/,
+      /한국어로.*(뭐|어떻게|말해)/,
+      /뭐라고.*(했|말|뜻)/,
+      /무슨\s*뜻/,
+    ],
+    priority: 92,
+  },
+  {
+    type: 'travel_help',
+    patterns: [
+      /^\/여행표현/,
+      /^\/여행도우미/,
+      /^\/여행통역/,
+      /^\/일본어/,
+      /여행.*(표현|회화|문장)/,
+      /일본.*(여행|회화|표현).*(알려|가르쳐)/,
+    ],
+    priority: 92,
   },
 
   // 창작 요청
@@ -310,6 +363,25 @@ export function getSystemPromptForIntent(intent: ClassifiedIntent): string {
     creative_music: `${basePrompt}
 음악 생성 요청을 처리할 때는 원하는 분위기, 장르, 용도를 확인하세요.
 생성된 음악의 특징과 사용 방법을 안내하세요.`,
+
+    freepik_generate: `${basePrompt}
+Freepik AI 이미지 생성 요청을 처리합니다.
+모델 선택(Mystic/HyperFlux/Classic), 비율, 해상도 옵션을 안내하세요.
+생성된 이미지의 수정 및 업스케일 가능 여부를 알려주세요.`,
+
+    freepik_search: `${basePrompt}
+Freepik 디자인 리소스 검색을 처리합니다.
+검색된 리소스의 유형(사진/벡터/PSD/AI), 라이선스, 다운로드 방법을 안내하세요.`,
+
+    translate: `${basePrompt}
+실시간 번역을 처리합니다. 특히 일본어↔한국어 번역에 특화되어 있습니다.
+번역 결과와 함께 발음 가이드(로마지/한글 표기)를 제공하세요.
+존댓말/반말 구분이 중요한 경우 이를 안내하세요.`,
+
+    travel_help: `${basePrompt}
+일본 여행 통역 도우미 모드입니다.
+상황별(식당/교통/쇼핑/호텔/긴급) 필수 일본어 표현을 한국어 발음과 함께 제공하세요.
+실용적이고 즉시 사용 가능한 표현에 집중하세요.`,
   };
 
   return intentPrompts[intent.type] || basePrompt;
