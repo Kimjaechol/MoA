@@ -52,6 +52,13 @@ import {
   type ExtendedWipeCommand,
   type WipeStrategy,
 } from "./remote-wipe.js";
+import {
+  activateLocationTracking,
+  reportDeviceLocation,
+  deactivateLocationTracking,
+  formatTrackingActivated,
+  type GpsCoordinate,
+} from "./device-location-tracker.js";
 import type { WipeCommand } from "../relay/types.js";
 
 // Emergency backup retry configuration
@@ -85,6 +92,8 @@ export async function reportLostDevice(params: {
   needsDeviceSelection?: boolean;
   /** Available devices for selection */
   availableDevices?: Array<{ id: string; name: string; isOnline: boolean }>;
+  /** GPS 추적 세션 ID (추적 활성화 시) */
+  trackingSessionId?: string;
   error?: string;
 }> {
   // If no target device specified, we need to list devices
@@ -131,32 +140,68 @@ export async function reportLostDevice(params: {
     params.targetDeviceName = device.deviceName;
   }
 
-  // Request the wipe (this handles backup check, token revocation, etc.)
-  const result = await requestRemoteWipe({
-    userId: params.userId,
-    targetDeviceId: params.targetDeviceId!,
-    targetDeviceName: params.targetDeviceName!,
-    scope: "all",
-    requestedBy: params.reportedBy,
-    requestChannel: params.reportChannel,
-  });
+  // ━━ 동시 실행: 원격 삭제 요청 + GPS 추적 활성화 ━━
+  const [wipeResult, trackingResult] = await Promise.all([
+    // 1) 원격 삭제 요청 (백업 확인, 토큰 폐기, 명령 큐잉)
+    requestRemoteWipe({
+      userId: params.userId,
+      targetDeviceId: params.targetDeviceId!,
+      targetDeviceName: params.targetDeviceName!,
+      scope: "all",
+      requestedBy: params.reportedBy,
+      requestChannel: params.reportChannel,
+    }),
+    // 2) GPS 실시간 추적 활성화 (분실 기기 회수용)
+    activateLocationTracking({
+      userId: params.userId,
+      deviceId: params.targetDeviceId!,
+      deviceName: params.targetDeviceName!,
+      config: {
+        intervalSec: 30,
+        highAccuracy: true,
+        expirationHours: 72,
+      },
+    }),
+  ]);
 
-  if (!result.success) {
-    return { success: false, error: result.error };
+  if (!wipeResult.success) {
+    return { success: false, error: wipeResult.error };
   }
 
-  // Generate confirmation message
-  const confirmationMessage = formatWipeConfirmation({
+  // wipe 명령 ID를 추적 세션에 연결
+  if (trackingResult.success && trackingResult.sessionId && wipeResult.wipeId) {
+    // 비동기 업데이트 (실패해도 무시)
+    activateLocationTracking({
+      userId: params.userId,
+      deviceId: params.targetDeviceId!,
+      deviceName: params.targetDeviceName!,
+      wipeCommandId: wipeResult.wipeId,
+    }).catch(() => {});
+  }
+
+  // 확인 메시지 = 삭제 안내 + GPS 추적 안내
+  const wipeConfirmation = formatWipeConfirmation({
     deviceName: params.targetDeviceName!,
     scope: "all",
-    hasBackup: result.backupVerified ?? false,
-    strategy: result.strategy!,
+    hasBackup: wipeResult.backupVerified ?? false,
+    strategy: wipeResult.strategy!,
   });
+
+  const trackingNotice = trackingResult.success
+    ? "\n\n" + formatTrackingActivated({
+        deviceName: params.targetDeviceName!,
+        intervalSec: 30,
+        expiresInHours: 72,
+      })
+    : "";
+
+  const confirmationMessage = wipeConfirmation + trackingNotice;
 
   return {
     success: true,
     confirmationMessage,
-    strategy: result.strategy,
+    strategy: wipeResult.strategy,
+    trackingSessionId: trackingResult.sessionId,
   };
 }
 
@@ -187,6 +232,8 @@ export async function executeDeviceWipe(params: {
   performEmergencyBackup: () => Promise<{ success: boolean; version?: number; error?: string }>;
   /** Function to notify user through the reporting channel */
   notifyUser: (message: string) => Promise<void>;
+  /** Function to get current GPS coordinates (for last-known-location before wipe) */
+  getCurrentLocation?: () => Promise<GpsCoordinate | null>;
 }): Promise<{
   success: boolean;
   wipedFiles: number;
@@ -247,6 +294,26 @@ export async function executeDeviceWipe(params: {
     }
   }
 
+  // ── Phase 1.5: 삭제 직전 최종 GPS 좌표 전송 ──
+  // 삭제 후에는 위치 수집 불가 → 마지막 위치를 반드시 기록
+  if (params.getCurrentLocation) {
+    try {
+      const lastCoord = await params.getCurrentLocation();
+      if (lastCoord) {
+        await reportDeviceLocation({
+          userId,
+          deviceId,
+          coordinate: lastCoord,
+        });
+        await notifyUser(
+          `📍 삭제 직전 마지막 위치: ${lastCoord.latitude.toFixed(5)}, ${lastCoord.longitude.toFixed(5)}\nhttps://map.kakao.com/?q=${lastCoord.latitude},${lastCoord.longitude}`,
+        );
+      }
+    } catch {
+      // 위치 수집 실패해도 삭제는 계속 진행
+    }
+  }
+
   // ── Phase 2: Secure Wipe ──
   const wipeResult = securityManager.secureWipeAll({
     dbPaths,
@@ -263,6 +330,9 @@ export async function executeDeviceWipe(params: {
     backupCompleted,
     backupVersion,
   });
+
+  // ── Phase 3.5: GPS 추적 종료 (삭제 완료 후) ──
+  await deactivateLocationTracking({ userId, deviceId }).catch(() => {});
 
   // Notify user of completion
   const completionNotice = formatWipeCompletionNotice({
@@ -310,6 +380,8 @@ export async function handleHeartbeatWipeCheck(params: {
   performEmergencyBackup: () => Promise<{ success: boolean; version?: number; error?: string }>;
   /** User notification function */
   notifyUser: (message: string) => Promise<void>;
+  /** GPS location getter (for last-known-location before wipe) */
+  getCurrentLocation?: () => Promise<GpsCoordinate | null>;
 }): Promise<{ wipeExecuted: boolean }> {
   const wipeCommand = await checkPendingWipe({
     userId: params.userId,
@@ -334,6 +406,7 @@ export async function handleHeartbeatWipeCheck(params: {
     credentialPaths: params.credentialPaths,
     performEmergencyBackup: params.performEmergencyBackup,
     notifyUser: params.notifyUser,
+    getCurrentLocation: params.getCurrentLocation,
   });
 
   return { wipeExecuted: true };
@@ -349,27 +422,39 @@ export function formatLostDeviceHelp(): string {
     "📱 휴대폰 · 💻 노트북 · 🖥 데스크톱 · 📱 태블릿 · 🖧 서버",
     "어떤 기기든 동일한 보안이 적용됩니다.",
     "",
-    "━━ 명령어 ━━",
-    "/분실신고 [기기이름]  — 분실 신고 (원격 삭제 요청)",
+    "━━ 분실 관리 명령어 ━━",
+    "/분실신고 [기기이름]  — 분실 신고 (원격 삭제 + GPS 추적 동시 시작)",
     "/분실확인             — 삭제 확인 (실행)",
     "/분실취소             — 삭제 취소",
     "/분실상태             — 삭제 진행 상태 확인",
     "/보안상태             — 전체 기기 보안 상태",
     "",
+    "━━ GPS 추적 명령어 ━━",
+    "/기기위치             — 분실 기기 최신 GPS 좌표 + 지도 링크",
+    "/분실추적             — 기기 이동 경로 (위치 이력)",
+    "/추적상태             — GPS 추적 활성 상태 확인",
+    "/추적종료             — GPS 추적 종료",
+    "",
     "━━ 보안 흐름 ━━",
-    "1. /분실신고 → 기기 접근 토큰 즉시 폐기",
+    "1. /분실신고 → 기기 접근 토큰 즉시 폐기 + GPS 추적 활성화",
     "   (절취자는 MoA 릴레이 접근 불가)",
-    "2. 기기 온라인 시 → 자동 백업 → 데이터 삭제",
+    "   (기기 위치는 30초마다 서버로 전송)",
+    "2. 기기 온라인 시 → GPS 추적 시작 + 자동 백업 → 데이터 삭제",
     "   (3중 덮어쓰기: 0x00 → 0xFF → 랜덤 → 삭제)",
-    "3. 새 기기에서 → /동기화 다운로드로 복구",
+    "   (삭제 직전 마지막 위치 전송)",
+    "3. /기기위치로 실시간 위치 확인 → 기기 회수",
+    "4. 새 기기에서 → /동기화 다운로드로 복구",
     "",
     "━━ 예시 ━━",
     "/분실신고 내폰          — 휴대폰 분실 신고",
     "/분실신고 사무실노트북   — 노트북 분실 신고",
-    "/분실신고 집PC          — 데스크톱 분실 신고",
+    "/기기위치 내폰          — 분실 폰 현재 위치 확인",
     "",
     "💡 백업이 없어도 안전합니다:",
     "   기기가 온라인되면 먼저 백업한 후 삭제합니다.",
+    "",
+    "📡 GPS 추적은 72시간 후 자동 만료됩니다.",
+    "   위치 데이터는 30일간 보관됩니다.",
   ].join("\n");
 }
 

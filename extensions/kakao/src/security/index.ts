@@ -67,5 +67,32 @@ export {
   type PlatformInfo,
 } from "./platform-security.js";
 
+// Device location tracking (분실 기기 실시간 GPS 추적)
+export {
+  activateLocationTracking,
+  checkActiveTracking,
+  cleanupExpiredTrackingData,
+  deactivateLocationTracking,
+  formatLatestLocation,
+  formatLocationHistory,
+  formatTrackingActivated,
+  formatTrackingStatus,
+  getAllTrackingSessions,
+  getLatestLocation,
+  getLocationHistory,
+  reportDeviceLocation,
+  type GpsCoordinate,
+  type LocationEntry,
+  type LocationTrackingSession,
+  type TrackingConfig,
+} from "./device-location-tracker.js";
+
 // Re-export types
-export type { DeviceSecurityConfig, WipeCommand, WipeStatus } from "../relay/types.js";
+export type {
+  DeviceSecurityConfig,
+  ExtendedHeartbeatResponse,
+  LocationReport,
+  LocationTrackingCommand,
+  WipeCommand,
+  WipeStatus,
+} from "../relay/types.js";

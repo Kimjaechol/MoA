@@ -357,3 +357,51 @@ export interface WipeStatus {
   requestedAt?: string;
   executedAt?: string;
 }
+
+// ============================================
+// Location Tracking Types (분실 기기 GPS 추적)
+// ============================================
+
+/** Heartbeat 응답에 포함되는 위치 추적 명령 */
+export interface LocationTrackingCommand {
+  /** GPS 추적 활성 여부 */
+  tracking: boolean;
+  /** 추적 세션 ID */
+  sessionId?: string;
+  /** GPS 수집 간격 (초) */
+  intervalSec?: number;
+  /** 고정밀 GPS 모드 */
+  highAccuracy?: boolean;
+}
+
+/** 기기가 서버로 전송하는 위치 보고 */
+export interface LocationReport {
+  /** 위도 */
+  latitude: number;
+  /** 경도 */
+  longitude: number;
+  /** 정확도 (미터) */
+  accuracy: number;
+  /** 고도 (미터, 선택) */
+  altitude?: number;
+  /** 속도 (m/s, 선택) */
+  speed?: number;
+  /** 방향 (degrees, 선택) */
+  bearing?: number;
+  /** GPS 측정 시각 (ISO 8601) */
+  measuredAt: string;
+  /** 위치 제공자 */
+  provider?: "gps" | "network" | "fused";
+  /** 배터리 잔량 (%) */
+  batteryLevel?: number;
+  /** 네트워크 상태 */
+  networkType?: "wifi" | "cellular" | "none";
+  /** 이동 중 여부 */
+  isMoving?: boolean;
+}
+
+/** 확장된 Heartbeat 응답 (위치 추적 포함) */
+export interface ExtendedHeartbeatResponse extends HeartbeatResponse {
+  /** 위치 추적 명령 (분실 모드일 때) */
+  locationTracking?: LocationTrackingCommand;
+}

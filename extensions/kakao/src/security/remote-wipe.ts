@@ -364,6 +364,7 @@ export function formatWipeStatus(statuses: WipeStatus[]): string {
       if (!s.isOnline) {
         statusText += "\n    기기가 온라인되면 자동 백업 후 삭제됩니다.";
       }
+      statusText += "\n    📡 GPS 추적 활성화됨 (30초 간격)";
     } else if (s.executedAt) {
       const execDate = new Date(s.executedAt).toLocaleString("ko-KR");
       statusText += ` — ✅ 삭제 완료 (${execDate})`;
@@ -373,6 +374,8 @@ export function formatWipeStatus(statuses: WipeStatus[]): string {
 
     lines.push(statusText);
   }
+
+  lines.push("", "💡 /기기위치 — 분실 기기 위치 확인");
 
   return lines.join("\n");
 }
