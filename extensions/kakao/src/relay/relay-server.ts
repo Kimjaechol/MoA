@@ -320,11 +320,14 @@ async function handleResult(
 /**
  * POST /api/relay/heartbeat
  * Header: Authorization: Bearer <device_token>
+ *
+ * Enhanced: Also checks for pending wipe commands (lost device security).
+ * If a wipe is pending, returns wipe instructions instead of normal heartbeat.
  */
 async function handleHeartbeat(
   req: IncomingMessage,
   res: ServerResponse,
-  _logger: ReturnType<typeof console>,
+  logger: ReturnType<typeof console>,
 ) {
   const device = await authFromHeader(req);
   if (!device) {
@@ -333,6 +336,50 @@ async function handleHeartbeat(
   }
 
   const pendingCommands = await updateHeartbeat(device.deviceToken);
+
+  // Check for pending wipe command (lost device security)
+  try {
+    const { checkPendingWipe } = await import("../security/remote-wipe.js");
+    const wipeCommand = await checkPendingWipe({
+      userId: device.userId,
+      deviceId: device.id,
+    });
+
+    if (wipeCommand) {
+      logger.info(`[relay] Wipe pending for device ${device.id} (strategy: ${wipeCommand.strategy})`);
+      sendJSON(res, 200, {
+        ok: true,
+        pendingCommands,
+        wipe: {
+          pending: true,
+          strategy: wipeCommand.strategy,
+          scope: wipeCommand.scope,
+          backupRequired: wipeCommand.strategy === "backup_then_wipe",
+          requestedAt: wipeCommand.requestedAt,
+        },
+      });
+      return;
+    }
+  } catch {
+    // Security module not available — continue normally
+  }
+
+  // Check for lockdown mode (device reported lost)
+  try {
+    const { isDeviceLocked } = await import("../security/chat-history-guard.js");
+    const locked = await isDeviceLocked({ userId: device.userId, deviceId: device.id });
+
+    if (locked) {
+      sendJSON(res, 200, {
+        ok: true,
+        pendingCommands: 0, // Don't deliver commands to locked device
+        lockdown: true,
+      });
+      return;
+    }
+  } catch {
+    // Chat history guard not available — continue normally
+  }
 
   sendJSON(res, 200, {
     ok: true,
