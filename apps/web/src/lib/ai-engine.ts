@@ -123,6 +123,7 @@ function buildLLMMessages(
 
 export function detectCategory(text: string): string {
   const lower = text.toLowerCase();
+  if (/통역|실시간.*번역|interpret|voice.*translat|simultaneous.*translat|한영.*통역|한일.*통역|한중.*통역/.test(lower)) return "interpreter";
   if (/코드|코딩|프로그래밍|debug|bug|function|class|import|git|code/.test(lower)) return "coding";
   if (/문서|보고서|요약|번역|pptx|docx|pdf|document|report/.test(lower)) return "document";
   if (/이미지|그림|사진|그려|image|photo|draw/.test(lower)) return "image";
@@ -166,6 +167,14 @@ const CATEGORY_SYSTEM_PROMPTS: Record<string, string> = {
   coding: `You are an expert software engineer. Help with code writing, debugging, code review, and automated coding tasks. Include code snippets and technical details.${LANGUAGE_RULE}${CROSS_CHANNEL_CONTEXT}`,
   image: `You are an image/visual AI assistant. Help with image generation prompts, editing instructions, image analysis, and style transfer.${LANGUAGE_RULE}${CROSS_CHANNEL_CONTEXT}`,
   music: `You are a music AI assistant. Help with composition, lyrics writing, TTS, and music analysis.${LANGUAGE_RULE}${CROSS_CHANNEL_CONTEXT}`,
+  interpreter: `You are a professional real-time interpreter powered by Gemini 2.5 Flash Native Audio. You provide instant, accurate translation between multiple languages (25+ supported). Preserve meaning, tone, and cultural nuances. Support bidirectional interpretation. When the user says "통역" or "통역 시작", guide them to select source and target languages, then begin real-time interpretation mode. Supported languages include: Korean, English, Japanese, Chinese (Simplified/Traditional), Spanish, French, German, Italian, Portuguese, Russian, Arabic, Hindi, Thai, Vietnamese, Indonesian, and more.
+
+[INTERPRETER MODE RULES]
+- When translating, always show: [원문] Original text → [번역] Translated text
+- Preserve formality levels and cultural context
+- For voice interpretation requests, guide users to use the MoA desktop or mobile app for real-time audio
+- Support domain-specific vocabulary: business, medical, legal, technical
+${LANGUAGE_RULE}${CROSS_CHANNEL_CONTEXT}`,
   other: `You are MoA, a versatile AI assistant with 100+ skills across 15 channels. Help with any request.${LANGUAGE_RULE}${CROSS_CHANNEL_CONTEXT}`,
 };
 
@@ -176,6 +185,7 @@ export const CATEGORY_SKILLS: Record<string, string[]> = {
   coding: ["code", "debug", "github", "autocode", "vision", "terminal"],
   image: ["fal-ai", "replicate", "vision", "image-edit", "style-transfer"],
   music: ["tts", "suno", "lyrics", "music-analysis", "podcast"],
+  interpreter: ["realtime-translate", "voice-interpret", "language-detect", "bidirectional-interpret", "gemini-live"],
   other: ["search", "translate", "summarize", "general"],
 };
 

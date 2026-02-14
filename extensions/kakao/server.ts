@@ -84,6 +84,10 @@ import {
   startDiscordGateway,
   stopDiscordGateway,
   isDiscordConfigured,
+  handleSlackRequest,
+  isSlackConfigured,
+  handleLineRequest,
+  isLineConfigured,
 } from "./src/channels/index.js";
 import {
   getLoadedSkills,
@@ -1673,6 +1677,8 @@ async function main() {
             telegram: isTelegramConfigured(),
             whatsapp: isWhatsAppConfigured(),
             discord: isDiscordConfigured(),
+            slack: isSlackConfigured(),
+            line: isLineConfigured(),
             ownerAuth: isOwnerAuthEnabled(),
             accounts: getAccountCount(),
             registeredUsers: getUserSecretCount(),
@@ -1694,6 +1700,14 @@ async function main() {
         }
         // WhatsApp webhook (/whatsapp/webhook)
         if (handleWhatsAppRequest(req, res, aiOnMessage, console)) {
+          return true;
+        }
+        // Slack webhook (/slack/webhook)
+        if (handleSlackRequest(req, res, aiOnMessage, console)) {
+          return true;
+        }
+        // LINE webhook (/line/webhook)
+        if (handleLineRequest(req, res, aiOnMessage, console)) {
           return true;
         }
         // Settings page (/settings/*)
@@ -1722,6 +1736,16 @@ async function main() {
     // Log WhatsApp webhook
     if (isWhatsAppConfigured()) {
       console.log(`[MoA] WhatsApp webhook: ${localBase}/whatsapp/webhook`);
+    }
+
+    // Log Slack webhook
+    if (isSlackConfigured()) {
+      console.log(`[MoA] Slack webhook: ${localBase}/slack/webhook`);
+    }
+
+    // Log LINE webhook
+    if (isLineConfigured()) {
+      console.log(`[MoA] LINE webhook: ${localBase}/line/webhook`);
     }
 
     // Register Telegram webhook if configured
