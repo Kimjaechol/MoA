@@ -9,17 +9,17 @@ const path = require("path");
 const sharp = require("sharp");
 
 const ICONS_DIR = path.join(__dirname, "icons");
-const SVG_PATH = path.join(ICONS_DIR, "icon.svg");
+const SOURCE_PATH = path.join(ICONS_DIR, "icon-source.png");
 const SIZES = [16, 32, 48, 64, 128, 256, 512, 1024];
 
 async function main() {
-  const svgBuffer = fs.readFileSync(SVG_PATH);
-  console.log("Generating MoA desktop app icons...");
+  const sourceBuffer = fs.readFileSync(SOURCE_PATH);
+  console.log("Generating MoA desktop app icons from source PNG...");
 
   // Generate PNGs at all sizes
   for (const size of SIZES) {
     const outPath = path.join(ICONS_DIR, `icon-${size}.png`);
-    await sharp(svgBuffer)
+    await sharp(sourceBuffer)
       .resize(size, size)
       .png()
       .toFile(outPath);
@@ -45,7 +45,7 @@ async function main() {
   const icoSizes = [16, 32, 48, 64, 128, 256];
   const pngBuffers = [];
   for (const size of icoSizes) {
-    const buf = await sharp(svgBuffer)
+    const buf = await sharp(sourceBuffer)
       .resize(size, size)
       .png()
       .toBuffer();
