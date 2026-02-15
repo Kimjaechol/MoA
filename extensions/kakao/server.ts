@@ -84,6 +84,10 @@ import {
   startDiscordGateway,
   stopDiscordGateway,
   isDiscordConfigured,
+  handleSlackRequest,
+  isSlackConfigured,
+  handleLineRequest,
+  isLineConfigured,
 } from "./src/channels/index.js";
 import {
   getLoadedSkills,
@@ -343,6 +347,9 @@ function detectLlmProvider(): {
   return null;
 }
 
+/** Max response tokens — configurable via MOA_MAX_TOKENS (default 1000, lower = faster for Kakao 5s limit) */
+const MOA_MAX_TOKENS = Math.max(1, Math.min(4096, Number(process.env.MOA_MAX_TOKENS) || 1000));
+
 /**
  * Call Anthropic API
  */
@@ -361,7 +368,7 @@ async function callAnthropic(
     },
     body: JSON.stringify({
       model,
-      max_tokens: 1000,
+      max_tokens: MOA_MAX_TOKENS,
       system: systemPrompt,
       messages: [{ role: "user", content: userMessage }],
     }),
@@ -397,7 +404,7 @@ async function callOpenAICompatible(
     },
     body: JSON.stringify({
       model,
-      max_tokens: 1000,
+      max_tokens: MOA_MAX_TOKENS,
       messages: [
         { role: "system", content: systemPrompt },
         { role: "user", content: userMessage },
@@ -434,7 +441,7 @@ async function callGemini(
       body: JSON.stringify({
         systemInstruction: { parts: [{ text: systemPrompt }] },
         contents: [{ role: "user", parts: [{ text: userMessage }] }],
-        generationConfig: { maxOutputTokens: 1000 },
+        generationConfig: { maxOutputTokens: MOA_MAX_TOKENS },
       }),
       signal: AbortSignal.timeout(25000),
     },
@@ -1673,6 +1680,8 @@ async function main() {
             telegram: isTelegramConfigured(),
             whatsapp: isWhatsAppConfigured(),
             discord: isDiscordConfigured(),
+            slack: isSlackConfigured(),
+            line: isLineConfigured(),
             ownerAuth: isOwnerAuthEnabled(),
             accounts: getAccountCount(),
             registeredUsers: getUserSecretCount(),
@@ -1694,6 +1703,14 @@ async function main() {
         }
         // WhatsApp webhook (/whatsapp/webhook)
         if (handleWhatsAppRequest(req, res, aiOnMessage, console)) {
+          return true;
+        }
+        // Slack webhook (/slack/webhook)
+        if (handleSlackRequest(req, res, aiOnMessage, console)) {
+          return true;
+        }
+        // LINE webhook (/line/webhook)
+        if (handleLineRequest(req, res, aiOnMessage, console)) {
           return true;
         }
         // Settings page (/settings/*)
@@ -1722,6 +1739,16 @@ async function main() {
     // Log WhatsApp webhook
     if (isWhatsAppConfigured()) {
       console.log(`[MoA] WhatsApp webhook: ${localBase}/whatsapp/webhook`);
+    }
+
+    // Log Slack webhook
+    if (isSlackConfigured()) {
+      console.log(`[MoA] Slack webhook: ${localBase}/slack/webhook`);
+    }
+
+    // Log LINE webhook
+    if (isLineConfigured()) {
+      console.log(`[MoA] LINE webhook: ${localBase}/line/webhook`);
     }
 
     // Register Telegram webhook if configured

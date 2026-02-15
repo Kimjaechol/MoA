@@ -19,6 +19,7 @@ const CATEGORIES = [
   { id: "coding", label: "코딩작업", icon: "\u{1F4BB}", color: "#4caf50", desc: "코드 작성, 디버깅, 리뷰, 자동코딩" },
   { id: "image", label: "이미지작업", icon: "\u{1F3A8}", color: "#e91e63", desc: "이미지 생성, 편집, 분석, 변환" },
   { id: "music", label: "음악작업", icon: "\u{1F3B5}", color: "#ff9800", desc: "작곡, 편곡, 음악 분석, TTS" },
+  { id: "interpreter", label: "실시간 통역", icon: "\u{1F5E3}\uFE0F", color: "#FF6B6B", desc: "한국어, 영어, 일본어, 중국어 등 25개 언어 실시간 통역" },
   { id: "other", label: "기타", icon: "\u2728", color: "#9a9ab0", desc: "기타 질문 및 자유 대화" },
 ] as const;
 
@@ -62,6 +63,12 @@ const CATEGORY_ACTIONS: Record<CategoryId, Array<{ icon: string; label: string; 
     { icon: "\u{1F50A}", label: "TTS 변환", message: "텍스트를 음성으로 변환해줘" },
     { icon: "\u{1F3B9}", label: "음악 분석", message: "이 곡을 분석해줘" },
   ],
+  interpreter: [
+    { icon: "\u{1F1F0}\u{1F1F7}", label: "한영 통역", message: "한국어-영어 실시간 통역 시작해줘" },
+    { icon: "\u{1F1EF}\u{1F1F5}", label: "한일 통역", message: "한국어-일본어 실시간 통역 시작해줘" },
+    { icon: "\u{1F1E8}\u{1F1F3}", label: "한중 통역", message: "한국어-중국어 실시간 통역 시작해줘" },
+    { icon: "\u{1F310}", label: "언어 선택", message: "통역 가능한 언어 목록 보여줘" },
+  ],
   other: [
     { icon: "\u{1F44B}", label: "안녕하세요", message: "안녕하세요!" },
     { icon: "\u2753", label: "무엇을 할 수 있나요?", message: "도움말" },
@@ -76,6 +83,7 @@ const MAIN_NAV = [
   { href: "/synthesis", icon: "\u{1F4D1}", label: "종합문서" },
   { href: "/autocode", icon: "\u{1F916}", label: "AI 자동코딩" },
   { href: "/editor", icon: "\u{1F4DD}", label: "문서 에디터" },
+  { href: "/interpreter", icon: "\u{1F5E3}\uFE0F", label: "실시간 통역" },
   { href: "/channels", icon: "\u{1F4E1}", label: "채널 허브" },
   { href: "/download", icon: "\u{1F4E5}", label: "다운로드" },
   { href: "/billing", icon: "\u{1F4B3}", label: "결제" },

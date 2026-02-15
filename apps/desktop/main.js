@@ -233,6 +233,15 @@ function createTray() {
         }
       },
     },
+    {
+      label: "실시간 통역",
+      click: () => {
+        if (mainWindow) {
+          mainWindow.loadURL(`${MOA_URL}/interpreter`);
+          mainWindow.show();
+        }
+      },
+    },
     { type: "separator" },
     {
       label: "업데이트 확인",

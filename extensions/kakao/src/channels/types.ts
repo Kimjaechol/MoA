@@ -1,13 +1,13 @@
 /**
  * Unified MoA Channel Types
  *
- * Shared types for all messaging channels (KakaoTalk, Telegram, WhatsApp, Discord).
+ * Shared types for all messaging channels (KakaoTalk, Telegram, WhatsApp, Discord, Slack, LINE).
  * Each channel adapter converts platform-specific messages to/from this format.
  */
 
 /** Context about which channel a message came from */
 export interface ChannelContext {
-  channelId: "kakao" | "telegram" | "whatsapp" | "discord";
+  channelId: "kakao" | "telegram" | "whatsapp" | "discord" | "slack" | "line";
   channelName: string;
   userId: string;
   userName: string;

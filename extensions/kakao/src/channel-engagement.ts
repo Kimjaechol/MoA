@@ -17,6 +17,7 @@ import type { ResolvedKakaoAccount } from "./types.js";
 import { createNotificationService, type NotificationService } from "./notification-service.js";
 import { createKakaoApiClient } from "./api-client.js";
 import { getSupabase, isSupabaseConfigured } from "./supabase.js";
+import { routeMessageFreeOnly, hasConnectedDevices, isFcmConfigured } from "./push/index.js";
 
 // ============================================
 // 1. Channel Subscription Check + AlimTalk
@@ -189,8 +190,27 @@ export async function sendDailyWeatherGreeting(account: ResolvedKakaoAccount): P
       continue;
     }
 
-    const result = await notifier.sendFriendTalk(user.phone_number, greetingMessage);
-    if (result.success) {
+    // 무료 우선 발송: Gateway/FCM 먼저, 실패 시에만 FriendTalk
+    let delivered = false;
+
+    if (hasConnectedDevices(user.id) || isFcmConfigured()) {
+      const freeResult = await routeMessageFreeOnly(user.id, {
+        title: "좋은 아침이에요!",
+        body: greetingMessage,
+        data: { type: "daily_weather" },
+      });
+      if (freeResult.success) {
+        delivered = true;
+      }
+    }
+
+    // 무료 채널 실패 시 FriendTalk 폴백
+    if (!delivered && user.phone_number) {
+      const result = await notifier.sendFriendTalk(user.phone_number, greetingMessage);
+      delivered = result.success;
+    }
+
+    if (delivered) {
       sent++;
       lastWeatherSent.set(user.id, Date.now());
     } else {

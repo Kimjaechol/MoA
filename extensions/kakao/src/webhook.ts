@@ -2,6 +2,8 @@ import { randomBytes } from "node:crypto";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import type { KakaoIncomingMessage, KakaoSkillResponse, ResolvedKakaoAccount } from "./types.js";
 import { createKakaoApiClient } from "./api-client.js";
+import { sendProactiveMessage, isProactiveMessagingConfigured, getUserPhoneNumber } from "./proactive-messaging.js";
+import { routeMessageFreeOnly, hasConnectedDevices, isFcmConfigured } from "./push/index.js";
 // lawcall-router is available for legal consultation features when needed
 // import { getConsultationButton, isLegalQuestion } from "./lawcall-router.js";
 import {
@@ -278,16 +280,85 @@ export async function startKakaoWebhook(opts: KakaoWebhookOptions): Promise<{
         usedPlatformKey = !billingCheck.billingCheck?.useCustomKey;
       }
 
-      // Step 3: Call the message handler (AI agent)
-      // Use effective user ID for unified identity (shared credits, settings, memory)
-      const result = await onMessage({
+      // Step 3: Call the message handler (AI agent) with 4.5s timeout guard
+      // Kakao i Open Builder requires HTTP response within 5 seconds.
+      // We race the AI call against a 4.5s deadline (500ms buffer for response serialization).
+      // If the AI call exceeds the deadline, we return a "처리 중" message and
+      // deliver the actual response via FriendTalk asynchronously.
+      const KAKAO_DEADLINE_MS = 4500;
+
+      const messageParams = {
         userId: resolvedUser.effectiveUserId,
         userType,
         text: utterance,
         botId,
         blockId,
         timestamp: Date.now(),
-      });
+      };
+
+      const aiPromise = onMessage(messageParams);
+      const timeoutPromise = new Promise<null>((resolve) =>
+        setTimeout(() => resolve(null), KAKAO_DEADLINE_MS),
+      );
+
+      const raceResult = await Promise.race([aiPromise, timeoutPromise]);
+      const timedOut = raceResult === null;
+
+      if (timedOut) {
+        // Respond to Kakao immediately with a "processing" message
+        const pendingResponse = apiClient.buildSkillResponse(
+          "⏳ 답변을 준비하고 있습니다. 잠시 후 메시지로 전달해 드릴게요.",
+        );
+        res.writeHead(200, { "Content-Type": "application/json" });
+        res.end(JSON.stringify(pendingResponse));
+        logger.warn(
+          `[kakao] AI response timed out (>${KAKAO_DEADLINE_MS}ms) for ${userId.slice(0, 8)}..., sending fallback`,
+        );
+
+        // Deliver the actual response via free-first routing (Gateway → FCM → FriendTalk)
+        aiPromise
+          .then(async (result) => {
+            // 1계층/2계층: 무료 채널 먼저 시도 (Gateway WebSocket, FCM/APNs)
+            const userIdForPush = resolvedUser.legacyUserId ?? resolvedUser.effectiveUserId;
+            if (userIdForPush && (hasConnectedDevices(userIdForPush) || isFcmConfigured())) {
+              const freeResult = await routeMessageFreeOnly(userIdForPush, {
+                title: "MoA 답변",
+                body: result.text,
+                data: { source: "kakao_timeout", userId },
+              });
+              if (freeResult.success) {
+                logger.info(`[kakao] Free-tier (${freeResult.method}) fallback delivered to ${userId.slice(0, 8)}...`);
+                return;
+              }
+              logger.info(`[kakao] Free-tier failed, trying FriendTalk for ${userId.slice(0, 8)}...`);
+            }
+
+            // 3계층: FriendTalk (유료 — 무료 채널 실패 시에만)
+            if (!isProactiveMessagingConfigured(account)) {
+              logger.warn("[kakao] No delivery channel available — timed-out response lost");
+              return;
+            }
+            const phoneNumber = await getUserPhoneNumber(userId);
+            if (!phoneNumber) {
+              logger.warn(`[kakao] No phone number for ${userId.slice(0, 8)}... — timed-out response lost`);
+              return;
+            }
+            const fallbackResult = await sendProactiveMessage(phoneNumber, result.text, account);
+            if (fallbackResult.success) {
+              logger.info(`[kakao] FriendTalk fallback (paid) delivered to ${userId.slice(0, 8)}...`);
+            } else {
+              logger.error(`[kakao] FriendTalk fallback failed: ${fallbackResult.error}`);
+            }
+          })
+          .catch((err) => {
+            logger.error(`[kakao] AI call failed after timeout: ${err}`);
+          });
+
+        return;
+      }
+
+      // AI responded within deadline — normal flow
+      const result = raceResult;
 
       // Step 4 & 5: Post-billing deduct — only when Supabase is configured
       let finalText = result.text;

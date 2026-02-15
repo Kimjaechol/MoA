@@ -99,6 +99,16 @@ const nextConfig: NextConfig = {
         source: "/discord/webhook",
         destination: `${RAILWAY_BACKEND}/discord/webhook`,
       },
+      // Slack webhook proxy
+      {
+        source: "/slack/webhook",
+        destination: `${RAILWAY_BACKEND}/slack/webhook`,
+      },
+      // LINE webhook proxy
+      {
+        source: "/line/webhook",
+        destination: `${RAILWAY_BACKEND}/line/webhook`,
+      },
       // Health check proxy
       {
         source: "/health",
