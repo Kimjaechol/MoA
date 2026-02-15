@@ -242,6 +242,30 @@ export const handleNodeEvent = async (ctx: NodeEventContext, nodeId: string, evt
       requestHeartbeatNow({ reason: "exec-event" });
       return;
     }
+    case "push_token.register": {
+      // 3계층 무료 우선 발송: 앱에서 보낸 FCM/APNs 푸시 토큰을 로컬에 저장
+      if (!evt.payloadJSON) {
+        return;
+      }
+      let payload: unknown;
+      try {
+        payload = JSON.parse(evt.payloadJSON) as unknown;
+      } catch {
+        return;
+      }
+      const obj =
+        typeof payload === "object" && payload !== null ? (payload as Record<string, unknown>) : {};
+      const pushToken = typeof obj.pushToken === "string" ? obj.pushToken.trim() : "";
+      const pushPlatform = typeof obj.pushPlatform === "string" ? obj.pushPlatform.trim() : "";
+      if (!pushToken || !pushPlatform) {
+        return;
+      }
+      // 노드의 푸시 토큰을 메모리에 저장 (게이트웨이 프로세스 내)
+      const { setPushToken } = await import("./push-token-registry.js");
+      setPushToken(nodeId, pushToken, pushPlatform as "fcm" | "apns");
+      ctx.deps.log?.info?.(`[push] Token registered for node ${nodeId}: ${pushPlatform}`);
+      return;
+    }
     default:
       return;
   }
