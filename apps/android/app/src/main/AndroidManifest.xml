@@ -37,6 +37,14 @@
             android:name=".NodeForegroundService"
             android:exported="false"
             android:foregroundServiceType="dataSync|microphone|mediaProjection" />
+        <!-- FCM 푸시 알림 수신 서비스 (무료 — 3계층 발송 체계 2계층) -->
+        <service
+            android:name=".push.MoaFirebaseMessagingService"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="com.google.firebase.MESSAGING_EVENT" />
+            </intent-filter>
+        </service>
         <activity
             android:name=".MainActivity"
             android:exported="true">

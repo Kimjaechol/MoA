@@ -613,6 +613,15 @@ class NodeRuntime(context: Context) {
     nodeSession.disconnect()
   }
 
+  /** FCM 푸시 토큰을 게이트웨이에 등록 (PushTokenManager에서 호출) */
+  suspend fun registerPushToken(pushToken: String, pushPlatform: String) {
+    val payload = buildJsonObject {
+      put("pushToken", JsonPrimitive(pushToken))
+      put("pushPlatform", JsonPrimitive(pushPlatform))
+    }.toString()
+    nodeSession.sendNodeEvent("push_token.register", payload)
+  }
+
   private fun resolveTlsParams(endpoint: GatewayEndpoint): GatewayTlsParams? {
     val stored = prefs.loadGatewayTlsFingerprint(endpoint.stableId)
     val hinted = endpoint.tlsEnabled || !endpoint.tlsFingerprintSha256.isNullOrBlank()

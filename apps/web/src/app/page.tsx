@@ -1108,6 +1108,18 @@ export default function Home() {
             >
               카카오톡 채널
             </a>
+            <a
+              href="/privacy"
+              style={{ color: "var(--text-muted)", fontSize: "0.95rem" }}
+            >
+              개인정보취급방침
+            </a>
+            <a
+              href="/terms"
+              style={{ color: "var(--text-muted)", fontSize: "0.95rem" }}
+            >
+              이용약관
+            </a>
           </div>
           <div
             style={{
