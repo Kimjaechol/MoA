@@ -45,14 +45,22 @@ async function verifyLineSignature(body: string, signature: string, secret: stri
 }
 
 export async function POST(request: NextRequest) {
+  console.log("[line/webhook] POST received", {
+    url: request.url,
+    hasSecret: !!process.env.LINE_CHANNEL_SECRET,
+    hasToken: !!process.env.LINE_CHANNEL_ACCESS_TOKEN,
+    signature: request.headers.get("x-line-signature") ? "present" : "missing",
+  });
   try {
     const rawBody = await request.text();
+    console.log("[line/webhook] body length:", rawBody.length, "body preview:", rawBody.slice(0, 200));
 
     // Verify LINE signature
     const channelSecret = process.env.LINE_CHANNEL_SECRET;
     if (channelSecret) {
       const lineSignature = request.headers.get("x-line-signature") ?? "";
       const isValid = await verifyLineSignature(rawBody, lineSignature, channelSecret);
+      console.log("[line/webhook] signature valid:", isValid);
       if (!isValid) {
         return NextResponse.json({ error: "Invalid signature" }, { status: 401 });
       }
