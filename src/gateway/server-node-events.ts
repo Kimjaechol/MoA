@@ -263,7 +263,7 @@ export const handleNodeEvent = async (ctx: NodeEventContext, nodeId: string, evt
       // 노드의 푸시 토큰을 메모리에 저장 (게이트웨이 프로세스 내)
       const { setPushToken } = await import("./push-token-registry.js");
       setPushToken(nodeId, pushToken, pushPlatform as "fcm" | "apns");
-      ctx.deps.log?.info?.(`[push] Token registered for node ${nodeId}: ${pushPlatform}`);
+      ctx.logGateway.warn(`[push] Token registered for node ${nodeId}: ${pushPlatform}`);
       return;
     }
     default:
