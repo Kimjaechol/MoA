@@ -1,16 +1,25 @@
 /**
  * MoA Notification Service
  *
- * High-level notification service that sends AlimTalk (알림톡) and
- * FriendTalk (친구톡) messages to users via NHN Cloud Toast API.
+ * 3계층 무료 우선 발송 체계를 지원하는 알림 서비스.
  *
- * AlimTalk: Template-based notifications (requires pre-registered templates)
- * FriendTalk: Free-form messages (only to channel friends)
+ * 발송 우선순위:
+ *   1. Gateway WebSocket 직접 전송 (무료)
+ *   2. FCM/APNs 푸시 알림 (무료)
+ *   3. AlimTalk/FriendTalk (유료 — 기본 비활성)
+ *
+ * userId 기반 발송:
+ *   notifyByUserId() — 3계층 라우터를 통해 무료 우선 발송
+ *
+ * 기존 호환 (phoneNumber 기반):
+ *   notifyDevicePaired(), sendAlimTalk() 등 — 기존 유료 경로 유지
  *
  * Usage:
  *   const notifier = createNotificationService(account);
+ *   // 무료 우선: userId로 발송
+ *   await notifier.notifyByUserId(userId, { title: "연결 완료", body: "노트북이 연결되었습니다" });
+ *   // 기존 호환: 전화번호로 알림톡 발송
  *   await notifier.notifyDevicePaired(phoneNumber, "노트북");
- *   await notifier.notifyCommandResult(phoneNumber, { ... });
  */
 
 import type { ResolvedKakaoAccount } from "./types.js";
@@ -20,12 +29,20 @@ import {
   validateTemplateParams,
   type AlimTalkTemplate,
 } from "./alimtalk-templates.js";
+import {
+  routeMessage,
+  routeMessageFreeOnly,
+  type MessagePayload,
+  type RouteResult,
+} from "./push/index.js";
 
 export interface NotificationResult {
   success: boolean;
-  method: "alimtalk" | "friendtalk" | "none";
+  method: "alimtalk" | "friendtalk" | "none" | "gateway" | "fcm" | "apns";
   error?: string;
   requestId?: string;
+  /** 무료 채널로 전달되었는지 */
+  free?: boolean;
 }
 
 export interface NotificationService {
@@ -80,6 +97,24 @@ export interface NotificationService {
 
   /** Send generic FriendTalk (free-form message) */
   sendFriendTalk(recipientNo: string, content: string): Promise<NotificationResult>;
+
+  /**
+   * 3계층 무료 우선 발송 (userId 기반)
+   *
+   * 1계층: Gateway WebSocket (무료)
+   * 2계층: FCM/APNs (무료)
+   * 3계층: 알림톡/친구톡 (유료 — allowPaidFallback=true 시에만)
+   */
+  notifyByUserId(
+    userId: string,
+    message: MessagePayload,
+    options?: { allowPaidFallback?: boolean },
+  ): Promise<NotificationResult>;
+
+  /**
+   * 무료 채널만 사용하여 발송 (Gateway + FCM 만 시도)
+   */
+  notifyFreeOnly(userId: string, message: MessagePayload): Promise<NotificationResult>;
 }
 
 /**
@@ -155,6 +190,67 @@ export function createNotificationService(account: ResolvedKakaoAccount): Notifi
         requestId: result.requestId,
       };
     },
+
+    async notifyByUserId(userId, message, options) {
+      const allowPaid = options?.allowPaidFallback ?? false;
+
+      // 3계층 유료 폴백 콜백: userId → 전화번호 조회 → 알림톡/친구톡
+      const onPaidFallback = allowPaid && configured
+        ? async (uid: string, msg: MessagePayload) => {
+            // userId로 전화번호 조회 (별도 import 없이 supabase 직접 조회)
+            const { getUserPhoneNumberById } = await import("./proactive-messaging.js");
+            const phone = await getUserPhoneNumberById(uid);
+            if (!phone) {
+              return { success: false, method: "friendtalk" as const, error: "No phone number" };
+            }
+
+            const friendResult = await apiClient.sendFriendTalk({
+              recipientNo: phone,
+              content: `${msg.title}\n\n${msg.body}`,
+            });
+            return {
+              success: friendResult.success,
+              method: "friendtalk" as const,
+              error: friendResult.error,
+            };
+          }
+        : undefined;
+
+      const result = await routeMessage({
+        userId,
+        message,
+        allowPaidFallback: allowPaid,
+        onPaidFallback,
+      });
+
+      return routeResultToNotificationResult(result);
+    },
+
+    async notifyFreeOnly(userId, message) {
+      const result = await routeMessageFreeOnly(userId, message);
+      return routeResultToNotificationResult(result);
+    },
+  };
+}
+
+/**
+ * RouteResult → NotificationResult 변환
+ */
+function routeResultToNotificationResult(result: RouteResult): NotificationResult {
+  const methodMap: Record<string, NotificationResult["method"]> = {
+    gateway: "gateway",
+    fcm: "fcm",
+    apns: "apns",
+    alimtalk: "alimtalk",
+    friendtalk: "friendtalk",
+    failed: "none",
+  };
+
+  return {
+    success: result.success,
+    method: methodMap[result.method] ?? "none",
+    error: result.error,
+    free: result.tier === 1 || result.tier === 2,
   };
 }
 
