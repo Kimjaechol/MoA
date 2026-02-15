@@ -8,6 +8,7 @@ const NAV_LINKS = [
   { href: "/synthesis", label: "문서작업", isAnchor: false },
   { href: "/autocode", label: "코딩작업", isAnchor: false },
   { href: "/editor", label: "에디터", isAnchor: false },
+  { href: "/interpreter", label: "통역", isAnchor: false },
   { href: "/channels", label: "채널", isAnchor: false },
   { href: "/download", label: "다운로드", isAnchor: false },
   { href: "/billing", label: "결제", isAnchor: false },

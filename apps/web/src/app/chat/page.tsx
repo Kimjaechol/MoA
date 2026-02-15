@@ -83,6 +83,7 @@ const MAIN_NAV = [
   { href: "/synthesis", icon: "\u{1F4D1}", label: "종합문서" },
   { href: "/autocode", icon: "\u{1F916}", label: "AI 자동코딩" },
   { href: "/editor", icon: "\u{1F4DD}", label: "문서 에디터" },
+  { href: "/interpreter", icon: "\u{1F5E3}\uFE0F", label: "실시간 통역" },
   { href: "/channels", icon: "\u{1F4E1}", label: "채널 허브" },
   { href: "/download", icon: "\u{1F4E5}", label: "다운로드" },
   { href: "/billing", icon: "\u{1F4B3}", label: "결제" },
