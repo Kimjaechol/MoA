@@ -5,17 +5,40 @@
  * Instead of only responding when the user sends a message, the agent
  * proactively follows up:
  *
- *   1. After completing async tasks → reports results back to user
- *   2. After conversation pauses → checks if user needs more help
+ *   1. After completing async tasks → reports results back to user (IMMEDIATE)
+ *   2. After conversation pauses → checks if user needs more help (INTERVAL)
  *   3. On pending tasks → reviews context and acts autonomously
  *
+ * Two trigger modes (matching OpenClaw's heartbeat-runner.ts design):
+ *
+ *   A) EVENT-DRIVEN (immediate, ~seconds):
+ *      When an async task completes, triggerImmediateHeartbeat() is called
+ *      directly from the worker. This is the "수초 후" follow-up pattern.
+ *      Example: User says "기록해줘" → MoA: "잠시만요" → (task completes)
+ *              → IMMEDIATE heartbeat → MoA: "기록 완료! 다른 도움 필요하세요?"
+ *
+ *   B) INTERVAL-BASED (Vercel Cron, every 1 min):
+ *      /api/heartbeat checks for sessions with pending work, completed-but-
+ *      undelivered tasks, and conversations that might need follow-up.
+ *      OpenClaw default: 30 min. MoA uses 1 min (serverless-friendly).
+ *
+ * MoA advantages over OpenClaw:
+ *   - Cross-device real-time memory sync (Supabase realtime)
+ *   - Automatic memory backup (Supabase managed backups)
+ *   - Device loss security (auth tokens per device, revocable)
+ *   - Serverless architecture (no persistent process needed)
+ *
  * Architecture (Vercel-compatible):
- *   - /api/heartbeat (Vercel Cron, every 1 min) → checks all active sessions
+ *   - /api/heartbeat (Vercel Cron, every 1 min) → interval-based checks
+ *   - triggerImmediateHeartbeat() → called from worker on task completion
  *   - moa_pending_tasks table → tracks tasks the agent is working on
  *   - moa_heartbeat_log → prevents duplicate proactive messages
  *   - Chat UI polls for new messages → displays heartbeat follow-ups seamlessly
  *
- * Inspired by OpenClaw's heartbeat-runner.ts, adapted for serverless.
+ * OpenClaw reference intervals:
+ *   DEFAULT_HEARTBEAT_EVERY = "30m" (src/auto-reply/heartbeat.ts:7)
+ *   OAuth mode = "1h" (src/config/defaults.ts:379)
+ *   Event-driven = immediate via requestHeartbeatNow({ reason: "exec-event" })
  */
 
 import { generateAIResponse, detectCategory } from "@/lib/ai-engine";
@@ -456,4 +479,121 @@ function detectPendingWork(text: string): boolean {
   ];
 
   return patterns.some((p) => p.test(lower));
+}
+
+// ────────────────────────────────────────────
+// EVENT-DRIVEN IMMEDIATE HEARTBEAT
+// ────────────────────────────────────────────
+//
+// This is the "수초 후" mechanism from OpenClaw's requestHeartbeatNow().
+// When the worker completes a task, it calls this function IMMEDIATELY
+// (not waiting for the 1-min cron) to send a follow-up to the user.
+//
+// OpenClaw equivalent: requestHeartbeatNow({ reason: "exec-event", coalesceMs: 0 })
+// ────────────────────────────────────────────
+
+/**
+ * Trigger an immediate heartbeat for a specific task.
+ * Called from the worker when an async task completes.
+ * This provides the "수초 후" instant follow-up pattern.
+ *
+ * @param supabase - Supabase client
+ * @param taskId - The completed task ID
+ * @param taskResult - Result text from the completed task
+ * @returns The follow-up message sent, or null if suppressed
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export async function triggerImmediateHeartbeat(
+  supabase: any,
+  taskId: string,
+  taskResult: string,
+): Promise<string | null> {
+  try {
+    // Mark the task as completed
+    await completeTask(supabase, taskId, taskResult);
+
+    // Fetch the task details
+    const { data: task, error } = await supabase
+      .from("moa_pending_tasks")
+      .select("*")
+      .eq("id", taskId)
+      .single();
+
+    if (error || !task) return null;
+
+    // Generate follow-up message immediately
+    const followUpPrompt = buildTaskCompletionPrompt(task as PendingTask);
+
+    const aiResult = await generateAIResponse({
+      message: followUpPrompt,
+      userId: task.user_id,
+      sessionId: task.session_id,
+      channel: task.channel,
+      category: "proactive",
+    });
+
+    const cleanReply = stripHeartbeatToken(aiResult.reply);
+
+    if (cleanReply) {
+      // Save the proactive message
+      await supabase.from("moa_chat_messages").insert({
+        user_id: task.user_id,
+        session_id: task.session_id,
+        role: "assistant",
+        content: cleanReply,
+        channel: task.channel,
+        model_used: `heartbeat/${aiResult.model}`,
+        category: "proactive",
+      });
+
+      // Mark as delivered
+      await supabase
+        .from("moa_pending_tasks")
+        .update({ delivered: true })
+        .eq("id", taskId);
+
+      return cleanReply;
+    }
+
+    // Even if suppressed, mark as delivered
+    await supabase
+      .from("moa_pending_tasks")
+      .update({ delivered: true })
+      .eq("id", taskId);
+
+    return null;
+  } catch (err) {
+    console.error("[heartbeat] triggerImmediateHeartbeat error:", err);
+    return null;
+  }
+}
+
+/**
+ * Detect if an AI response indicates it will do async work.
+ * If so, automatically create a pending task for heartbeat follow-up.
+ * Called from the AI engine after generating a response.
+ *
+ * @returns taskId if a pending task was created, null otherwise
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export async function autoDetectAndTrackPendingWork(
+  supabase: any,
+  params: {
+    aiResponse: string;
+    userMessage: string;
+    userId: string;
+    sessionId: string;
+    channel: string;
+  },
+): Promise<string | null> {
+  if (!detectPendingWork(params.aiResponse)) return null;
+
+  return createPendingTask(supabase, {
+    userId: params.userId,
+    sessionId: params.sessionId,
+    channel: params.channel,
+    taskType: "follow_up",
+    description: params.userMessage.slice(0, 200),
+    context: `User: ${params.userMessage.slice(0, 300)}\nAssistant: ${params.aiResponse.slice(0, 300)}`,
+  });
 }

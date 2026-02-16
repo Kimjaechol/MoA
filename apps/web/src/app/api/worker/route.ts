@@ -17,6 +17,7 @@ export const preferredRegion = "icn1";
 
 import { NextRequest, NextResponse } from "next/server";
 import { generateAIResponse } from "@/lib/ai-engine";
+import { autoDetectAndTrackPendingWork } from "@/lib/heartbeat";
 import {
   deliverTelegram,
   deliverDiscordFollowup,
@@ -49,6 +50,23 @@ export async function POST(request: NextRequest) {
       category,
       maskedTextForStorage,
     });
+
+    // Heartbeat: auto-detect if the AI promised async work
+    // If so, track it so the heartbeat can follow up when complete.
+    // This enables the "수초 후" proactive follow-up pattern.
+    try {
+      const { getServiceSupabase } = await import("@/lib/supabase");
+      const supabase = getServiceSupabase();
+      await autoDetectAndTrackPendingWork(supabase, {
+        aiResponse: result.reply,
+        userMessage: message,
+        userId,
+        sessionId,
+        channel,
+      });
+    } catch {
+      // Heartbeat tracking is best-effort; don't fail the worker
+    }
 
     // Deliver response to the correct platform
     switch (channel) {
