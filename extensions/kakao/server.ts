@@ -1469,46 +1469,21 @@ MoA를 설치하면 이 모든 것이 가능합니다!
     }
   }
 
-  // 8) General AI chat
-  //    Route: OpenClaw agent (memory + tools + skills) → direct LLM fallback
+  // 8) AI chat via OpenClaw gateway (unified — memory + tools + skills + LLM)
+  //
+  // OpenClaw gateway IS the AI engine. It calls the LLM internally while also
+  // providing memory search, tool execution, 104 skills, heartbeat, and cron.
+  //
+  // LLM model selection (determined by user's strategy):
+  //   - User provided their own API key → that provider's best model
+  //   - No API key + 최고성능 전략 → Claude Opus 4.6 (MoA operator key)
+  //   - No API key + 가성비 전략   → Gemini 3.0 Flash (MoA operator key)
+  //
+  // Direct LLM calls are only used as an emergency fallback when the
+  // gateway process is down (e.g. startup failure, OOM).
 
-  // 8a) Try OpenClaw gateway first — full agent with memory, tools, 104 skills
-  if (openclawGateway) {
-    try {
-      const gwResponse = await openclawGateway.sendMessage({
-        userId: params.userId,
-        text: utterance,
-        sessionKey: `${channelId}:${params.userId}`,
-        useMemory: true,
-        systemPrompt: getMoASystemPrompt(channelId) + getSecuritySystemPrompt(isOwnerAuthEnabled()),
-      });
-      if (gwResponse.success && gwResponse.text) {
-        openclawGatewayOnline = true;
-        let responseText = gwResponse.text;
-        if (responseText.length > maxLen) {
-          responseText = responseText.slice(0, maxLen - 3) + "...";
-        }
-        return {
-          text: responseText,
-          quickReplies: channelId === "kakao" ? ["설치", "도움말"] : undefined,
-        };
-      }
-      // Gateway returned empty/failed — fall through to direct LLM
-    } catch (err) {
-      openclawGatewayOnline = false;
-      console.warn(`[MoA] OpenClaw gateway error, falling back to direct LLM: ${err instanceof Error ? err.message : err}`);
-    }
-  }
-
-  // 8b) Fallback: Direct LLM API call (works without OpenClaw gateway)
   const llm = detectLlmProvider();
-
-  if (!llm) {
-    return {
-      text: '현재 AI 응답 기능이 준비 중입니다.\n\nMoA 에이전트를 설치하시면 더 강력한 AI 기능을 이용할 수 있습니다!\n\n"설치"라고 입력해보세요.',
-      quickReplies: ["설치", "기능 소개", "도움말"],
-    };
-  }
+  const modelOverride = llm?.model;
 
   // Build injection-resistant system prompt and sanitized user message
   const baseSystemPrompt = getMoASystemPrompt(channelId);
@@ -1521,41 +1496,63 @@ MoA를 설치하면 이 모든 것이 가능합니다!
     : params.text;
 
   try {
-    let responseText: string;
+    let responseText: string | undefined;
 
-    switch (llm.provider) {
-      case "anthropic":
-        responseText = await callAnthropic(llm.apiKey, llm.model, systemPrompt, userMessage);
-        break;
-      case "openai":
-        responseText = await callOpenAICompatible(
-          llm.endpoint,
-          llm.apiKey,
-          llm.model,
+    // Primary path: OpenClaw gateway (memory + tools + skills + LLM)
+    if (openclawGateway) {
+      try {
+        const gwResponse = await openclawGateway.sendMessage({
+          userId: params.userId,
+          text: userMessage,
+          sessionKey: `${channelId}:${params.userId}`,
+          useMemory: true,
+          model: modelOverride,
           systemPrompt,
-          userMessage,
-        );
-        break;
-      case "google":
-        responseText = await callGemini(llm.apiKey, llm.model, systemPrompt, userMessage);
-        break;
-      case "groq":
-        responseText = await callOpenAICompatible(
-          llm.endpoint,
-          llm.apiKey,
-          llm.model,
-          systemPrompt,
-          userMessage,
-        );
-        break;
-      default:
-        responseText = "지원되지 않는 AI 제공자입니다.";
+        });
+        if (gwResponse.success && gwResponse.text) {
+          openclawGatewayOnline = true;
+          responseText = gwResponse.text;
+        }
+      } catch (err) {
+        openclawGatewayOnline = false;
+        console.warn(`[MoA] Gateway unavailable, using direct LLM: ${err instanceof Error ? err.message : err}`);
+      }
+    }
+
+    // Emergency fallback: direct LLM call (only when gateway process is down)
+    if (!responseText && llm) {
+      switch (llm.provider) {
+        case "anthropic":
+          responseText = await callAnthropic(llm.apiKey, llm.model, systemPrompt, userMessage);
+          break;
+        case "openai":
+        case "groq":
+          responseText = await callOpenAICompatible(
+            llm.endpoint,
+            llm.apiKey,
+            llm.model,
+            systemPrompt,
+            userMessage,
+          );
+          break;
+        case "google":
+          responseText = await callGemini(llm.apiKey, llm.model, systemPrompt, userMessage);
+          break;
+        default:
+          responseText = "지원되지 않는 AI 제공자입니다.";
+      }
+    }
+
+    if (!responseText) {
+      return {
+        text: '현재 AI 응답 기능이 준비 중입니다.\n\nMoA 에이전트를 설치하시면 더 강력한 AI 기능을 이용할 수 있습니다!\n\n"설치"라고 입력해보세요.',
+        quickReplies: ["설치", "기능 소개", "도움말"],
+      };
     }
 
     // Truncate to channel's limit
-    const truncateAt = maxLen - 3;
     if (responseText.length > maxLen) {
-      responseText = responseText.slice(0, truncateAt) + "...";
+      responseText = responseText.slice(0, maxLen - 3) + "...";
     }
 
     return {
@@ -1563,7 +1560,9 @@ MoA를 설치하면 이 모든 것이 가능합니다!
       quickReplies: channelId === "kakao" ? ["설치", "도움말"] : undefined,
     };
   } catch (err) {
-    console.error(`[MoA] LLM API error (${llm.provider}/${llm.model}):`, err);
+    const provider = llm?.provider ?? "unknown";
+    const model = llm?.model ?? "unknown";
+    console.error(`[MoA] AI error (${provider}/${model}):`, err);
     return {
       text: `AI 응답 생성 중 오류가 발생했습니다.\n\n${err instanceof Error ? err.message : String(err)}\n\nMoA 에이전트를 설치하시면 더 안정적인 AI를 이용할 수 있습니다.\n"설치"라고 입력해보세요.`,
       quickReplies: ["설치", "도움말"],
