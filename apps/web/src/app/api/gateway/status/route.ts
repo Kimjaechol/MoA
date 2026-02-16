@@ -1,17 +1,18 @@
 /**
  * GET /api/gateway/status
- * Check the health of the MoA Gateway server.
+ * Check the health of both the MoA Gateway and OpenClaw Agent.
  *
- * Proxies the Gateway's /health endpoint and returns structured status.
+ * Proxies the Gateway's /health endpoint and checks OpenClaw agent availability.
  * Protected by ADMIN_SECRET — pass as ?secret= query param or Authorization header.
  *
- * Response: { online, url, channels, uptime, version, timestamp }
+ * Response: { online, url, channels, uptime, version, openclaw, timestamp }
  */
 
 export const preferredRegion = "icn1";
 export const dynamic = "force-dynamic";
 
 import { NextRequest, NextResponse } from "next/server";
+import { getOpenClawStatus, isOpenClawConfigured } from "@/lib/openclaw-bridge";
 
 export async function GET(request: NextRequest) {
   // Authenticate — require ADMIN_SECRET
@@ -28,10 +29,20 @@ export async function GET(request: NextRequest) {
 
   const gatewayUrl = process.env.MOA_GATEWAY_URL;
   if (!gatewayUrl) {
+    // Gateway not configured, but OpenClaw agent might still be available
+    const openclawStatus = isOpenClawConfigured()
+      ? await getOpenClawStatus()
+      : { available: false, url: "" };
+
     return NextResponse.json({
       online: false,
       url: null,
       error: "MOA_GATEWAY_URL is not configured",
+      openclaw: {
+        configured: isOpenClawConfigured(),
+        available: openclawStatus.available,
+        url: openclawStatus.url || null,
+      },
       timestamp: new Date().toISOString(),
     });
   }
@@ -54,12 +65,26 @@ export async function GET(request: NextRequest) {
 
     const data = await response.json() as Record<string, unknown>;
 
+    // Check OpenClaw agent status in parallel
+    const openclawStatus = isOpenClawConfigured()
+      ? await getOpenClawStatus()
+      : { available: false, url: "", configured: false };
+
     return NextResponse.json({
       online: true,
       url: gatewayUrl,
       channels: data.channels ?? [],
       uptime: data.uptime ?? null,
       version: data.version ?? null,
+      openclaw: {
+        configured: isOpenClawConfigured(),
+        available: openclawStatus.available,
+        url: openclawStatus.url || null,
+        version: openclawStatus.version ?? null,
+        skills: openclawStatus.skills ?? [],
+        plugins: openclawStatus.plugins ?? [],
+        uptime: openclawStatus.uptime ?? null,
+      },
       timestamp: new Date().toISOString(),
     });
   } catch (err) {

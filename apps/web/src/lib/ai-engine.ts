@@ -6,12 +6,25 @@
  *   2. DB queries parallelized with Promise.all
  *   3. Semantic cache integration (optional, via @/lib/semantic-cache)
  *   4. Multi-turn conversation context with cross-channel history
+ *   5. OpenClaw Agent integration — full agent capabilities when gateway is available
+ *
+ * OpenClaw Agent provides:
+ *   - Pi RPC agent with tools (browsing, file management, code execution)
+ *   - 100+ skills (weather, calendar, search, coding, etc.)
+ *   - Memory/knowledge base with vector search
+ *   - Browser automation via Playwright
+ *   - Plugin/extension system (32+ extensions)
+ *
+ * When OPENCLAW_GATEWAY_URL is configured and the gateway is reachable,
+ * messages are routed through the OpenClaw agent for enhanced responses.
+ * Falls back to direct LLM calls when the agent is unavailable.
  *
  * This module runs on Node.js runtime (needs node:crypto for key decryption).
  */
 
 import { safeDecrypt } from "@/lib/crypto";
 import { detectAndMaskSensitiveData } from "@/lib/security";
+import { sendToOpenClawAgent, isOpenClawAvailable, isOpenClawConfigured } from "@/lib/openclaw-bridge";
 
 // ────────────────────────────────────────────
 // Types
@@ -840,7 +853,38 @@ export async function generateAIResponse(params: {
     // Semantic cache not available — no-op
   }
 
-  // Call LLM if no cache hit
+  // ── Try OpenClaw Agent first (full agent capabilities) ──
+  // When the OpenClaw gateway is available, route through it for:
+  // tools, skills, memory, browser automation, and richer responses.
+  if (!aiResponse && isOpenClawConfigured()) {
+    try {
+      const agentResult = await sendToOpenClawAgent({
+        message: message.trim(),
+        userId,
+        sessionKey: `moa:${channel}:${userId}`,
+        channel,
+        category,
+      });
+      if (agentResult && agentResult.text) {
+        const toolInfo = agentResult.toolsUsed.length > 0
+          ? ` [tools: ${agentResult.toolsUsed.join(", ")}]`
+          : "";
+        console.info(`[ai-engine] OpenClaw agent responded (${agentResult.model})${toolInfo}`);
+        aiResponse = {
+          text: agentResult.text,
+          model: `openclaw/${agentResult.model}`,
+          usedEnvKey: false,
+        };
+        if (setCachedResponseFn) {
+          setCachedResponseFn(message, category, agentResult.text).catch(() => {});
+        }
+      }
+    } catch (agentErr) {
+      console.warn("[ai-engine] OpenClaw agent failed, falling back to direct LLM:", agentErr instanceof Error ? agentErr.message : agentErr);
+    }
+  }
+
+  // Call LLM directly if no cache hit and no agent response
   if (!aiResponse) {
     try {
       aiResponse = await tryLlmCall(llmMessages, category, strategy, activeKeys);

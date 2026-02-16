@@ -16,6 +16,13 @@ export interface GatewayConfig {
   moaApiUrl: string;
   moaApiSecret: string;
 
+  // OpenClaw Agent integration (optional)
+  // When configured, the gateway routes messages through the OpenClaw agent
+  // for enhanced capabilities (tools, skills, memory, browser automation).
+  openclawGatewayUrl?: string;
+  openclawGatewayToken?: string;
+  openclawTimeoutMs: number;
+
   // Security
   rateLimitPerMinute: number;
   maxStrikes: number;
@@ -69,6 +76,11 @@ export function loadConfig(): GatewayConfig {
 
     moaApiUrl: moaApiUrl.replace(/\/$/, ""),
     moaApiSecret,
+
+    // OpenClaw agent integration (optional — enhances AI responses with tools/skills/memory)
+    openclawGatewayUrl: process.env.OPENCLAW_GATEWAY_URL,
+    openclawGatewayToken: process.env.OPENCLAW_GATEWAY_TOKEN,
+    openclawTimeoutMs: parseInt(process.env.OPENCLAW_TIMEOUT_MS ?? "90000", 10),
 
     rateLimitPerMinute: parseInt(process.env.RATE_LIMIT_PER_MINUTE ?? "30", 10),
     maxStrikes: parseInt(process.env.MAX_STRIKES ?? "3", 10),
