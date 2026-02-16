@@ -29,6 +29,7 @@
     "files": [
       "main.js",
       "preload.js",
+      "splash.html",
       "tray-icon.png",
       "icons/**/*"
     ],

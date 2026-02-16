@@ -19,8 +19,12 @@ CREATE TABLE IF NOT EXISTS moa_users (
   display_name TEXT,
   password_hash TEXT NOT NULL,            -- scrypt hash (salt:hash)
   passphrase_hash TEXT NOT NULL,          -- 구문번호 scrypt hash
-  phone TEXT,
+  phone TEXT,                            -- E.164 format (e.g. "+821012345678")
+  country_code TEXT,                     -- ISO 3166-1 alpha-2 (e.g. "KR")
   email TEXT,
+  email_verified BOOLEAN NOT NULL DEFAULT false,
+  email_verification_token TEXT,         -- verification token for email confirmation
+  email_verification_expires TIMESTAMPTZ,
   is_active BOOLEAN NOT NULL DEFAULT true,
   failed_login_attempts INTEGER NOT NULL DEFAULT 0,
   locked_until TIMESTAMPTZ,              -- account lockout after failed attempts
@@ -38,7 +42,11 @@ ALTER TABLE moa_users ADD COLUMN IF NOT EXISTS display_name TEXT;
 ALTER TABLE moa_users ADD COLUMN IF NOT EXISTS password_hash TEXT;
 ALTER TABLE moa_users ADD COLUMN IF NOT EXISTS passphrase_hash TEXT;
 ALTER TABLE moa_users ADD COLUMN IF NOT EXISTS phone TEXT;
+ALTER TABLE moa_users ADD COLUMN IF NOT EXISTS country_code TEXT;
 ALTER TABLE moa_users ADD COLUMN IF NOT EXISTS email TEXT;
+ALTER TABLE moa_users ADD COLUMN IF NOT EXISTS email_verified BOOLEAN DEFAULT false;
+ALTER TABLE moa_users ADD COLUMN IF NOT EXISTS email_verification_token TEXT;
+ALTER TABLE moa_users ADD COLUMN IF NOT EXISTS email_verification_expires TIMESTAMPTZ;
 ALTER TABLE moa_users ADD COLUMN IF NOT EXISTS is_active BOOLEAN DEFAULT true;
 ALTER TABLE moa_users ADD COLUMN IF NOT EXISTS failed_login_attempts INTEGER DEFAULT 0;
 ALTER TABLE moa_users ADD COLUMN IF NOT EXISTS locked_until TIMESTAMPTZ;
@@ -51,6 +59,8 @@ ALTER TABLE moa_users ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT no
 
 CREATE INDEX IF NOT EXISTS idx_users_user_id ON moa_users(user_id);
 CREATE INDEX IF NOT EXISTS idx_users_username ON moa_users(username);
+CREATE INDEX IF NOT EXISTS idx_users_email ON moa_users(email);
+CREATE INDEX IF NOT EXISTS idx_users_phone ON moa_users(phone);
 
 -- Sessions (서버 사이드 세션 관리)
 CREATE TABLE IF NOT EXISTS moa_sessions (
