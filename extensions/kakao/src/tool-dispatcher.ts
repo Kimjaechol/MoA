@@ -286,6 +286,10 @@ const TOOL_DISPLAY_NAMES: Record<string, string> = {
   search_perplexity: "Perplexity 검색",
   search_google: "Google 검색",
   search_fallback: "웹 검색",
+  search_serper: "Serper 검색",
+  search_serper_shopping: "Serper 쇼핑 검색",
+  search_serper_maps: "Serper 지도 검색",
+  search_serper_lens: "Serper 이미지 분석",
   legal_rag: "법률 정보 검색",
   expert_legal_consult: "법률 상담",
   expert_medical_consult: "의료 상담",
@@ -315,7 +319,11 @@ const TOOL_CREDIT_COSTS: Record<string, number> = {
   freepik_generate: 0,  // freemium
   freepik_search: 0,     // freemium
   translate: 0,           // papago free tier
+  search_serper: 1,       // Serper: search/news/images/videos/places/patents/reviews
   search_perplexity: 2,
+  search_serper_shopping: 2, // Serper: shopping
+  search_serper_maps: 3,     // Serper: maps
+  search_serper_lens: 3,     // Serper: lens (image analysis)
   search_google: 7,
   search_fallback: 0,
   image_generation: 54,   // DALL-E 3 standard
@@ -327,6 +335,10 @@ const TOOL_CREDIT_COSTS: Record<string, number> = {
 /** Check if a tool is using the user's own API key (no credit charge) */
 function isToolUsingOwnKey(toolId: string): boolean {
   const toolEnvMap: Record<string, string> = {
+    search_serper: "SERPER_API_KEY",
+    search_serper_shopping: "SERPER_API_KEY",
+    search_serper_maps: "SERPER_API_KEY",
+    search_serper_lens: "SERPER_API_KEY",
     search_perplexity: "PERPLEXITY_API_KEY",
     search_google: "GOOGLE_AI_API_KEY",
     image_generation: "OPENAI_API_KEY",

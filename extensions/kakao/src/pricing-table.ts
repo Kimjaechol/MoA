@@ -224,6 +224,61 @@ export const TOOL_PRICING: ToolPricing[] = [
 
   // ━━━━━━━━━━━ PAID (유료, 저렴한 순) ━━━━━━━━━━━
 
+  // --- Serper 검색 (유료, 검색 유형별 차등) ---
+  // Serper.dev API pricing: maps/lens = 3C, shopping = 2C, others = 1C
+  {
+    toolId: "search_serper",
+    name: "Serper 검색",
+    category: "search",
+    creditsPerUse: 1,
+    tier: "paid",
+    requiresApiKey: true,
+    envVar: "SERPER_API_KEY",
+    usdPerCall: 0.001, // $2.50/2500 queries (일반 검색)
+    provider: "Serper (Google Search)",
+    description: "Google 검색 API - 웹/뉴스/이미지/동영상 ($1/1000쿼리)",
+    freeAlternative: "search_duckduckgo",
+  },
+  {
+    toolId: "search_serper_shopping",
+    name: "Serper 쇼핑 검색",
+    category: "search",
+    creditsPerUse: 2,
+    tier: "paid",
+    requiresApiKey: true,
+    envVar: "SERPER_API_KEY",
+    usdPerCall: 0.002, // 쇼핑 검색 2배
+    provider: "Serper (Google Shopping)",
+    description: "Google 쇼핑 검색 ($2/1000쿼리)",
+    freeAlternative: "search_duckduckgo",
+  },
+  {
+    toolId: "search_serper_maps",
+    name: "Serper 지도 검색",
+    category: "search",
+    creditsPerUse: 3,
+    tier: "paid",
+    requiresApiKey: true,
+    envVar: "SERPER_API_KEY",
+    usdPerCall: 0.003, // 지도 검색 3배
+    provider: "Serper (Google Maps)",
+    description: "Google 지도 검색 ($3/1000쿼리)",
+    freeAlternative: "search_duckduckgo",
+  },
+  {
+    toolId: "search_serper_lens",
+    name: "Serper 이미지 분석",
+    category: "search",
+    creditsPerUse: 3,
+    tier: "paid",
+    requiresApiKey: true,
+    envVar: "SERPER_API_KEY",
+    usdPerCall: 0.003, // 렌즈 검색 3배
+    provider: "Serper (Google Lens)",
+    description: "Google Lens 이미지 분석 검색 ($3/1000쿼리)",
+    freeAlternative: "search_duckduckgo",
+  },
+
   // --- 번역 (유료) ---
   {
     toolId: "translate_google",
@@ -637,4 +692,51 @@ export function formatPricingTable(): string {
   lines.push("* 본인 API 키 사용 시 크레딧 차감 없음");
 
   return lines.join("\n");
+}
+
+// ============================================
+// Serper Search Type Credit Pricing
+// ============================================
+
+/**
+ * Serper.dev search types
+ * API endpoints: /search, /news, /images, /videos, /shopping, /maps, /places, /patents, /lens, /reviews
+ */
+export type SerperSearchType =
+  | "search"
+  | "news"
+  | "images"
+  | "videos"
+  | "shopping"
+  | "maps"
+  | "places"
+  | "patents"
+  | "lens"
+  | "reviews";
+
+/** Credit cost per Serper search type */
+const SERPER_CREDIT_BY_TYPE: Record<SerperSearchType, number> = {
+  search: 1,
+  news: 1,
+  images: 1,
+  videos: 1,
+  places: 1,
+  patents: 1,
+  reviews: 1,
+  shopping: 2,
+  maps: 3,
+  lens: 3,
+};
+
+/** Get credit cost for a Serper search type */
+export function getSerperCreditCost(searchType: SerperSearchType): number {
+  return SERPER_CREDIT_BY_TYPE[searchType] ?? 1;
+}
+
+/** Get the corresponding toolId for a Serper search type */
+export function getSerperToolId(searchType: SerperSearchType): string {
+  if (searchType === "maps") return "search_serper_maps";
+  if (searchType === "lens") return "search_serper_lens";
+  if (searchType === "shopping") return "search_serper_shopping";
+  return "search_serper";
 }

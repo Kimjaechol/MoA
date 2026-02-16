@@ -93,10 +93,14 @@ export const TOOL_CREDITS: Record<string, number> = {
   search_brave: 0,
   freepik: 0,
   // Paid (cheapest first)
+  search_serper: 1,       // Serper: search/news/images/videos/places/patents/reviews
   translate_google: 1,    // $20/1M chars, ~$0.0004/request
   navigation: 1,          // ~$0.0005/request
+  search_serper_shopping: 2, // Serper: shopping search
   translate_deepl: 2,     // $25/1M chars, ~$0.001/request
   search_perplexity: 2,   // $1/1000 queries
+  search_serper_maps: 3,  // Serper: maps search
+  search_serper_lens: 3,  // Serper: lens (image analysis) search
   live_translate: 3,      // Gemini Live ~$0.002/min
   search_google_cse: 7,   // $5/1000 queries
   image_stable_diffusion: 10, // ~$0.006/image
@@ -109,6 +113,18 @@ export const TOOL_CREDITS: Record<string, number> = {
 /** Get tool credit cost */
 export function getToolCost(toolId: string): number {
   return TOOL_CREDITS[toolId] ?? 0;
+}
+
+/**
+ * Get Serper search credit cost by search type.
+ * maps/lens: 3C, shopping: 2C, others: 1C
+ */
+export function getSerperToolCost(
+  searchType: "search" | "news" | "images" | "videos" | "shopping" | "maps" | "places" | "patents" | "lens" | "reviews",
+): number {
+  if (searchType === "maps" || searchType === "lens") return 3;
+  if (searchType === "shopping") return 2;
+  return 1;
 }
 
 /** Format credits compactly for chat display */
