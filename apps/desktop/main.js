@@ -1,19 +1,15 @@
 /**
- * MoA Desktop App — Electron Main Process
+ * MoA Desktop App — Electron Main Process (Production)
  *
- * 파워유저를 위한 데스크톱 앱.
- * 원클릭 설치, 자동 업데이트, 로컬 파일 시스템 접근.
- *
- * 자동 업데이트 흐름 (카카오톡 방식):
- *   앱 실행 → 서버에서 업데이트 확인 → 새 버전 있으면 다운로드
- *   → 다운로드 완료 시 "업데이트 설치 후 재시작" 안내
- *   → 사용자 확인 → 자동 재시작 및 적용
+ * Windows/macOS/Linux 데스크톱 앱.
+ * 커스텀 타이틀바, 스플래시 스크린, 사이드바 내비게이션,
+ * 자동 업데이트, 로컬 파일 시스템 접근.
  *
  * Architecture:
- *   Renderer (BrowserWindow) loads mymoa.app
- *   + preload.js exposes local APIs (file access, system info)
- *   + electron-updater handles Cloudflare R2 auto-update
- *   + System tray for background persistence
+ *   1. 스플래시 스크린 표시 (로컬 HTML)
+ *   2. 웹앱 로드 + 인증 상태 확인
+ *   3. 로그인/회원가입 or 채팅 페이지로 라우팅
+ *   4. 프로덕션 UI 인젝션 (사이드바, 헤더, 크레딧 표시)
  */
 
 const {
@@ -26,146 +22,138 @@ const {
   dialog,
   nativeImage,
   Notification,
+  screen,
 } = require("electron");
 const path = require("path");
 const fs = require("fs");
 const os = require("os");
 const { autoUpdater } = require("electron-updater");
 
-// App constants
+// ─── Constants ───────────────────────────────────────────────
 const MOA_URL = "https://mymoa.app";
 const APP_NAME = "MoA";
 const IS_DEV = process.argv.includes("--dev");
+const IS_WIN = process.platform === "win32";
+const IS_MAC = process.platform === "darwin";
+const STATE_FILE = path.join(app.getPath("userData"), "window-state.json");
 
 let mainWindow = null;
+let splashWindow = null;
 let tray = null;
 
-/* -----------------------------------------------------------------
-   Auto Update (카카오톡 방식)
-   앱 실행 시 무조건 업데이트 확인 → 새 버전 → 다운로드 → 재시작
-   ----------------------------------------------------------------- */
+// ─── Window State Persistence ────────────────────────────────
 
-function setupAutoUpdater() {
-  // Cloudflare R2를 업데이트 소스로 사용
-  autoUpdater.autoDownload = true;
-  autoUpdater.autoInstallOnAppQuit = true;
-
-  // 업데이트 확인 시작
-  autoUpdater.on("checking-for-update", () => {
-    sendUpdateStatus("checking", "업데이트를 확인하고 있습니다...");
-  });
-
-  // 업데이트 발견
-  autoUpdater.on("update-available", (info) => {
-    sendUpdateStatus("available", `새 버전 ${info.version}을 다운로드합니다...`);
-    // 메인 윈도우에 업데이트 진행 상황을 표시
-    if (mainWindow) {
-      mainWindow.webContents.executeJavaScript(`
-        if (!document.getElementById('moa-update-bar')) {
-          const bar = document.createElement('div');
-          bar.id = 'moa-update-bar';
-          bar.style.cssText = 'position:fixed;top:0;left:0;right:0;z-index:99999;background:linear-gradient(135deg,#667eea,#764ba2);color:#fff;padding:10px 20px;font-size:14px;display:flex;align-items:center;justify-content:center;gap:12px;font-family:sans-serif;';
-          bar.innerHTML = '<span>⬇️ MoA v${info.version} 업데이트를 다운로드하고 있습니다...</span><div id="moa-update-progress" style="width:120px;height:6px;background:rgba(255,255,255,0.3);border-radius:3px;overflow:hidden;"><div id="moa-update-bar-fill" style="width:0%;height:100%;background:#fff;border-radius:3px;transition:width 0.3s;"></div></div>';
-          document.body.prepend(bar);
-        }
-      `).catch(() => {});
+function loadWindowState() {
+  try {
+    if (fs.existsSync(STATE_FILE)) {
+      const state = JSON.parse(fs.readFileSync(STATE_FILE, "utf-8"));
+      const displays = screen.getAllDisplays();
+      const visible = displays.some((d) => {
+        const b = d.bounds;
+        return state.x >= b.x && state.x < b.x + b.width &&
+               state.y >= b.y && state.y < b.y + b.height;
+      });
+      if (visible) return state;
     }
-  });
-
-  // 다운로드 진행률
-  autoUpdater.on("download-progress", (progress) => {
-    const pct = Math.round(progress.percent);
-    sendUpdateStatus("downloading", `다운로드 중... ${pct}%`);
-    if (mainWindow) {
-      mainWindow.webContents.executeJavaScript(`
-        const fill = document.getElementById('moa-update-bar-fill');
-        if (fill) fill.style.width = '${pct}%';
-      `).catch(() => {});
-    }
-  });
-
-  // 다운로드 완료 → 사용자에게 재시작 안내
-  autoUpdater.on("update-downloaded", (info) => {
-    sendUpdateStatus("ready", `v${info.version} 업데이트가 준비되었습니다.`);
-
-    // 업데이트 바를 완료 상태로 변경
-    if (mainWindow) {
-      mainWindow.webContents.executeJavaScript(`
-        const bar = document.getElementById('moa-update-bar');
-        if (bar) {
-          bar.innerHTML = '<span>✅ MoA v${info.version} 업데이트가 준비되었습니다. 잠시 후 재시작합니다...</span>';
-        }
-      `).catch(() => {});
-    }
-
-    // 3초 후 자동으로 재시작 (카카오톡처럼 강제)
-    // 사용자에게 충분한 시간을 주되, 선택지 없이 자동 적용
-    setTimeout(() => {
-      autoUpdater.quitAndInstall(false, true);
-    }, 3000);
-  });
-
-  // 업데이트 없음 (최신 버전)
-  autoUpdater.on("update-not-available", () => {
-    sendUpdateStatus("latest", "최신 버전입니다.");
-  });
-
-  // 에러 발생 — 무시하고 앱 계속 실행 (오프라인 등)
-  autoUpdater.on("error", (err) => {
-    sendUpdateStatus("error", `업데이트 확인 실패: ${err.message}`);
-  });
-
-  // 앱 시작 시 즉시 업데이트 확인
-  if (!IS_DEV) {
-    autoUpdater.checkForUpdates().catch(() => {});
-  }
+  } catch { /* ignore */ }
+  return { width: 1360, height: 900, x: undefined, y: undefined, maximized: false };
 }
 
-/** 업데이트 상태를 렌더러에 전달 */
-function sendUpdateStatus(status, message) {
-  if (mainWindow) {
-    mainWindow.webContents.send("moa:updateStatus", { status, message });
-  }
+function saveWindowState() {
+  if (!mainWindow) return;
+  try {
+    const bounds = mainWindow.getBounds();
+    const state = {
+      width: bounds.width, height: bounds.height,
+      x: bounds.x, y: bounds.y,
+      maximized: mainWindow.isMaximized(),
+    };
+    fs.writeFileSync(STATE_FILE, JSON.stringify(state));
+  } catch { /* ignore */ }
 }
 
-/* -----------------------------------------------------------------
-   Window Creation
-   ----------------------------------------------------------------- */
+// ─── Splash Screen ───────────────────────────────────────────
 
-function createWindow() {
-  mainWindow = new BrowserWindow({
-    width: 1280,
-    height: 860,
-    minWidth: 800,
-    minHeight: 600,
-    title: APP_NAME,
-    icon: getIconPath(),
+function createSplashWindow() {
+  splashWindow = new BrowserWindow({
+    width: 480,
+    height: 420,
+    frame: false,
+    transparent: true,
+    resizable: false,
+    skipTaskbar: true,
+    center: true,
+    alwaysOnTop: true,
     webPreferences: {
       preload: path.join(__dirname, "preload.js"),
       contextIsolation: true,
       nodeIntegration: false,
-      sandbox: false, // needed for fs access via preload
     },
-    titleBarStyle: process.platform === "darwin" ? "hiddenInset" : "default",
+    icon: getIconPath(),
+    backgroundColor: "#00000000",
+  });
+
+  splashWindow.loadFile(path.join(__dirname, "splash.html"));
+  splashWindow.setMenu(null);
+}
+
+function closeSplash() {
+  if (splashWindow && !splashWindow.isDestroyed()) {
+    splashWindow.close();
+    splashWindow = null;
+  }
+}
+
+// ─── Main Window ─────────────────────────────────────────────
+
+function createWindow() {
+  const state = loadWindowState();
+
+  mainWindow = new BrowserWindow({
+    width: state.width,
+    height: state.height,
+    x: state.x,
+    y: state.y,
+    minWidth: 960,
+    minHeight: 640,
+    title: APP_NAME,
+    icon: getIconPath(),
+    frame: false,
+    titleBarStyle: IS_MAC ? "hiddenInset" : "default",
+    trafficLightPosition: IS_MAC ? { x: 16, y: 14 } : undefined,
+    webPreferences: {
+      preload: path.join(__dirname, "preload.js"),
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: false,
+    },
     backgroundColor: "#0a0a1a",
-    show: false, // show after ready-to-show
+    show: false,
   });
 
-  // Load MoA chat page directly (desktop app = chat-first experience)
-  mainWindow.loadURL(`${MOA_URL}/chat`);
+  if (state.maximized) mainWindow.maximize();
 
-  // Show when ready (prevents white flash)
+  // Start at login page
+  mainWindow.loadURL(`${MOA_URL}/login`);
+
   mainWindow.once("ready-to-show", () => {
-    mainWindow.show();
-    mainWindow.focus();
+    setTimeout(() => {
+      mainWindow.show();
+      mainWindow.focus();
+      closeSplash();
+    }, 600);
   });
 
-  // Inject desktop-specific navigation bar on page load
+  // Inject production UI on every page load
   mainWindow.webContents.on("did-finish-load", () => {
-    injectDesktopNav();
+    injectProductionUI();
   });
 
-  // Handle external links in system browser
+  mainWindow.webContents.on("did-navigate-in-page", () => {
+    injectProductionUI();
+  });
+
+  // External links in system browser
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
     if (url.startsWith("http") && !url.includes("mymoa.app")) {
       shell.openExternal(url);
@@ -174,191 +162,369 @@ function createWindow() {
     return { action: "allow" };
   });
 
-  // Minimize to tray instead of closing
+  // Minimize to tray on close
   mainWindow.on("close", (e) => {
     if (!app.isQuitting) {
       e.preventDefault();
+      saveWindowState();
       mainWindow.hide();
-      if (process.platform === "win32") {
-        showTrayNotification("MoA가 시스템 트레이에서 실행 중입니다.");
-      }
+      if (IS_WIN) showTrayNotification("MoA가 시스템 트레이에서 실행 중입니다.");
     }
   });
 
-  // Dev tools in dev mode
-  if (IS_DEV) {
-    mainWindow.webContents.openDevTools();
-  }
+  mainWindow.on("resize", debounce(saveWindowState, 500));
+  mainWindow.on("move", debounce(saveWindowState, 500));
+
+  if (IS_DEV) mainWindow.webContents.openDevTools({ mode: "detach" });
 }
 
-/* -----------------------------------------------------------------
-   Desktop Navigation Bar
-   Injected into the web page for desktop-app-specific navigation.
-   Only shown when NOT already on a page with its own sidebar.
-   ----------------------------------------------------------------- */
+// ─── Production UI Injection ─────────────────────────────────
 
-function injectDesktopNav() {
+function injectProductionUI() {
   if (!mainWindow) return;
+
+  const isMac = IS_MAC;
+
   mainWindow.webContents.executeJavaScript(`
-    (function() {
-      // Remove any existing desktop nav
-      const existing = document.getElementById('moa-desktop-nav');
-      if (existing) existing.remove();
+(function() {
+  'use strict';
+  if (document.getElementById('moa-desktop-shell')) return;
 
-      const nav = document.createElement('div');
-      nav.id = 'moa-desktop-nav';
-      nav.style.cssText = 'position:fixed;top:0;left:0;right:0;z-index:99990;background:linear-gradient(135deg,#0d0d2b,#1a1a3e);border-bottom:1px solid rgba(255,255,255,0.08);display:flex;align-items:center;padding:0 16px;height:40px;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;-webkit-app-region:drag;user-select:none;';
+  var currentPath = window.location.pathname;
+  var isAuthPage = currentPath === '/login' || currentPath === '/register' || currentPath.startsWith('/verify-email');
 
-      const items = [
-        { label: 'AI \uCC44\uD305', path: '/chat', icon: '\uD83D\uDCAC' },
-        { label: '\uC885\uD569\uBB38\uC11C', path: '/synthesis', icon: '\uD83D\uDCD1' },
-        { label: 'AI \uCF54\uB529', path: '/autocode', icon: '\uD83E\uDD16' },
-        { label: '\uC5D0\uB514\uD130', path: '/editor', icon: '\uD83D\uDCDD' },
-        { label: '\uD1B5\uC5ED', path: '/interpreter', icon: '\uD83D\uDDE3\uFE0F' },
-        { label: '\uCC44\uB110', path: '/channels', icon: '\uD83D\uDCE1' },
-        { label: '\uB9C8\uC774\uD398\uC774\uC9C0', path: '/mypage', icon: '\u2699\uFE0F' },
-      ];
+  // ── Styles ──
+  var style = document.createElement('style');
+  style.id = 'moa-desktop-styles';
+  style.textContent = [
+    '#moa-desktop-titlebar {',
+    '  position:fixed;top:0;left:0;right:0;z-index:99999;height:36px;',
+    '  background:#08081a;border-bottom:1px solid rgba(255,255,255,0.06);',
+    '  display:flex;align-items:center;justify-content:space-between;',
+    '  -webkit-app-region:drag;user-select:none;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;',
+    '}',
+    '.moa-tb-drag{display:flex;align-items:center;gap:16px;padding-left:${isMac ? "80" : "16"}px;flex:1;}',
+    '.moa-tb-logo{display:flex;align-items:center;gap:8px;}',
+    '.moa-tb-icon{font-size:16px;}',
+    '.moa-tb-brand{font-size:13px;font-weight:800;background:linear-gradient(135deg,#667eea,#a78bfa);-webkit-background-clip:text;-webkit-text-fill-color:transparent;}',
+    '.moa-tb-credits{display:flex;align-items:center;gap:6px;padding:3px 12px;border-radius:12px;background:rgba(102,126,234,0.1);border:1px solid rgba(102,126,234,0.15);cursor:pointer;-webkit-app-region:no-drag;transition:background 0.2s;}',
+    '.moa-tb-credits:hover{background:rgba(102,126,234,0.2);}',
+    '.moa-tb-credits-icon{font-size:11px;}',
+    '.moa-tb-credits-value{font-size:12px;font-weight:700;color:#a78bfa;}',
+    '.moa-tb-credits-label{font-size:10px;color:#9a9ab0;font-weight:500;}',
+    '.moa-tb-controls{display:${isMac ? "none" : "flex"};-webkit-app-region:no-drag;}',
+    '.moa-tb-btn{width:46px;height:36px;border:none;background:none;color:#9a9ab0;display:flex;align-items:center;justify-content:center;cursor:pointer;transition:background 0.15s,color 0.15s;}',
+    '.moa-tb-btn:hover{background:rgba(255,255,255,0.08);color:#fff;}',
+    '.moa-tb-close:hover{background:#e81123;color:#fff;}',
 
-      // Logo
-      const logo = document.createElement('span');
-      logo.textContent = 'MoA';
-      logo.style.cssText = 'font-weight:900;font-size:14px;color:#667eea;margin-right:20px;cursor:pointer;-webkit-app-region:no-drag;';
-      logo.onclick = function() { window.location.href = '/chat'; };
-      nav.appendChild(logo);
+    '#moa-desktop-sidebar{position:fixed;top:36px;left:0;bottom:0;width:200px;z-index:99998;background:#0c0c22;border-right:1px solid rgba(255,255,255,0.06);display:flex;flex-direction:column;justify-content:space-between;overflow-y:auto;overflow-x:hidden;scrollbar-width:none;}',
+    '#moa-desktop-sidebar::-webkit-scrollbar{display:none;}',
+    '.moa-sb-top{padding:12px 8px 8px;}',
+    '.moa-sb-bottom{padding:4px 8px 12px;}',
+    '.moa-sb-section-label{font-size:10px;font-weight:600;color:#6a6a8a;text-transform:uppercase;letter-spacing:1.5px;padding:8px 12px 6px;margin-bottom:2px;}',
+    '.moa-sb-item{display:flex;align-items:center;gap:10px;padding:9px 12px;border-radius:8px;color:#9a9ab0;text-decoration:none;font-size:13px;font-weight:500;transition:all 0.15s;cursor:pointer;position:relative;margin-bottom:1px;}',
+    '.moa-sb-item:hover{background:rgba(255,255,255,0.05);color:#e8e8f0;text-decoration:none;}',
+    '.moa-sb-item.active{background:rgba(102,126,234,0.12);color:#667eea;font-weight:600;}',
+    '.moa-sb-item.active::before{content:"";position:absolute;left:0;top:50%;transform:translateY(-50%);width:3px;height:20px;border-radius:0 3px 3px 0;background:#667eea;}',
+    '.moa-sb-icon{font-size:16px;width:22px;text-align:center;flex-shrink:0;}',
+    '.moa-sb-label{flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}',
+    '.moa-sb-hotkey{font-size:9px;color:#5a5a7a;background:rgba(255,255,255,0.04);padding:2px 6px;border-radius:4px;font-family:monospace;flex-shrink:0;}',
+    '.moa-sb-divider{height:1px;background:rgba(255,255,255,0.06);margin:8px 12px;}',
+    '.moa-sb-version{font-size:10px;color:#4a4a6a;text-align:center;padding:8px 0 0;}',
 
-      items.forEach(function(item) {
-        const btn = document.createElement('button');
-        const isActive = window.location.pathname === item.path || window.location.pathname.startsWith(item.path + '/');
-        btn.textContent = item.icon + ' ' + item.label;
-        btn.style.cssText = 'background:' + (isActive ? 'rgba(102,126,234,0.2)' : 'none') + ';border:none;color:' + (isActive ? '#667eea' : 'rgba(255,255,255,0.6)') + ';font-size:12px;padding:6px 10px;border-radius:6px;cursor:pointer;font-weight:' + (isActive ? '700' : '500') + ';transition:all 0.15s;margin-right:2px;-webkit-app-region:no-drag;';
-        btn.onmouseenter = function() { if (!isActive) btn.style.background = 'rgba(255,255,255,0.06)'; btn.style.color = '#fff'; };
-        btn.onmouseleave = function() { if (!isActive) btn.style.background = 'none'; btn.style.color = isActive ? '#667eea' : 'rgba(255,255,255,0.6)'; };
-        btn.onclick = function() { window.location.href = item.path; };
-        nav.appendChild(btn);
+    'body{padding-top:36px !important;' + (isAuthPage ? '' : 'padding-left:200px !important;') + '}',
+    '.chat-sidebar{display:none !important;}',
+    '.chat-menu-btn{display:none !important;}',
+    '.chat-layout{grid-template-columns:1fr !important;}',
+
+    '@media(max-width:1100px){',
+    '  #moa-desktop-sidebar{width:56px;}',
+    '  .moa-sb-label,.moa-sb-hotkey,.moa-sb-section-label{display:none;}',
+    '  .moa-sb-item{justify-content:center;padding:10px 0;}',
+    '  .moa-sb-icon{width:auto;font-size:18px;}',
+    '  .moa-sb-version{display:none;}',
+    '  body{padding-left:56px !important;}',
+    '}',
+
+    '#moa-update-bar{position:fixed;top:36px;left:0;right:0;z-index:99997;background:linear-gradient(135deg,#667eea,#764ba2);color:#fff;padding:8px 20px;font-size:13px;font-weight:500;display:flex;align-items:center;justify-content:center;gap:12px;box-shadow:0 2px 8px rgba(0,0,0,0.3);}',
+    '#moa-update-progress{width:120px;height:4px;background:rgba(255,255,255,0.25);border-radius:2px;overflow:hidden;}',
+    '#moa-update-bar-fill{width:0%;height:100%;background:#fff;border-radius:2px;transition:width 0.3s;}',
+    '#moa-offline-bar{position:fixed;top:36px;left:0;right:0;z-index:99996;background:rgba(252,129,129,0.15);border-bottom:1px solid rgba(252,129,129,0.3);color:#fc8181;padding:6px 20px;font-size:12px;text-align:center;display:none;}',
+  ].join('\\n');
+
+  // ── Remove old injections ──
+  ['moa-desktop-shell','moa-desktop-styles','moa-desktop-nav','moa-desktop-titlebar','moa-desktop-sidebar'].forEach(function(id) {
+    var el = document.getElementById(id);
+    if (el) el.remove();
+  });
+
+  document.head.appendChild(style);
+
+  // ── Title Bar ──
+  var titleBar = document.createElement('div');
+  titleBar.id = 'moa-desktop-titlebar';
+  titleBar.innerHTML = '<div class="moa-tb-drag">'
+    + '<div class="moa-tb-logo"><span class="moa-tb-icon">\\u{1F916}</span><span class="moa-tb-brand">MoA</span></div>'
+    + '<div class="moa-tb-credits" id="moa-tb-credits" style="display:none"><span class="moa-tb-credits-icon">\\u{1F4B3}</span><span class="moa-tb-credits-value" id="moa-credits-value">-</span><span class="moa-tb-credits-label">\\uD06C\\uB808\\uB527</span></div>'
+    + '</div>'
+    + '<div class="moa-tb-controls">'
+    + '<button class="moa-tb-btn moa-tb-min" id="moa-tb-min" title="\\uCD5C\\uC18C\\uD654"><svg width="10" height="1" viewBox="0 0 10 1"><rect width="10" height="1" fill="currentColor"/></svg></button>'
+    + '<button class="moa-tb-btn moa-tb-max" id="moa-tb-max" title="\\uCD5C\\uB300\\uD654"><svg width="10" height="10" viewBox="0 0 10 10"><rect x="0.5" y="0.5" width="9" height="9" fill="none" stroke="currentColor" stroke-width="1"/></svg></button>'
+    + '<button class="moa-tb-btn moa-tb-close" id="moa-tb-close" title="\\uB2EB\\uAE30"><svg width="10" height="10" viewBox="0 0 10 10"><line x1="0" y1="0" x2="10" y2="10" stroke="currentColor" stroke-width="1.2"/><line x1="10" y1="0" x2="0" y2="10" stroke="currentColor" stroke-width="1.2"/></svg></button>'
+    + '</div>';
+  document.body.prepend(titleBar);
+
+  // ── Sidebar (not on auth pages) ──
+  if (!isAuthPage) {
+    var sidebar = document.createElement('div');
+    sidebar.id = 'moa-desktop-sidebar';
+
+    var navItems = [
+      {id:'chat',label:'AI \\uCC44\\uD305',icon:'\\uD83D\\uDCAC',path:'/chat',hotkey:'Ctrl+1'},
+      {id:'synthesis',label:'\\uC885\\uD569\\uBB38\\uC11C',icon:'\\uD83D\\uDCD1',path:'/synthesis',hotkey:'Ctrl+2'},
+      {id:'autocode',label:'AI \\uCF54\\uB529',icon:'\\uD83E\\uDD16',path:'/autocode',hotkey:'Ctrl+3'},
+      {id:'editor',label:'\\uC5D0\\uB514\\uD130',icon:'\\uD83D\\uDCDD',path:'/editor',hotkey:'Ctrl+4'},
+      {id:'interpreter',label:'\\uC2E4\\uC2DC\\uAC04 \\uD1B5\\uC5ED',icon:'\\uD83D\\uDDE3\\uFE0F',path:'/interpreter',hotkey:'Ctrl+5'},
+      {id:'image',label:'\\uC774\\uBBF8\\uC9C0',icon:'\\uD83C\\uDFA8',path:'/chat?cat=image',hotkey:''},
+      {id:'music',label:'\\uC74C\\uC545',icon:'\\uD83C\\uDFB5',path:'/chat?cat=music',hotkey:''},
+    ];
+    var bottomItems = [
+      {id:'channels',label:'\\uCC44\\uB110 \\uD5C8\\uBE0C',icon:'\\uD83D\\uDCE1',path:'/channels'},
+      {id:'billing',label:'\\uACB0\\uC81C',icon:'\\uD83D\\uDCB3',path:'/billing'},
+      {id:'mypage',label:'\\uB9C8\\uC774\\uD398\\uC774\\uC9C0',icon:'\\u2699\\uFE0F',path:'/mypage'},
+      {id:'download',label:'\\uB2E4\\uC6B4\\uB85C\\uB4DC',icon:'\\uD83D\\uDCE5',path:'/download'},
+    ];
+
+    function isActive(p) {
+      if (p.indexOf('?') !== -1) return currentPath === p.split('?')[0] && window.location.search.indexOf(p.split('?')[1]) !== -1;
+      return currentPath === p || currentPath.indexOf(p + '/') === 0;
+    }
+
+    function renderItems(items) {
+      return items.map(function(item) {
+        var active = isActive(item.path);
+        return '<a href="' + item.path + '" class="moa-sb-item' + (active ? ' active' : '') + '" data-path="' + item.path + '" title="' + item.label + (item.hotkey ? ' (' + item.hotkey + ')' : '') + '">'
+          + '<span class="moa-sb-icon">' + item.icon + '</span>'
+          + '<span class="moa-sb-label">' + item.label + '</span>'
+          + (item.hotkey ? '<span class="moa-sb-hotkey">' + item.hotkey + '</span>' : '')
+          + '</a>';
+      }).join('');
+    }
+
+    sidebar.innerHTML = '<div class="moa-sb-top">'
+      + '<div class="moa-sb-section-label">\\uC8FC\\uC694 \\uAE30\\uB2A5</div>'
+      + renderItems(navItems)
+      + '</div>'
+      + '<div class="moa-sb-bottom">'
+      + '<div class="moa-sb-divider"></div>'
+      + renderItems(bottomItems)
+      + '<div class="moa-sb-version" id="moa-sb-version"></div>'
+      + '</div>';
+
+    document.body.prepend(sidebar);
+
+    sidebar.querySelectorAll('.moa-sb-item').forEach(function(a) {
+      a.addEventListener('click', function(e) {
+        e.preventDefault();
+        window.location.href = a.getAttribute('data-path');
       });
+    });
+  }
 
-      document.body.prepend(nav);
+  // ── Shell marker ──
+  var shell = document.createElement('div');
+  shell.id = 'moa-desktop-shell';
+  shell.style.display = 'none';
+  document.body.appendChild(shell);
 
-      // Push page content down to accommodate nav bar
-      document.body.style.paddingTop = '40px';
-    })();
+  // ── Wire window controls ──
+  var minBtn = document.getElementById('moa-tb-min');
+  var maxBtn = document.getElementById('moa-tb-max');
+  var closeBtn = document.getElementById('moa-tb-close');
+  if (minBtn) minBtn.onclick = function() { window.moaDesktop && window.moaDesktop.windowControl('minimize'); };
+  if (maxBtn) maxBtn.onclick = function() { window.moaDesktop && window.moaDesktop.windowControl('maximize'); };
+  if (closeBtn) closeBtn.onclick = function() { window.moaDesktop && window.moaDesktop.windowControl('close'); };
+
+  // ── Credits click → billing page ──
+  var creditsEl = document.getElementById('moa-tb-credits');
+  if (creditsEl) creditsEl.onclick = function() { window.location.href = '/billing'; };
+
+  // ── Load credits ──
+  try {
+    var authData = sessionStorage.getItem('moa_web_auth');
+    if (authData) {
+      var auth = JSON.parse(authData);
+      if (auth.user_id) {
+        var cc = document.getElementById('moa-tb-credits');
+        if (cc) cc.style.display = 'flex';
+        fetch('/api/credits?user_id=' + encodeURIComponent(auth.user_id))
+          .then(function(r) { return r.json(); })
+          .then(function(data) {
+            var val = document.getElementById('moa-credits-value');
+            if (val && data.balance !== undefined) {
+              val.textContent = Number(data.balance).toLocaleString();
+              if (data.balance < 10) val.style.color = '#fc8181';
+            }
+          }).catch(function(){});
+      }
+    }
+  } catch(e) {}
+
+  // ── Version in sidebar ──
+  if (window.moaDesktop) {
+    window.moaDesktop.getVersion().then(function(v) {
+      var el = document.getElementById('moa-sb-version');
+      if (el) el.textContent = 'MoA Desktop v' + v;
+    }).catch(function(){});
+  }
+
+  // ── Offline detection ──
+  var offlineBar = document.createElement('div');
+  offlineBar.id = 'moa-offline-bar';
+  offlineBar.textContent = '\\uC624\\uD504\\uB77C\\uC778 \\uC0C1\\uD0DC\\uC785\\uB2C8\\uB2E4. \\uC778\\uD130\\uB137 \\uC5F0\\uACB0\\uC744 \\uD655\\uC778\\uD574\\uC8FC\\uC138\\uC694.';
+  document.body.appendChild(offlineBar);
+  window.addEventListener('offline', function() { offlineBar.style.display = 'block'; });
+  window.addEventListener('online', function() { offlineBar.style.display = 'none'; });
+  if (!navigator.onLine) offlineBar.style.display = 'block';
+
+})();
   `).catch(() => {});
 }
 
-/* -----------------------------------------------------------------
-   System Tray
-   ----------------------------------------------------------------- */
+// ─── Auto Updater ────────────────────────────────────────────
+
+function setupAutoUpdater() {
+  autoUpdater.autoDownload = true;
+  autoUpdater.autoInstallOnAppQuit = true;
+
+  autoUpdater.on("checking-for-update", () => {
+    sendUpdateStatus("checking", "업데이트를 확인하고 있습니다...");
+  });
+
+  autoUpdater.on("update-available", (info) => {
+    sendUpdateStatus("available", `새 버전 v${info.version}을 다운로드합니다...`);
+    if (mainWindow) {
+      mainWindow.webContents.executeJavaScript(`
+        (function() {
+          var old = document.getElementById('moa-update-bar');
+          if (old) old.remove();
+          var bar = document.createElement('div');
+          bar.id = 'moa-update-bar';
+          bar.innerHTML = '<span>\\u2B07\\uFE0F MoA v${info.version} \\uC5C5\\uB370\\uC774\\uD2B8\\uB97C \\uB2E4\\uC6B4\\uB85C\\uB4DC\\uD558\\uACE0 \\uC788\\uC2B5\\uB2C8\\uB2E4...</span><div id="moa-update-progress"><div id="moa-update-bar-fill"></div></div>';
+          var tb = document.getElementById('moa-desktop-titlebar');
+          if (tb) tb.after(bar); else document.body.prepend(bar);
+        })();
+      `).catch(() => {});
+    }
+  });
+
+  autoUpdater.on("download-progress", (progress) => {
+    const pct = Math.round(progress.percent);
+    sendUpdateStatus("downloading", `다운로드 중... ${pct}%`);
+    if (mainWindow) {
+      mainWindow.webContents.executeJavaScript(`
+        var fill = document.getElementById('moa-update-bar-fill');
+        if (fill) fill.style.width = '${pct}%';
+      `).catch(() => {});
+    }
+  });
+
+  autoUpdater.on("update-downloaded", (info) => {
+    sendUpdateStatus("ready", `v${info.version} 업데이트가 준비되었습니다.`);
+    if (mainWindow) {
+      mainWindow.webContents.executeJavaScript(`
+        var bar = document.getElementById('moa-update-bar');
+        if (bar) bar.innerHTML = '<span>\\u2705 MoA v${info.version} \\uC5C5\\uB370\\uC774\\uD2B8\\uAC00 \\uC900\\uBE44\\uB418\\uC5C8\\uC2B5\\uB2C8\\uB2E4. 3\\uCD08 \\uD6C4 \\uC7AC\\uC2DC\\uC791\\uD569\\uB2C8\\uB2E4...</span>';
+      `).catch(() => {});
+    }
+    setTimeout(() => autoUpdater.quitAndInstall(false, true), 3000);
+  });
+
+  autoUpdater.on("update-not-available", () => {
+    sendUpdateStatus("latest", "최신 버전입니다.");
+  });
+
+  autoUpdater.on("error", (err) => {
+    sendUpdateStatus("error", `업데이트 확인 실패: ${err.message}`);
+  });
+
+  if (!IS_DEV) autoUpdater.checkForUpdates().catch(() => {});
+}
+
+function sendUpdateStatus(status, message) {
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.send("moa:updateStatus", { status, message });
+  }
+  if (splashWindow && !splashWindow.isDestroyed()) {
+    splashWindow.webContents.send("moa:updateStatus", { status, message });
+  }
+}
+
+// ─── System Tray ─────────────────────────────────────────────
 
 function createTray() {
   const iconPath = getTrayIconPath();
   const icon = nativeImage.createFromPath(iconPath).resize({ width: 16, height: 16 });
   tray = new Tray(icon);
 
+  const nav = (p) => () => {
+    if (mainWindow) {
+      mainWindow.loadURL(`${MOA_URL}${p}`);
+      mainWindow.show();
+      mainWindow.focus();
+    }
+  };
+
   const contextMenu = Menu.buildFromTemplate([
-    {
-      label: "MoA 열기",
-      click: () => {
-        if (mainWindow) {
-          mainWindow.show();
-          mainWindow.focus();
-        }
-      },
-    },
+    { label: "MoA 열기", click: () => { if (mainWindow) { mainWindow.show(); mainWindow.focus(); } } },
     { type: "separator" },
-    {
-      label: "채팅",
-      click: () => {
-        if (mainWindow) {
-          mainWindow.loadURL(`${MOA_URL}/chat`);
-          mainWindow.show();
-        }
-      },
-    },
-    {
-      label: "문서작업",
-      click: () => {
-        if (mainWindow) {
-          mainWindow.loadURL(`${MOA_URL}/synthesis`);
-          mainWindow.show();
-        }
-      },
-    },
-    {
-      label: "코딩작업",
-      click: () => {
-        if (mainWindow) {
-          mainWindow.loadURL(`${MOA_URL}/autocode`);
-          mainWindow.show();
-        }
-      },
-    },
-    {
-      label: "실시간 통역",
-      click: () => {
-        if (mainWindow) {
-          mainWindow.loadURL(`${MOA_URL}/interpreter`);
-          mainWindow.show();
-        }
-      },
-    },
+    { label: "\uD83D\uDCAC AI 채팅", click: nav("/chat") },
+    { label: "\uD83D\uDCD1 종합문서", click: nav("/synthesis") },
+    { label: "\uD83E\uDD16 AI 자동코딩", click: nav("/autocode") },
+    { label: "\uD83D\uDCDD 문서 에디터", click: nav("/editor") },
+    { label: "\uD83D\uDDE3\uFE0F 실시간 통역", click: nav("/interpreter") },
     { type: "separator" },
-    {
-      label: "업데이트 확인",
-      click: () => {
-        if (!IS_DEV) {
-          autoUpdater.checkForUpdates().catch(() => {});
-        }
-      },
-    },
-    {
-      label: "마이페이지",
-      click: () => {
-        if (mainWindow) {
-          mainWindow.loadURL(`${MOA_URL}/mypage`);
-          mainWindow.show();
-        }
-      },
-    },
+    { label: "\uD83D\uDCE1 채널 허브", click: nav("/channels") },
+    { label: "\uD83D\uDCB3 결제", click: nav("/billing") },
+    { label: "\u2699\uFE0F 마이페이지", click: nav("/mypage") },
     { type: "separator" },
-    {
-      label: "MoA 종료",
-      click: () => {
-        app.isQuitting = true;
-        app.quit();
-      },
-    },
+    { label: "업데이트 확인", click: () => { if (!IS_DEV) autoUpdater.checkForUpdates().catch(() => {}); } },
+    { type: "separator" },
+    { label: "MoA 종료", click: () => { app.isQuitting = true; app.quit(); } },
   ]);
 
   tray.setToolTip(`MoA v${app.getVersion()}`);
   tray.setContextMenu(contextMenu);
   tray.on("double-click", () => {
-    if (mainWindow) {
-      mainWindow.show();
-      mainWindow.focus();
-    }
+    if (mainWindow) { mainWindow.show(); mainWindow.focus(); }
   });
 }
 
 function showTrayNotification(body) {
   if (Notification.isSupported()) {
-    new Notification({ title: APP_NAME, body }).show();
+    new Notification({ title: APP_NAME, body, icon: getIconPath() }).show();
   }
 }
 
-/* -----------------------------------------------------------------
-   IPC Handlers — Local File System Access
-   These enable the web app to access the user's local files
-   (only when running inside the desktop app, with user permission).
-   ----------------------------------------------------------------- */
+// ─── IPC Handlers ────────────────────────────────────────────
 
 function setupIPC() {
-  // Check if running in desktop app
   ipcMain.handle("moa:isDesktopApp", () => true);
-
-  // Get app version (for update checks from renderer)
   ipcMain.handle("moa:getVersion", () => app.getVersion());
 
-  // Manual update check from renderer
+  // Window controls for frameless window
+  ipcMain.handle("moa:windowControl", (_event, action) => {
+    if (!mainWindow) return;
+    switch (action) {
+      case "minimize": mainWindow.minimize(); break;
+      case "maximize":
+        if (mainWindow.isMaximized()) mainWindow.unmaximize();
+        else mainWindow.maximize();
+        break;
+      case "close": mainWindow.close(); break;
+    }
+  });
+
   ipcMain.handle("moa:checkUpdate", async () => {
     if (IS_DEV) return { status: "dev" };
     try {
@@ -369,7 +535,6 @@ function setupIPC() {
     }
   });
 
-  // Get system info
   ipcMain.handle("moa:systemInfo", () => ({
     platform: process.platform,
     arch: process.arch,
@@ -382,59 +547,39 @@ function setupIPC() {
     appVersion: app.getVersion(),
   }));
 
-  // List drives (Windows: C:, D:, E: etc. / macOS,Linux: /Volumes, /mnt)
   ipcMain.handle("moa:listDrives", () => {
-    if (process.platform === "win32") {
+    if (IS_WIN) {
       const drives = [];
       for (let i = 65; i <= 90; i++) {
-        const drive = String.fromCharCode(i) + ":\\";
-        try {
-          fs.accessSync(drive, fs.constants.F_OK);
-          drives.push(drive);
-        } catch { /* drive not available */ }
+        const d = String.fromCharCode(i) + ":\\";
+        try { fs.accessSync(d, fs.constants.F_OK); drives.push(d); } catch { /* skip */ }
       }
       return drives;
     }
-    // macOS/Linux: list mount points
     const mounts = [];
-    try {
-      const volumes = fs.readdirSync("/Volumes");
-      mounts.push(...volumes.map((v) => `/Volumes/${v}`));
-    } catch { /* not macOS */ }
-    try {
-      const mnts = fs.readdirSync("/mnt");
-      mounts.push(...mnts.map((m) => `/mnt/${m}`));
-    } catch { /* not Linux */ }
+    try { mounts.push(...fs.readdirSync("/Volumes").map((v) => `/Volumes/${v}`)); } catch { /* skip */ }
+    try { mounts.push(...fs.readdirSync("/mnt").map((m) => `/mnt/${m}`)); } catch { /* skip */ }
     if (mounts.length === 0) mounts.push("/");
     return mounts;
   });
 
-  // List directory contents
   ipcMain.handle("moa:listDirectory", async (_event, dirPath) => {
     try {
-      const resolvedPath = resolvePath(dirPath);
-
-      // Security: confirm access for sensitive paths
-      if (isSensitivePath(resolvedPath)) {
+      const resolved = resolvePath(dirPath);
+      if (isSensitivePath(resolved)) {
         const result = await dialog.showMessageBox(mainWindow, {
-          type: "question",
-          buttons: ["허용", "거부"],
+          type: "question", buttons: ["허용", "거부"],
           title: "파일 접근 요청",
-          message: `MoA가 다음 폴더에 접근하려고 합니다:\n\n${resolvedPath}\n\n허용하시겠습니까?`,
+          message: `MoA가 다음 폴더에 접근하려고 합니다:\n\n${resolved}\n\n허용하시겠습니까?`,
         });
-        if (result.response !== 0) {
-          return { error: "사용자가 접근을 거부했습니다." };
-        }
+        if (result.response !== 0) return { error: "사용자가 접근을 거부했습니다." };
       }
-
-      const entries = fs.readdirSync(resolvedPath, { withFileTypes: true });
+      const entries = fs.readdirSync(resolved, { withFileTypes: true });
       return {
-        path: resolvedPath,
+        path: resolved,
         entries: entries.map((e) => ({
-          name: e.name,
-          isDirectory: e.isDirectory(),
-          isFile: e.isFile(),
-          size: e.isFile() ? safeFileSize(path.join(resolvedPath, e.name)) : 0,
+          name: e.name, isDirectory: e.isDirectory(), isFile: e.isFile(),
+          size: e.isFile() ? safeFileSize(path.join(resolved, e.name)) : 0,
         })),
       };
     } catch (err) {
@@ -442,66 +587,44 @@ function setupIPC() {
     }
   });
 
-  // Read file content
   ipcMain.handle("moa:readFile", async (_event, filePath, encoding = "utf-8") => {
     try {
-      const resolvedPath = resolvePath(filePath);
-      const stat = fs.statSync(resolvedPath);
-
-      // Limit file size to 10MB
-      if (stat.size > 10 * 1024 * 1024) {
-        return { error: "파일 크기가 10MB를 초과합니다." };
-      }
-
-      const content = fs.readFileSync(resolvedPath, encoding);
-      return { path: resolvedPath, content, size: stat.size };
+      const resolved = resolvePath(filePath);
+      const stat = fs.statSync(resolved);
+      if (stat.size > 10 * 1024 * 1024) return { error: "파일 크기가 10MB를 초과합니다." };
+      return { path: resolved, content: fs.readFileSync(resolved, encoding), size: stat.size };
     } catch (err) {
       return { error: `파일을 읽을 수 없습니다: ${err.message}` };
     }
   });
 
-  // Write file content (with confirmation)
   ipcMain.handle("moa:writeFile", async (_event, filePath, content) => {
     try {
-      const resolvedPath = resolvePath(filePath);
-
+      const resolved = resolvePath(filePath);
       const result = await dialog.showMessageBox(mainWindow, {
-        type: "question",
-        buttons: ["저장", "취소"],
+        type: "question", buttons: ["저장", "취소"],
         title: "파일 저장 확인",
-        message: `다음 경로에 파일을 저장합니다:\n\n${resolvedPath}\n\n계속하시겠습니까?`,
+        message: `다음 경로에 파일을 저장합니다:\n\n${resolved}\n\n계속하시겠습니까?`,
       });
-
-      if (result.response !== 0) {
-        return { error: "사용자가 저장을 취소했습니다." };
-      }
-
-      // Create directory if needed
-      const dir = path.dirname(resolvedPath);
-      if (!fs.existsSync(dir)) {
-        fs.mkdirSync(dir, { recursive: true });
-      }
-
-      fs.writeFileSync(resolvedPath, content, "utf-8");
-      return { success: true, path: resolvedPath };
+      if (result.response !== 0) return { error: "사용자가 저장을 취소했습니다." };
+      const dir = path.dirname(resolved);
+      if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+      fs.writeFileSync(resolved, content, "utf-8");
+      return { success: true, path: resolved };
     } catch (err) {
       return { error: `파일을 저장할 수 없습니다: ${err.message}` };
     }
   });
 
-  // Open file/folder picker dialog
   ipcMain.handle("moa:openDialog", async (_event, options) => {
     const result = await dialog.showOpenDialog(mainWindow, {
-      properties: options?.directory
-        ? ["openDirectory"]
-        : ["openFile"],
+      properties: options?.directory ? ["openDirectory"] : ["openFile"],
       title: options?.title ?? "파일 선택",
       filters: options?.filters,
     });
     return result.canceled ? null : result.filePaths;
   });
 
-  // Save file dialog
   ipcMain.handle("moa:saveDialog", async (_event, options) => {
     const result = await dialog.showSaveDialog(mainWindow, {
       title: options?.title ?? "파일 저장",
@@ -511,79 +634,49 @@ function setupIPC() {
     return result.canceled ? null : result.filePath;
   });
 
-  // Open file in system default app
   ipcMain.handle("moa:openExternal", async (_event, filePath) => {
-    try {
-      await shell.openPath(resolvePath(filePath));
-      return { success: true };
-    } catch (err) {
-      return { error: err.message };
-    }
+    try { await shell.openPath(resolvePath(filePath)); return { success: true }; }
+    catch (err) { return { error: err.message }; }
   });
 
-  // Execute shell command (with permission + sanitization)
   ipcMain.handle("moa:executeCommand", async (_event, command) => {
     if (typeof command !== "string" || !command.trim()) {
       return { error: "유효한 명령이 필요합니다." };
     }
-
-    // Block critical dangerous patterns
     const blocked = [
       /rm\s+(-[a-zA-Z]*[rf]){2,}\s+\/(?!\S)/i,
-      /mkfs\./i,
-      /dd\s+if=.*of=\/dev\//i,
-      /:(){ :\|:& };:/,
-      />\s*\/dev\/sd/i,
-      /chmod\s+-R\s+777\s+\//i,
-      /shutdown|poweroff|init\s+[06]/i,
+      /mkfs\./i, /dd\s+if=.*of=\/dev\//i,
+      /:(){ :\|:& };:/, />\s*\/dev\/sd/i,
+      /chmod\s+-R\s+777\s+\//i, /shutdown|poweroff|init\s+[06]/i,
     ];
     if (blocked.some((p) => p.test(command))) {
       return { error: "이 명령은 보안상 실행할 수 없습니다." };
     }
-
     const result = await dialog.showMessageBox(mainWindow, {
-      type: "warning",
-      buttons: ["실행", "취소"],
+      type: "warning", buttons: ["실행", "취소"],
       title: "명령 실행 확인",
       message: `다음 명령을 실행합니다:\n\n${command}\n\n허용하시겠습니까?`,
       detail: "주의: 시스템 명령 실행은 컴퓨터에 영향을 줄 수 있습니다.",
     });
-
-    if (result.response !== 0) {
-      return { error: "사용자가 실행을 거부했습니다." };
-    }
-
+    if (result.response !== 0) return { error: "사용자가 실행을 거부했습니다." };
     return new Promise((resolve) => {
       const { execFile } = require("child_process");
-      // Use shell with explicit quoting via execFile for safer execution
-      const shellCmd = process.platform === "win32" ? "cmd.exe" : "/bin/sh";
-      const shellArgs = process.platform === "win32" ? ["/c", command] : ["-c", command];
-      execFile(shellCmd, shellArgs, { timeout: 30000, maxBuffer: 5 * 1024 * 1024 }, (err, stdout, stderr) => {
-        if (err) {
-          resolve({ error: err.message, stderr });
-        } else {
-          resolve({ stdout, stderr });
-        }
+      const sh = IS_WIN ? "cmd.exe" : "/bin/sh";
+      const args = IS_WIN ? ["/c", command] : ["-c", command];
+      execFile(sh, args, { timeout: 30000, maxBuffer: 5 * 1024 * 1024 }, (err, stdout, stderr) => {
+        resolve(err ? { error: err.message, stderr } : { stdout, stderr });
       });
     });
   });
 }
 
-/* -----------------------------------------------------------------
-   Helpers
-   ----------------------------------------------------------------- */
+// ─── Helpers ─────────────────────────────────────────────────
 
 function resolvePath(inputPath) {
   if (typeof inputPath !== "string") return os.homedir();
-  // Expand ~ to home directory
-  if (inputPath.startsWith("~")) {
-    return path.resolve(path.join(os.homedir(), inputPath.slice(1)));
-  }
+  if (inputPath.startsWith("~")) return path.resolve(path.join(os.homedir(), inputPath.slice(1)));
   const resolved = path.resolve(inputPath);
-  // Block null bytes (path injection)
-  if (resolved.includes("\0")) {
-    throw new Error("Invalid path: null byte detected");
-  }
+  if (resolved.includes("\0")) throw new Error("Invalid path: null byte detected");
   return resolved;
 }
 
@@ -599,43 +692,35 @@ function isSensitivePath(p) {
   return sensitive.some((s) => lower.includes(s));
 }
 
-function safeFileSize(filePath) {
-  try {
-    return fs.statSync(filePath).size;
-  } catch {
-    return 0;
-  }
+function safeFileSize(fp) {
+  try { return fs.statSync(fp).size; } catch { return 0; }
 }
 
 function getIconPath() {
-  const iconName = process.platform === "win32" ? "icon.ico" : "icon.png";
-  const iconPath = path.join(__dirname, "icons", iconName);
-  if (fs.existsSync(iconPath)) return iconPath;
-  return undefined;
+  const n = IS_WIN ? "icon.ico" : "icon.png";
+  const p = path.join(__dirname, "icons", n);
+  return fs.existsSync(p) ? p : undefined;
 }
 
 function getTrayIconPath() {
-  const trayPath = path.join(__dirname, "tray-icon.png");
-  if (fs.existsSync(trayPath)) return trayPath;
-  return path.join(__dirname, "icons", "icon.png");
+  const p = path.join(__dirname, "tray-icon.png");
+  return fs.existsSync(p) ? p : path.join(__dirname, "icons", "icon.png");
 }
 
-/* -----------------------------------------------------------------
-   Application Menu
-   ----------------------------------------------------------------- */
+function debounce(fn, ms) {
+  let timer;
+  return function () { clearTimeout(timer); timer = setTimeout(fn, ms); };
+}
+
+// ─── Application Menu ────────────────────────────────────────
 
 function setupAppMenu() {
-  const isMac = process.platform === "darwin";
-
-  const nav = (path) => () => {
-    if (mainWindow) {
-      mainWindow.loadURL(`${MOA_URL}${path}`);
-      mainWindow.show();
-    }
+  const nav = (p) => () => {
+    if (mainWindow) { mainWindow.loadURL(`${MOA_URL}${p}`); mainWindow.show(); }
   };
 
   const template = [
-    ...(isMac ? [{ role: "appMenu" }] : []),
+    ...(IS_MAC ? [{ role: "appMenu" }] : []),
     {
       label: "MoA",
       submenu: [
@@ -646,8 +731,8 @@ function setupAppMenu() {
         { label: "실시간 통역", accelerator: "CmdOrCtrl+5", click: nav("/interpreter") },
         { type: "separator" },
         { label: "채널 허브", click: nav("/channels") },
-        { label: "마이페이지", click: nav("/mypage") },
         { label: "결제", click: nav("/billing") },
+        { label: "마이페이지", click: nav("/mypage") },
       ],
     },
     { role: "editMenu" },
@@ -655,15 +740,11 @@ function setupAppMenu() {
     { role: "windowMenu" },
   ];
 
-  const menu = Menu.buildFromTemplate(template);
-  Menu.setApplicationMenu(menu);
+  Menu.setApplicationMenu(Menu.buildFromTemplate(template));
 }
 
-/* -----------------------------------------------------------------
-   App Lifecycle
-   ----------------------------------------------------------------- */
+// ─── App Lifecycle ───────────────────────────────────────────
 
-// Single instance lock — prevent multiple windows
 const gotLock = app.requestSingleInstanceLock();
 if (!gotLock) {
   app.quit();
@@ -680,26 +761,20 @@ if (!gotLock) {
 app.whenReady().then(() => {
   setupIPC();
   setupAppMenu();
+  createSplashWindow();
   createWindow();
   createTray();
   setupAutoUpdater();
 
-  // macOS: re-create window on dock click
   app.on("activate", () => {
-    if (BrowserWindow.getAllWindows().length === 0) {
-      createWindow();
-    } else if (mainWindow) {
-      mainWindow.show();
-    }
+    if (BrowserWindow.getAllWindows().length === 0) createWindow();
+    else if (mainWindow) mainWindow.show();
   });
 });
 
-app.on("window-all-closed", () => {
-  if (process.platform !== "darwin") {
-    // On Windows/Linux, keep running in tray
-  }
-});
+app.on("window-all-closed", () => { /* keep running in tray */ });
 
 app.on("before-quit", () => {
   app.isQuitting = true;
+  saveWindowState();
 });
