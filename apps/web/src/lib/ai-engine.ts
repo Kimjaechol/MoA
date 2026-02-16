@@ -196,7 +196,7 @@ export const CATEGORY_SKILLS: Record<string, string[]> = {
 const MODEL_CREDIT_COSTS: Record<string, number> = {
   "local/slm-default": 0, "local/fallback": 0, "cache/hit": 0,
   "groq/kimi-k2-0905": 1, "groq/llama-3.3-70b-versatile": 1,
-  "gemini/gemini-3.0-flash": 2, "gemini/gemini-2.5-flash": 2, "gemini/gemini-2.0-flash": 2,
+  "gemini/gemini-2.0-flash": 2, "gemini/gemini-2.5-flash": 2,
   "deepseek/deepseek-chat": 3,
   "mistral/mistral-small": 3, "mistral/mistral-large": 6,
   "xai/grok-3-mini": 4, "xai/grok-3": 8,
@@ -311,31 +311,35 @@ async function callOpenAI(key: string, system: string, messages: LLMMessage[], m
   return null;
 }
 
-const GEMINI_MODEL = "gemini-3.0-flash";
+const GEMINI_MODELS = ["gemini-2.0-flash", "gemini-2.5-flash"];
 
 async function callGemini(key: string, system: string, messages: LLMMessage[]): Promise<string | null> {
-  try {
-    const normalized = normalizeMessages(messages);
-    const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${key}`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        systemInstruction: { parts: [{ text: system }] },
-        contents: normalized.map((m) => ({
-          role: m.role === "assistant" ? "model" : "user",
-          parts: [{ text: m.content }],
-        })),
-        generationConfig: { maxOutputTokens: 4096 },
-      }),
-    });
-    if (res.ok) {
-      const data = await res.json();
-      return data.candidates?.[0]?.content?.parts?.[0]?.text ?? null;
+  const normalized = normalizeMessages(messages);
+  // Try multiple Gemini model names in case some are unavailable
+  for (const model of GEMINI_MODELS) {
+    try {
+      const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${key}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          systemInstruction: { parts: [{ text: system }] },
+          contents: normalized.map((m) => ({
+            role: m.role === "assistant" ? "model" : "user",
+            parts: [{ text: m.content }],
+          })),
+          generationConfig: { maxOutputTokens: 4096 },
+        }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        const text = data.candidates?.[0]?.content?.parts?.[0]?.text ?? null;
+        if (text) return text;
+      }
+      const errBody = await res.text().catch(() => "");
+      console.warn(`[ai-engine] Gemini ${model} failed (${res.status}):`, errBody.slice(0, 200));
+    } catch (err) {
+      console.warn(`[ai-engine] Gemini ${model} error:`, err instanceof Error ? err.message : err);
     }
-    const errBody = await res.text().catch(() => "");
-    console.error(`[ai-engine] Gemini ${GEMINI_MODEL} failed (${res.status}):`, errBody.slice(0, 200));
-  } catch (err) {
-    console.error(`[ai-engine] Gemini ${GEMINI_MODEL} error:`, err instanceof Error ? err.message : err);
   }
   return null;
 }
@@ -452,9 +456,12 @@ async function tryLlmCall(messages: LLMMessage[], category: string, strategy: st
   const skills = CATEGORY_SKILLS[category] ?? CATEGORY_SKILLS.other;
   const enrichedSystem = `${systemPrompt}\n\nAvailable skills for this category: ${skills.join(", ")}`;
 
+  // Read ALL available env keys (Vercel environment variables)
   const envAnthropicKey = process.env.ANTHROPIC_API_KEY;
   const envOpenaiKey = process.env.OPENAI_API_KEY;
   const envGeminiKey = process.env.GEMINI_API_KEY;
+  const envGroqKey = process.env.GROQ_API_KEY;
+  const envDeepseekKey = process.env.DEEPSEEK_API_KEY;
 
   const decryptKey = (provider: string) => {
     const raw = keys.find((k: { provider: string }) => k.provider === provider)?.encrypted_key;
@@ -470,40 +477,46 @@ async function tryLlmCall(messages: LLMMessage[], category: string, strategy: st
 
   const hasUserQualityKeys = !!(userAnthropicKey || userOpenaiKey || userGeminiKey || userMistralKey || userXaiKey);
 
-  console.info(`[ai-engine] Strategy: ${strategy} | User keys: ${keys.length} (quality: ${hasUserQualityKeys}) | Env keys: anthropic=${!!envAnthropicKey} openai=${!!envOpenaiKey} gemini=${!!envGeminiKey}`);
+  console.info(`[ai-engine] Strategy: ${strategy} | User keys: ${keys.length} (quality: ${hasUserQualityKeys}) | Env keys: anthropic=${!!envAnthropicKey} openai=${!!envOpenaiKey} gemini=${!!envGeminiKey} groq=${!!envGroqKey} deepseek=${!!envDeepseekKey}`);
 
   // Phase 1: User's own API keys — best quality first
   if (hasUserQualityKeys) {
     if (strategy === "max-performance") {
       if (userAnthropicKey) { const r = await callAnthropic(userAnthropicKey, enrichedSystem, messages, "claude-opus-4-6"); if (r) return { text: r, model: "anthropic/claude-opus-4-6", usedEnvKey: false }; }
-      if (userOpenaiKey) { const r = await callOpenAI(userOpenaiKey, enrichedSystem, messages, "gpt-5"); if (r) return { text: r, model: "openai/gpt-5", usedEnvKey: false }; }
-      if (userGeminiKey) { const r = await callGemini(userGeminiKey, enrichedSystem, messages); if (r) return { text: r, model: "gemini/gemini-3.0-flash", usedEnvKey: false }; }
+      if (userOpenaiKey) { const r = await callOpenAI(userOpenaiKey, enrichedSystem, messages, "gpt-4o"); if (r) return { text: r, model: "openai/gpt-4o", usedEnvKey: false }; }
+      if (userGeminiKey) { const r = await callGemini(userGeminiKey, enrichedSystem, messages); if (r) return { text: r, model: "gemini/gemini-2.0-flash", usedEnvKey: false }; }
       if (userXaiKey) { const r = await callXai(userXaiKey, enrichedSystem, messages, "grok-3"); if (r) return { text: r, model: "xai/grok-3", usedEnvKey: false }; }
       if (userMistralKey) { const r = await callMistral(userMistralKey, enrichedSystem, messages, "mistral-large-latest"); if (r) return { text: r, model: "mistral/mistral-large", usedEnvKey: false }; }
     } else {
-      if (userAnthropicKey) { const r = await callAnthropic(userAnthropicKey, enrichedSystem, messages, "claude-sonnet-4-5-20250929"); if (r) return { text: r, model: "anthropic/claude-sonnet-4-5", usedEnvKey: false }; }
+      if (userGeminiKey) { const r = await callGemini(userGeminiKey, enrichedSystem, messages); if (r) return { text: r, model: "gemini/gemini-2.0-flash", usedEnvKey: false }; }
       if (userOpenaiKey) { const r = await callOpenAI(userOpenaiKey, enrichedSystem, messages, "gpt-4o-mini"); if (r) return { text: r, model: "openai/gpt-4o-mini", usedEnvKey: false }; }
-      if (userGeminiKey) { const r = await callGemini(userGeminiKey, enrichedSystem, messages); if (r) return { text: r, model: "gemini/gemini-3.0-flash", usedEnvKey: false }; }
+      if (userAnthropicKey) { const r = await callAnthropic(userAnthropicKey, enrichedSystem, messages, "claude-sonnet-4-5-20250929"); if (r) return { text: r, model: "anthropic/claude-sonnet-4-5", usedEnvKey: false }; }
       if (userXaiKey) { const r = await callXai(userXaiKey, enrichedSystem, messages, "grok-3-mini"); if (r) return { text: r, model: "xai/grok-3-mini", usedEnvKey: false }; }
       if (userMistralKey) { const r = await callMistral(userMistralKey, enrichedSystem, messages, "mistral-small-latest"); if (r) return { text: r, model: "mistral/mistral-small", usedEnvKey: false }; }
     }
   }
 
-  // Phase 2: MoA server env keys (2x credit)
+  // Phase 2: MoA server env keys (2x credit) — tries ALL configured providers
   if (strategy === "max-performance") {
     if (envAnthropicKey) { const r = await callAnthropic(envAnthropicKey, enrichedSystem, messages, "claude-opus-4-6"); if (r) return { text: r, model: "anthropic/claude-opus-4-6", usedEnvKey: true }; }
-    if (envOpenaiKey) { const r = await callOpenAI(envOpenaiKey, enrichedSystem, messages, "gpt-5"); if (r) return { text: r, model: "openai/gpt-5", usedEnvKey: true }; }
-    if (envGeminiKey) { const r = await callGemini(envGeminiKey, enrichedSystem, messages); if (r) return { text: r, model: "gemini/gemini-3.0-flash", usedEnvKey: true }; }
+    if (envOpenaiKey) { const r = await callOpenAI(envOpenaiKey, enrichedSystem, messages, "gpt-4o"); if (r) return { text: r, model: "openai/gpt-4o", usedEnvKey: true }; }
+    if (envGeminiKey) { const r = await callGemini(envGeminiKey, enrichedSystem, messages); if (r) return { text: r, model: "gemini/gemini-2.0-flash", usedEnvKey: true }; }
+    if (envGroqKey) { const r = await callGroq(envGroqKey, enrichedSystem, messages); if (r) return { text: r, model: "groq/llama-3.3-70b-versatile", usedEnvKey: true }; }
+    if (envDeepseekKey) { const r = await callDeepSeek(envDeepseekKey, enrichedSystem, messages); if (r) return { text: r, model: "deepseek/deepseek-chat", usedEnvKey: true }; }
   } else {
-    if (envGeminiKey) { const r = await callGemini(envGeminiKey, enrichedSystem, messages); if (r) return { text: r, model: "gemini/gemini-3.0-flash", usedEnvKey: true }; }
+    // Cost-efficient: Gemini first (cheapest), then Groq (free), then others
+    if (envGeminiKey) { const r = await callGemini(envGeminiKey, enrichedSystem, messages); if (r) return { text: r, model: "gemini/gemini-2.0-flash", usedEnvKey: true }; }
+    if (envGroqKey) { const r = await callGroq(envGroqKey, enrichedSystem, messages); if (r) return { text: r, model: "groq/llama-3.3-70b-versatile", usedEnvKey: true }; }
+    if (envDeepseekKey) { const r = await callDeepSeek(envDeepseekKey, enrichedSystem, messages); if (r) return { text: r, model: "deepseek/deepseek-chat", usedEnvKey: true }; }
     if (envOpenaiKey) { const r = await callOpenAI(envOpenaiKey, enrichedSystem, messages, "gpt-4o-mini"); if (r) return { text: r, model: "openai/gpt-4o-mini", usedEnvKey: true }; }
-    if (envAnthropicKey) { const r = await callAnthropic(envAnthropicKey, enrichedSystem, messages, "claude-haiku-4-5"); if (r) return { text: r, model: "anthropic/claude-haiku-4-5", usedEnvKey: true }; }
+    if (envAnthropicKey) { const r = await callAnthropic(envAnthropicKey, enrichedSystem, messages, "claude-haiku-4-5-20251001"); if (r) return { text: r, model: "anthropic/claude-haiku-4-5", usedEnvKey: true }; }
   }
 
-  // Phase 3: Groq/DeepSeek — user keys ONLY (CJK mixing issues)
+  // Phase 3: User Groq/DeepSeek keys (not from env)
   if (userGroqKey) { const r = await callGroq(userGroqKey, enrichedSystem, messages); if (r) return { text: r, model: "groq/llama-3.3-70b-versatile", usedEnvKey: false }; }
   if (userDeepseekKey) { const r = await callDeepSeek(userDeepseekKey, enrichedSystem, messages); if (r) return { text: r, model: "deepseek/deepseek-chat", usedEnvKey: false }; }
 
+  console.error("[ai-engine] ALL LLM providers failed — falling back to local response");
   return null;
 }
 
@@ -516,19 +529,19 @@ function selectModelName(strategy: string, keys: any[]): string {
   const has = (p: string) => keys.some((k: { provider: string }) => k.provider === p);
   if (strategy === "max-performance") {
     if (has("anthropic")) return "anthropic/claude-opus-4-6";
-    if (has("openai")) return "openai/gpt-5";
-    if (has("gemini")) return "gemini/gemini-3.0-flash";
+    if (has("openai")) return "openai/gpt-4o";
+    if (has("gemini")) return "gemini/gemini-2.0-flash";
     if (has("xai")) return "xai/grok-3";
     if (has("mistral")) return "mistral/mistral-large";
   } else {
+    if (has("gemini")) return "gemini/gemini-2.0-flash";
     if (has("anthropic")) return "anthropic/claude-sonnet-4-5";
     if (has("openai")) return "openai/gpt-4o-mini";
-    if (has("gemini")) return "gemini/gemini-3.0-flash";
     if (has("xai")) return "xai/grok-3-mini";
     if (has("mistral")) return "mistral/mistral-small";
   }
   if (strategy === "max-performance") return "anthropic/claude-opus-4-6";
-  return "gemini/gemini-3.0-flash";
+  return "gemini/gemini-2.0-flash";
 }
 
 function getCategoryLabel(category: string): string {
@@ -649,28 +662,30 @@ export async function generateAIResponse(params: {
 
   // ── Try semantic cache first (based on current message only) ──
   let aiResponse: AIResponse | null = null;
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let setCachedResponseFn: any = null;
   try {
     const { getCachedResponse, setCachedResponse } = await import("@/lib/semantic-cache");
+    setCachedResponseFn = setCachedResponse;
     const cached = await getCachedResponse(message, category);
     if (cached) {
       aiResponse = { text: cached, model: "cache/hit", usedEnvKey: false };
     }
-
-    // If cache miss, call LLM with full history and cache the result
-    if (!aiResponse) {
-      try {
-        aiResponse = await tryLlmCall(llmMessages, category, strategy, activeKeys);
-        if (aiResponse) {
-          // Cache in background (don't await)
-          setCachedResponse(message, category, aiResponse.text).catch(() => {});
-        }
-      } catch { /* LLM failed */ }
-    }
   } catch {
-    // Semantic cache not available — call LLM directly with full history
+    // Semantic cache not available — no-op
+  }
+
+  // Call LLM if no cache hit
+  if (!aiResponse) {
     try {
       aiResponse = await tryLlmCall(llmMessages, category, strategy, activeKeys);
-    } catch { /* LLM failed */ }
+      if (aiResponse && setCachedResponseFn) {
+        setCachedResponseFn(message, category, aiResponse.text).catch(() => {});
+      }
+    } catch (llmErr) {
+      console.error("[ai-engine] tryLlmCall threw:", llmErr instanceof Error ? llmErr.message : llmErr);
+    }
   }
 
   // Fallback: smart response (no actual LLM call — zero credit cost)
