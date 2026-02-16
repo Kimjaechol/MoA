@@ -1,19 +1,18 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getServiceSupabase } from "@/lib/supabase";
 import { generateSessionToken } from "@/lib/crypto";
+import { sendEmail, buildVerificationEmail } from "@/lib/email";
 
 /**
  * POST /api/auth/email-verify
  *
  * Actions:
- *   send    — Send verification email (Supabase Auth OTP)
- *   verify  — Verify OTP code from email
- *   resend  — Resend verification email
+ *   send    — Send 6-digit verification code via Resend
+ *   verify  — Verify code and issue session token
+ *   resend  — Resend verification code
  *
- * Uses Supabase Auth's built-in email OTP (free, 30K/month).
- * We use signInWithOtp to send a 6-digit code to the user's email,
- * then verifyOtp to confirm. On success, we mark email_verified=true
- * in our moa_users table.
+ * Sends a 6-digit code via Resend (RESEND_API_KEY env var).
+ * On successful verification, marks email_verified=true in moa_users.
  */
 
 export async function POST(request: NextRequest) {
@@ -72,34 +71,22 @@ export async function POST(request: NextRequest) {
           })
           .eq("user_id", user_id);
 
-        // Send via Supabase Auth OTP
-        const { error: otpError } = await supabase.auth.signInWithOtp({
-          email,
-          options: {
-            shouldCreateUser: false,
-            data: {
-              moa_user_id: user_id,
-              verification_code: code,
-            },
-          },
-        });
-
-        if (otpError) {
-          console.error("[email-verify] OTP send failed:", otpError);
-          // Fallback: if Supabase Auth OTP fails (e.g. auth not configured),
-          // we still stored the code — admin can verify manually
-          // In production, configure Supabase Auth email templates
-          return NextResponse.json({
-            success: true,
-            message: "인증 코드가 이메일로 발송되었습니다. 10분 내에 입력해주세요.",
-            // In dev mode, include code for testing (remove in production)
-            ...(process.env.NODE_ENV === "development" ? { _dev_code: code } : {}),
-          });
+        // Send verification email via Resend
+        try {
+          const { subject, html } = buildVerificationEmail(code);
+          await sendEmail({ to: email, subject, html });
+        } catch (emailErr) {
+          console.error("[email-verify] Email send failed:", emailErr);
+          return NextResponse.json(
+            { error: "인증 이메일 발송에 실패했습니다. 잠시 후 다시 시도해주세요." },
+            { status: 500 },
+          );
         }
 
         return NextResponse.json({
           success: true,
           message: "인증 코드가 이메일로 발송되었습니다. 10분 내에 입력해주세요.",
+          ...(process.env.NODE_ENV === "development" ? { _dev_code: code } : {}),
         });
       }
 
@@ -216,17 +203,17 @@ export async function POST(request: NextRequest) {
           })
           .eq("user_id", user_id);
 
-        // Send via Supabase Auth OTP
-        await supabase.auth.signInWithOtp({
-          email: user.email,
-          options: {
-            shouldCreateUser: false,
-            data: {
-              moa_user_id: user_id,
-              verification_code: code,
-            },
-          },
-        });
+        // Resend verification email via Resend
+        try {
+          const { subject, html } = buildVerificationEmail(code);
+          await sendEmail({ to: user.email, subject, html });
+        } catch (emailErr) {
+          console.error("[email-verify] Resend email failed:", emailErr);
+          return NextResponse.json(
+            { error: "인증 이메일 발송에 실패했습니다. 잠시 후 다시 시도해주세요." },
+            { status: 500 },
+          );
+        }
 
         return NextResponse.json({
           success: true,
