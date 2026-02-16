@@ -12,7 +12,7 @@ export const preferredRegion = "icn1";
 export const dynamic = "force-dynamic";
 
 import { NextRequest, NextResponse } from "next/server";
-import { getOpenClawStatus, isOpenClawConfigured } from "@/lib/openclaw-bridge";
+import { getOpenClawStatus, isOpenClawConfigured, type OpenClawStatus } from "@/lib/openclaw-bridge";
 
 export async function GET(request: NextRequest) {
   // Authenticate — require ADMIN_SECRET
@@ -66,9 +66,9 @@ export async function GET(request: NextRequest) {
     const data = await response.json() as Record<string, unknown>;
 
     // Check OpenClaw agent status in parallel
-    const openclawStatus = isOpenClawConfigured()
+    const openclawStatus: OpenClawStatus = isOpenClawConfigured()
       ? await getOpenClawStatus()
-      : { available: false, url: "", configured: false };
+      : { available: false, url: "" };
 
     return NextResponse.json({
       online: true,
