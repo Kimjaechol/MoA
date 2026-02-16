@@ -54,6 +54,7 @@ console.log(
 import type { RelayCallbacks } from "./src/relay/index.js";
 import type { ResolvedKakaoAccount } from "./src/types.js";
 import type { MoAMessageHandler } from "./src/channels/types.js";
+import { MoltbotGatewayClient } from "./src/moltbot/gateway-client.js";
 import { resolveKakaoAccount, getDefaultKakaoConfig } from "./src/config.js";
 import { handleInstallRequest } from "./src/installer/index.js";
 import { handleSettingsRequest } from "./src/settings/index.js";
@@ -156,6 +157,24 @@ import {
 const PORT = parseInt(process.env.PORT ?? process.env.KAKAO_WEBHOOK_PORT ?? "8788", 10);
 const HOST = process.env.HOST ?? "0.0.0.0";
 const WEBHOOK_PATH = process.env.KAKAO_WEBHOOK_PATH ?? "/kakao/webhook";
+
+// ============================================
+// OpenClaw Gateway Integration (optional)
+// ============================================
+//
+// When the OpenClaw gateway runs alongside MoA (e.g. via railway-start.sh),
+// AI messages are routed through the full OpenClaw agent which provides:
+//   - Memory search (vector + FTS)
+//   - Tool execution (bash, file ops, browsing)
+//   - 104 built-in skills
+//   - Multi-turn conversation with context
+//   - Heartbeat & cron (proactive AI)
+//
+// If the gateway is unavailable, MoA falls back to direct LLM API calls.
+// End users never need to configure this — the operator sets it once.
+//
+let openclawGateway: MoltbotGatewayClient | null = null;
+let openclawGatewayOnline = false;
 
 /**
  * MoA install page URL — always use the public-facing domain.
@@ -1450,7 +1469,38 @@ MoA를 설치하면 이 모든 것이 가능합니다!
     }
   }
 
-  // 8) General AI chat — use LLM with MoA-optimized system prompt
+  // 8) General AI chat
+  //    Route: OpenClaw agent (memory + tools + skills) → direct LLM fallback
+
+  // 8a) Try OpenClaw gateway first — full agent with memory, tools, 104 skills
+  if (openclawGateway) {
+    try {
+      const gwResponse = await openclawGateway.sendMessage({
+        userId: params.userId,
+        text: utterance,
+        sessionKey: `${channelId}:${params.userId}`,
+        useMemory: true,
+        systemPrompt: getMoASystemPrompt(channelId) + getSecuritySystemPrompt(isOwnerAuthEnabled()),
+      });
+      if (gwResponse.success && gwResponse.text) {
+        openclawGatewayOnline = true;
+        let responseText = gwResponse.text;
+        if (responseText.length > maxLen) {
+          responseText = responseText.slice(0, maxLen - 3) + "...";
+        }
+        return {
+          text: responseText,
+          quickReplies: channelId === "kakao" ? ["설치", "도움말"] : undefined,
+        };
+      }
+      // Gateway returned empty/failed — fall through to direct LLM
+    } catch (err) {
+      openclawGatewayOnline = false;
+      console.warn(`[MoA] OpenClaw gateway error, falling back to direct LLM: ${err instanceof Error ? err.message : err}`);
+    }
+  }
+
+  // 8b) Fallback: Direct LLM API call (works without OpenClaw gateway)
   const llm = detectLlmProvider();
 
   if (!llm) {
@@ -1589,6 +1639,31 @@ async function main() {
   const skills = getLoadedSkills();
   console.log(`[MoA] Skills: ${skills.length} loaded (${skills.filter((s) => s.eligible).length} eligible)`);
 
+  // Check OpenClaw gateway (provides agent with memory, tools, skills, heartbeat, cron)
+  const gatewayUrl = process.env.MOA_OPENCLAW_GATEWAY_URL;
+  if (gatewayUrl) {
+    openclawGateway = new MoltbotGatewayClient({
+      url: gatewayUrl,
+      agentId: process.env.OPENCLAW_AGENT_ID ?? "main",
+    });
+    try {
+      const gwStatus = await openclawGateway.checkStatus();
+      openclawGatewayOnline = gwStatus.online;
+      if (gwStatus.online) {
+        console.log(`[MoA] OpenClaw gateway: CONNECTED (${gatewayUrl}, v${gwStatus.version ?? "?"})`);
+        if (gwStatus.memoryStatus) {
+          console.log(`[MoA] OpenClaw memory: ${gwStatus.memoryStatus.files} files, ${gwStatus.memoryStatus.chunks} chunks`);
+        }
+      } else {
+        console.log(`[MoA] OpenClaw gateway: configured but offline (${gatewayUrl})`);
+      }
+    } catch (err) {
+      console.log(`[MoA] OpenClaw gateway: connection failed (${err instanceof Error ? err.message : err})`);
+    }
+  } else {
+    console.log("[MoA] OpenClaw gateway: not configured (set MOA_OPENCLAW_GATEWAY_URL to enable agent features)");
+  }
+
   // Initialize encrypted vault and run scheduled backup
   if (process.env.MOA_OWNER_SECRET) {
     try {
@@ -1676,6 +1751,7 @@ async function main() {
         if (urlPath === "/health" && req.method === "GET") {
           const status = {
             status: "ok",
+            openclawGateway: openclawGatewayOnline,
             kakao: hasKeys,
             telegram: isTelegramConfigured(),
             whatsapp: isWhatsAppConfigured(),
