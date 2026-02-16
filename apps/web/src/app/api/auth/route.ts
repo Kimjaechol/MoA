@@ -50,7 +50,7 @@ export async function POST(request: NextRequest) {
     switch (action) {
       // ── Register ──────────────────────────────────────
       case "register": {
-        const { username, password, passphrase, phone, country_code, email, nickname } = body;
+        const { username, password, passphrase, phone, country_code, email, nickname, model_strategy } = body;
 
         // Validate username
         if (!username || !USERNAME_REGEX.test(username)) {
@@ -216,7 +216,7 @@ export async function POST(request: NextRequest) {
         // Also create user_settings entry
         const { error: settingsError } = await supabase.from("moa_user_settings").upsert({
           user_id: userId,
-          model_strategy: "cost-efficient",
+          model_strategy: model_strategy === "max-performance" ? "max-performance" : "cost-efficient",
           trial_started_at: new Date().toISOString(),
           trial_days: 30,
           is_premium: false,

@@ -31,6 +31,8 @@ export default function RegisterPage() {
   const [loading, setLoading] = useState(false);
   const [success, setSuccess] = useState(false);
 
+  const [modelStrategy, setModelStrategy] = useState("cost-efficient");
+
   const [showPassword, setShowPassword] = useState(false);
   const [showPassphrase, setShowPassphrase] = useState(false);
 
@@ -128,6 +130,7 @@ export default function RegisterPage() {
           nickname: nickname.trim() || undefined,
           country_code: countryCode,
           phone: phone.trim(),
+          model_strategy: modelStrategy,
         }),
       });
 
@@ -273,6 +276,68 @@ export default function RegisterPage() {
               autoComplete="nickname"
               style={inputStyle}
             />
+          </div>
+
+          {/* AI Strategy Selection */}
+          <div>
+            <label style={labelStyle}>AI 모델 전략 <span style={requiredStyle}>*</span></label>
+            <div style={{ display: "flex", gap: "10px" }}>
+              {/* Cost-efficient */}
+              <button
+                type="button"
+                onClick={() => setModelStrategy("cost-efficient")}
+                style={{
+                  flex: 1,
+                  padding: "14px 12px",
+                  borderRadius: "var(--radius)",
+                  border: modelStrategy === "cost-efficient"
+                    ? "2px solid #48bb78"
+                    : "1px solid var(--border)",
+                  background: modelStrategy === "cost-efficient"
+                    ? "rgba(72,187,120,0.08)"
+                    : "var(--bg)",
+                  cursor: "pointer",
+                  textAlign: "center",
+                  transition: "all 0.2s",
+                }}
+              >
+                <div style={{ fontSize: "1.4rem", marginBottom: "4px" }}>{"💰"}</div>
+                <div style={{ fontSize: "0.85rem", fontWeight: 700, color: "var(--text)" }}>
+                  가성비 전략
+                </div>
+                <div style={{ fontSize: "0.72rem", color: "var(--text-muted)", marginTop: "2px" }}>
+                  Gemini 3.0 Flash 기본
+                </div>
+              </button>
+              {/* Max-performance */}
+              <button
+                type="button"
+                onClick={() => setModelStrategy("max-performance")}
+                style={{
+                  flex: 1,
+                  padding: "14px 12px",
+                  borderRadius: "var(--radius)",
+                  border: modelStrategy === "max-performance"
+                    ? "2px solid #667eea"
+                    : "1px solid var(--border)",
+                  background: modelStrategy === "max-performance"
+                    ? "rgba(102,126,234,0.08)"
+                    : "var(--bg)",
+                  cursor: "pointer",
+                  textAlign: "center",
+                  transition: "all 0.2s",
+                }}
+              >
+                <div style={{ fontSize: "1.4rem", marginBottom: "4px" }}>{"🧠"}</div>
+                <div style={{ fontSize: "0.85rem", fontWeight: 700, color: "var(--text)" }}>
+                  최고성능 전략
+                </div>
+                <div style={{ fontSize: "0.72rem", color: "var(--text-muted)", marginTop: "2px" }}>
+                  Claude Opus 4.6 기본
+                </div>
+              </button>
+            </div>
+            <p style={hintStyle}>마이페이지에서 언제든 변경할 수 있습니다</p>
           </div>
 
           {/* Phone: Country Code + Number */}

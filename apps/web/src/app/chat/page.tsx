@@ -144,6 +144,7 @@ export default function ChatPage() {
   const [creditBalance, setCreditBalance] = useState<number | null>(null);
   const [expandedCat, setExpandedCat] = useState<string | null>(null);
   const [isDesktop, setIsDesktop] = useState(false);
+  const [showCreditPopup, setShowCreditPopup] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
 
@@ -271,6 +272,12 @@ export default function ChatPage() {
   const sendMessage = async (text: string) => {
     if (!text.trim() || sending) return;
 
+    // If credits are already known to be 0, show popup immediately
+    // (server will also reject, but this saves a round-trip)
+    if (creditBalance !== null && creditBalance <= 0) {
+      setShowCreditPopup(true);
+    }
+
     const userMsg: ChatMessage = {
       id: `temp_${Date.now()}`,
       role: "user",
@@ -322,6 +329,10 @@ export default function ChatPage() {
         setMessages((prev) => [...prev, aiMsg]);
         if (data.credits_remaining !== undefined) {
           setCreditBalance(data.credits_remaining);
+        }
+        // Show credit exhaustion popup when credits are depleted
+        if (data.model === "system/credit-check" || (data.credits_remaining !== undefined && data.credits_remaining <= 0)) {
+          setShowCreditPopup(true);
         }
       } else if (data.error) {
         const errorMsg: ChatMessage = {
@@ -605,6 +616,64 @@ export default function ChatPage() {
           </div>
         </div>
       </main>
+
+      {/* Credit Exhaustion Popup */}
+      {showCreditPopup && (
+        <div
+          style={{
+            position: "fixed", inset: 0, zIndex: 1000,
+            background: "rgba(0,0,0,0.6)", backdropFilter: "blur(4px)",
+            display: "flex", alignItems: "center", justifyContent: "center",
+          }}
+          onClick={() => setShowCreditPopup(false)}
+        >
+          <div
+            style={{
+              background: "var(--card)", borderRadius: "20px",
+              border: "1px solid var(--border)", padding: "36px 32px",
+              maxWidth: "420px", width: "90%", textAlign: "center",
+              boxShadow: "0 16px 48px rgba(0,0,0,0.4)",
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div style={{ fontSize: "3rem", marginBottom: "12px" }}>{"💳"}</div>
+            <h2 style={{ fontSize: "1.3rem", fontWeight: 800, marginBottom: "8px" }}>
+              크레딧이 부족합니다
+            </h2>
+            <p style={{ color: "var(--text-muted)", fontSize: "0.9rem", lineHeight: 1.6, marginBottom: "24px" }}>
+              AI 응답을 계속 받으려면 크레딧을 충전하거나{"\n"}
+              직접 API 키를 등록해주세요.
+            </p>
+            <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
+              <button
+                onClick={() => { setShowCreditPopup(false); router.push("/mypage"); }}
+                style={{
+                  padding: "14px 24px", fontSize: "1rem", fontWeight: 700,
+                  borderRadius: "12px", border: "2px solid var(--primary)",
+                  background: "transparent", color: "var(--primary)",
+                  cursor: "pointer", transition: "all 0.2s",
+                }}
+              >
+                {"🔑"} API 키 직접 입력 (무료)
+              </button>
+              <button
+                onClick={() => { setShowCreditPopup(false); router.push("/billing"); }}
+                style={{
+                  padding: "14px 24px", fontSize: "1rem", fontWeight: 700,
+                  borderRadius: "12px", border: "none",
+                  background: "var(--primary)", color: "#fff",
+                  cursor: "pointer", transition: "all 0.2s",
+                }}
+              >
+                {"💰"} 크레딧 구매
+              </button>
+            </div>
+            <p style={{ color: "var(--text-muted)", fontSize: "0.75rem", marginTop: "16px" }}>
+              API 키를 등록하면 크레딧 차감 없이 무제한 사용 가능합니다.
+            </p>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
