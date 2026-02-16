@@ -69,6 +69,16 @@ export interface RelayCallbacks {
     deviceId: string;
     deviceName: string;
   }) => void | Promise<void>;
+
+  /** Called when a device submits a command result (for immediate push to chat) */
+  onResultReceived?: (params: {
+    userId: string;
+    deviceId: string;
+    deviceName: string;
+    commandId: string;
+    status: "completed" | "failed";
+    resultSummary: string;
+  }) => void | Promise<void>;
 }
 
 // ============================================

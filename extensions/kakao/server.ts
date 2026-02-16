@@ -1734,6 +1734,41 @@ async function main() {
         await sendWelcomeAfterPairing(userId, deviceName, account);
       }
     },
+
+    // Event-driven immediate response: push result to user's chat within seconds
+    onResultReceived: async ({ userId, deviceName, commandId, status, resultSummary }) => {
+      const statusText = status === "completed" ? "완료" : "실패";
+      console.log(`[MoA] Command ${statusText}: ${commandId.slice(0, 8)} from ${deviceName}`);
+
+      // Try multi-channel notification (free-first: Gateway → FCM/APNs → AlimTalk)
+      if (notificationService.isConfigured()) {
+        const { getUserPhoneNumberById } = await import("./src/proactive-messaging.js");
+        const phone = await getUserPhoneNumberById(userId);
+        if (phone) {
+          const result = await notificationService.notifyCommandResult(phone, {
+            deviceName,
+            commandText: "원격 명령",
+            status: statusText,
+            resultSummary: resultSummary || "(결과 없음)",
+            commandId: commandId.slice(0, 8),
+          });
+          console.log(`[MoA] Result push: ${result.method} ${result.success ? "OK" : result.error}`);
+        }
+      }
+
+      // Also try OpenClaw gateway broadcast (reaches WebSocket-connected clients)
+      if (openclawGateway && openclawGatewayOnline) {
+        try {
+          await openclawGateway.sendMessage({
+            userId,
+            text: `[기기 ${deviceName}] 명령 ${statusText}: ${resultSummary || "(완료)"}`,
+            sessionKey: `relay:${userId}`,
+          });
+        } catch {
+          // Gateway broadcast is best-effort
+        }
+      }
+    },
   };
 
   try {

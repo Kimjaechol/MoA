@@ -99,7 +99,7 @@ export async function handleRelayRequest(
         break;
       case "/api/relay/result":
         if (req.method === "POST") {
-          await handleResult(req, res, logger);
+          await handleResult(req, res, logger, callbacks);
           return true;
         }
         break;
@@ -279,6 +279,7 @@ async function handleResult(
   req: IncomingMessage,
   res: ServerResponse,
   logger: ReturnType<typeof console>,
+  callbacks?: RelayCallbacks,
 ) {
   const device = await authFromHeader(req);
   if (!device) {
@@ -312,6 +313,22 @@ async function handleResult(
   if (success) {
     logger.info(`[relay] Result received for command ${body.commandId} from ${device.deviceName}`);
     sendJSON(res, 200, { success: true });
+
+    // Event-driven trigger: immediately notify user that async command completed
+    if (callbacks?.onResultReceived && device.userId) {
+      callbacks
+        .onResultReceived({
+          userId: device.userId,
+          deviceId: device.id,
+          deviceName: device.deviceName,
+          commandId: body.commandId,
+          status: (body.status as "completed" | "failed") ?? "completed",
+          resultSummary: body.resultSummary ?? "",
+        })
+        .catch?.((err: unknown) =>
+          logger.error(`[relay] onResultReceived callback error: ${err instanceof Error ? err.message : err}`),
+        );
+    }
   } else {
     sendJSON(res, 404, { success: false, error: "Command not found or not owned by device" });
   }
