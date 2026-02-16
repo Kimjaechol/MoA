@@ -206,8 +206,9 @@ export async function POST(request: NextRequest) {
 
         if (insertError) {
           console.error("[auth] Register insert failed:", insertError);
+          const detail = insertError.message || insertError.code || JSON.stringify(insertError);
           return NextResponse.json(
-            { error: "회원가입에 실패했습니다. 잠시 후 다시 시도해주세요. (DB_INSERT)" },
+            { error: `회원가입에 실패했습니다. (DB_INSERT: ${detail})` },
             { status: 500 },
           );
         }
