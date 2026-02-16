@@ -400,6 +400,12 @@ importers:
         specifier: workspace:*
         version: link:../..
 
+  extensions/moa-gemini-free:
+    devDependencies:
+      openclaw:
+        specifier: workspace:*
+        version: link:../..
+
   extensions/msteams:
     dependencies:
       '@microsoft/agents-hosting':
