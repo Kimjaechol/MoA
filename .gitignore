@@ -62,6 +62,9 @@ apps/ios/*.dSYM.zip
 apps/ios/*.mobileprovision
 .env
 
+# Electron desktop build artifacts
+apps/desktop/release/
+
 # Firebase config files (contain API keys)
 apps/android/app/google-services.json
 apps/ios/Sources/GoogleService-Info.plist
