@@ -78,17 +78,41 @@ const CATEGORY_ACTIONS: Record<CategoryId, Array<{ icon: string; label: string; 
   ],
 };
 
-/** Main navigation menu for sidebar */
-const MAIN_NAV = [
-  { href: "/", icon: "\u{1F3E0}", label: "홈" },
-  { href: "/synthesis", icon: "\u{1F4D1}", label: "종합문서" },
-  { href: "/autocode", icon: "\u{1F916}", label: "AI 자동코딩" },
-  { href: "/editor", icon: "\u{1F4DD}", label: "문서 에디터" },
-  { href: "/interpreter", icon: "\u{1F5E3}\uFE0F", label: "실시간 통역" },
-  { href: "/channels", icon: "\u{1F4E1}", label: "채널 허브" },
-  { href: "/download", icon: "\u{1F4E5}", label: "다운로드" },
-  { href: "/billing", icon: "\u{1F4B3}", label: "결제" },
-  { href: "/mypage", icon: "\u2699\uFE0F", label: "마이페이지" },
+/**
+ * OpenClaw-inspired sidebar navigation structure.
+ * Organized into logical groups like the OpenClaw Control UI:
+ *   Chat → main chat (always visible)
+ *   Tools → AI-powered tools and skills
+ *   Control → channels, billing, community
+ *   Settings → profile, downloads, config
+ */
+const NAV_GROUPS = [
+  {
+    label: "AI 도구",
+    items: [
+      { href: "/synthesis", icon: "\u{1F4D1}", label: "종합문서" },
+      { href: "/autocode", icon: "\u{1F916}", label: "AI 자동코딩" },
+      { href: "/editor", icon: "\u{1F4DD}", label: "문서 에디터" },
+      { href: "/interpreter", icon: "\u{1F5E3}\uFE0F", label: "실시간 통역" },
+    ],
+  },
+  {
+    label: "채널",
+    items: [
+      { href: "/channels", icon: "\u{1F4E1}", label: "채널 허브" },
+      { href: "/community", icon: "\u{1F465}", label: "커뮤니티" },
+      { href: "/use-cases", icon: "\u{1F4A1}", label: "활용 사례" },
+    ],
+  },
+  {
+    label: "설정",
+    items: [
+      { href: "/mypage", icon: "\u2699\uFE0F", label: "마이페이지" },
+      { href: "/billing", icon: "\u{1F4B3}", label: "결제/크레딧" },
+      { href: "/download", icon: "\u{1F4E5}", label: "앱 다운로드" },
+      { href: "/feedback", icon: "\u{1F4AC}", label: "피드백" },
+    ],
+  },
 ];
 
 /** Declare moaDesktop type for Electron desktop app integration */
@@ -145,8 +169,11 @@ export default function ChatPage() {
   const [expandedCat, setExpandedCat] = useState<string | null>(null);
   const [isDesktop, setIsDesktop] = useState(false);
   const [showCreditPopup, setShowCreditPopup] = useState(false);
+  const [agentStatus, setAgentStatus] = useState<"online" | "offline" | "checking">("checking");
+  const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set());
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
+  const lastMessageCountRef = useRef(0);
 
   const scrollToBottom = useCallback(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -215,6 +242,7 @@ export default function ChatPage() {
         const data = await res.json();
         if (data.messages?.length) {
           setMessages(data.messages);
+          lastMessageCountRef.current = data.messages.length;
         }
       } catch { /* ignore */ }
       // Load credit balance
@@ -227,6 +255,58 @@ export default function ChatPage() {
       } catch { /* ignore */ }
     })();
   }, [userId, sessionId]);
+
+  // Heartbeat polling: Check for proactive agent messages every 5 seconds
+  // This is what makes MoA a proactive AI agent — it can send follow-up
+  // messages even when the user hasn't sent anything new.
+  useEffect(() => {
+    const pollInterval = setInterval(async () => {
+      try {
+        const res = await fetch(
+          `/api/chat?user_id=${encodeURIComponent(userId)}&session_id=${encodeURIComponent(sessionId)}&limit=5`,
+        );
+        if (!res.ok) return;
+        const data = await res.json();
+        const serverMessages = data.messages ?? [];
+
+        // If server has more messages than we have, there's a new proactive message
+        if (serverMessages.length > 0) {
+          setMessages((prev) => {
+            const existingIds = new Set(prev.map((m) => m.id));
+            const newMsgs = serverMessages.filter(
+              (m: ChatMessage) => !existingIds.has(m.id),
+            );
+            if (newMsgs.length > 0) {
+              return [...prev, ...newMsgs];
+            }
+            return prev;
+          });
+        }
+      } catch { /* ignore polling errors */ }
+    }, 5000);
+
+    return () => clearInterval(pollInterval);
+  }, [userId, sessionId]);
+
+  // Agent status check
+  useEffect(() => {
+    const checkStatus = async () => {
+      try {
+        const res = await fetch("/api/gateway/status");
+        if (res.ok) {
+          const data = await res.json();
+          setAgentStatus(data.online || data.openclaw?.available ? "online" : "offline");
+        } else {
+          setAgentStatus("offline");
+        }
+      } catch {
+        setAgentStatus("offline");
+      }
+    };
+    checkStatus();
+    const interval = setInterval(checkStatus, 60000); // Check every minute
+    return () => clearInterval(interval);
+  }, []);
 
   const handleCategoryChange = (catId: CategoryId) => {
     setSelectedCategory(catId);
@@ -431,7 +511,7 @@ export default function ChatPage() {
 
   return (
     <div className="chat-layout">
-      {/* Sidebar — main app navigation only (no category duplication) */}
+      {/* Sidebar — OpenClaw-inspired grouped navigation */}
       <aside className={`chat-sidebar ${sidebarOpen ? "open" : ""}`}>
         <div className="chat-sidebar-header">
           <Link href="/" style={{ textDecoration: "none", color: "inherit", fontWeight: 800, fontSize: "1.3rem" }}>MoA</Link>
@@ -439,21 +519,55 @@ export default function ChatPage() {
             {"\u2715"}
           </button>
         </div>
+
+        {/* Chat — always at top, like OpenClaw */}
         <button className="chat-new-btn" onClick={startNewSession}>
           + 새 대화
         </button>
 
-        {/* Main Navigation */}
-        <div className="chat-sidebar-section">
-          <h3>메뉴</h3>
-          <div className="chat-channel-links">
-            {MAIN_NAV.map((item) => (
-              <Link key={item.href} href={item.href} className="chat-channel-link" onClick={() => setSidebarOpen(false)}>
-                <span>{item.icon}</span> {item.label}
-              </Link>
-            ))}
-          </div>
+        {/* Agent Status Indicator */}
+        <div style={{
+          padding: "8px 16px", fontSize: "0.75rem",
+          display: "flex", alignItems: "center", gap: "6px",
+          color: agentStatus === "online" ? "#48bb78" : agentStatus === "checking" ? "#9a9ab0" : "#fc8181",
+        }}>
+          <span style={{
+            width: "8px", height: "8px", borderRadius: "50%",
+            background: agentStatus === "online" ? "#48bb78" : agentStatus === "checking" ? "#9a9ab0" : "#fc8181",
+            display: "inline-block",
+            animation: agentStatus === "online" ? "pulse 2s infinite" : "none",
+          }} />
+          {agentStatus === "online" ? "에이전트 연결됨" : agentStatus === "checking" ? "연결 확인 중..." : "직접 LLM 모드"}
         </div>
+
+        {/* Grouped Navigation — OpenClaw-style collapsible groups */}
+        {NAV_GROUPS.map((group) => (
+          <div key={group.label} className="chat-sidebar-section">
+            <h3
+              onClick={() => setCollapsedGroups((prev) => {
+                const next = new Set(prev);
+                if (next.has(group.label)) next.delete(group.label);
+                else next.add(group.label);
+                return next;
+              })}
+              style={{ cursor: "pointer", userSelect: "none", display: "flex", alignItems: "center", justifyContent: "space-between" }}
+            >
+              {group.label}
+              <span style={{ fontSize: "0.6rem", opacity: 0.5 }}>
+                {collapsedGroups.has(group.label) ? "\u25B6" : "\u25BC"}
+              </span>
+            </h3>
+            {!collapsedGroups.has(group.label) && (
+              <div className="chat-channel-links">
+                {group.items.map((item) => (
+                  <Link key={item.href} href={item.href} className="chat-channel-link" onClick={() => setSidebarOpen(false)}>
+                    <span>{item.icon}</span> {item.label}
+                  </Link>
+                ))}
+              </div>
+            )}
+          </div>
+        ))}
       </aside>
 
       {/* Main Chat Area */}
@@ -466,7 +580,12 @@ export default function ChatPage() {
           <div className="chat-header-title">
             <h1>MoA AI</h1>
             <span className="chat-header-status">
-              {"\u25CF"} 온라인
+              <span style={{
+                display: "inline-block", width: "6px", height: "6px", borderRadius: "50%",
+                background: agentStatus === "online" ? "#48bb78" : "#fc8181",
+                marginRight: "4px",
+              }} />
+              {agentStatus === "online" ? "에이전트 연결" : "LLM 모드"}
               {isDesktop && (
                 <span style={{ marginLeft: "8px", fontSize: "0.7rem", background: "rgba(102,126,234,0.2)", padding: "2px 8px", borderRadius: "8px" }}>
                   Desktop
@@ -546,37 +665,43 @@ export default function ChatPage() {
             </div>
           )}
 
-          {messages.map((msg) => (
-            <div key={msg.id} className={`chat-msg chat-msg-${msg.role}`}>
-              <div className="chat-msg-avatar">
-                {msg.role === "user" ? "\u{1F464}" : msg.role === "assistant" ? "\u{1F916}" : "\u26A0\uFE0F"}
-              </div>
-              <div className="chat-msg-body">
-                <div className="chat-msg-meta">
-                  <span className="chat-msg-sender">
-                    {msg.role === "user" ? "나" : msg.role === "assistant" ? "MoA" : "시스템"}
-                  </span>
-                  <span className="chat-msg-time">
-                    {new Date(msg.created_at).toLocaleTimeString("ko-KR", {
-                      hour: "2-digit",
-                      minute: "2-digit",
-                    })}
-                  </span>
-                  {msg.model_used && (
-                    <span className="chat-msg-model">{msg.model_used}</span>
-                  )}
+          {messages.map((msg) => {
+            const isHeartbeat = msg.model_used?.startsWith("heartbeat/");
+            const isAgent = msg.model_used?.startsWith("openclaw/");
+            return (
+              <div key={msg.id} className={`chat-msg chat-msg-${msg.role}${isHeartbeat ? " chat-msg-heartbeat" : ""}`}>
+                <div className="chat-msg-avatar">
+                  {msg.role === "user" ? "\u{1F464}" : isHeartbeat ? "\u{1F49A}" : isAgent ? "\u{1F9E0}" : msg.role === "assistant" ? "\u{1F916}" : "\u26A0\uFE0F"}
                 </div>
-                <div className="chat-msg-text">
-                  {msg.content.split("\n").map((line, i) => (
-                    <span key={i}>
-                      {line}
-                      {i < msg.content.split("\n").length - 1 && <br />}
+                <div className="chat-msg-body">
+                  <div className="chat-msg-meta">
+                    <span className="chat-msg-sender">
+                      {msg.role === "user" ? "나" : isHeartbeat ? "MoA (능동)" : isAgent ? "MoA Agent" : msg.role === "assistant" ? "MoA" : "시스템"}
                     </span>
-                  ))}
+                    <span className="chat-msg-time">
+                      {new Date(msg.created_at).toLocaleTimeString("ko-KR", {
+                        hour: "2-digit",
+                        minute: "2-digit",
+                      })}
+                    </span>
+                    {msg.model_used && (
+                      <span className="chat-msg-model" title={msg.model_used}>
+                        {isHeartbeat ? "능동형 응답" : isAgent ? "Agent" : msg.model_used.split("/").pop()}
+                      </span>
+                    )}
+                  </div>
+                  <div className="chat-msg-text">
+                    {msg.content.split("\n").map((line, i) => (
+                      <span key={i}>
+                        {line}
+                        {i < msg.content.split("\n").length - 1 && <br />}
+                      </span>
+                    ))}
+                  </div>
                 </div>
               </div>
-            </div>
-          ))}
+            );
+          })}
 
           {sending && (
             <div className="chat-msg chat-msg-assistant">

@@ -20,10 +20,27 @@ import { randomUUID } from "node:crypto";
 // ────────────────────────────────────────────
 // Configuration
 // ────────────────────────────────────────────
+//
+// NON-DEVELOPER USABILITY:
+// All these environment variables are SERVER-SIDE ONLY.
+// The operator (admin) sets them once in Vercel/Railway dashboard.
+// End users (grandma, grandpa, anyone) never see or touch these.
+// They just open the app and use it — zero configuration required.
+//
+// Required (for OpenClaw agent):
+//   OPENCLAW_GATEWAY_URL  — OpenClaw gateway WebSocket URL
+// Optional:
+//   OPENCLAW_GATEWAY_TOKEN — Auth token (if gateway requires it)
+//   OPENCLAW_TIMEOUT_MS   — Timeout in ms (default: 90s)
+//   OPENCLAW_ENABLED      — Set "false" to disable (default: true)
+//
+// If none of these are set, MoA works in standalone mode with
+// direct LLM calls — no OpenClaw agent features, but still fully functional.
+// ────────────────────────────────────────────
 
-/** OpenClaw gateway URL (ws:// or wss://) */
+/** OpenClaw gateway URL (ws:// or wss://) — server-side only */
 const OPENCLAW_GATEWAY_URL = process.env.OPENCLAW_GATEWAY_URL ?? "";
-/** Authentication token for the gateway */
+/** Authentication token for the gateway — server-side only */
 const OPENCLAW_GATEWAY_TOKEN = process.env.OPENCLAW_GATEWAY_TOKEN ?? "";
 /** Request timeout in ms (default: 90s for complex agent tasks) */
 const OPENCLAW_TIMEOUT_MS = parseInt(process.env.OPENCLAW_TIMEOUT_MS ?? "90000", 10);
