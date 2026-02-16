@@ -123,13 +123,28 @@ function buildLLMMessages(
 
 export function detectCategory(text: string): string {
   const lower = text.toLowerCase();
-  if (/통역|실시간.*번역|interpret|voice.*translat|simultaneous.*translat|한영.*통역|한일.*통역|한중.*통역/.test(lower)) return "interpreter";
-  if (/코드|코딩|프로그래밍|debug|bug|function|class|import|git|code/.test(lower)) return "coding";
-  if (/문서|보고서|요약|번역|pptx|docx|pdf|document|report/.test(lower)) return "document";
-  if (/이미지|그림|사진|그려|image|photo|draw/.test(lower)) return "image";
-  if (/음악|노래|작곡|가사|music|song/.test(lower)) return "music";
-  if (/이메일|업무|보고|회의|미팅|email|meeting/.test(lower)) return "work";
-  if (/날씨|일정|번역|맛집|추천|weather|schedule/.test(lower)) return "daily";
+
+  // Interpreter — must be checked first (통역 vs 번역 구분)
+  if (/통역|실시간.*번역|동시.*번역|interpret|voice.*translat|simultaneous|한영.*통역|한일.*통역|한중.*통역|통역\s*모드|통역\s*시작/.test(lower)) return "interpreter";
+
+  // Coding
+  if (/코드|코딩|프로그래밍|디버그|디버깅|에러.*수정|debug|bug|function|class|import|git|code|script|program|api|error.*fix|리팩토링|refactor|자동\s*코딩/.test(lower)) return "coding";
+
+  // Image
+  if (/이미지|그림|사진|그려|일러스트|로고|디자인|image|photo|draw|generate.*image|dall-?e|midjourney|스타일.*변환|배경.*제거/.test(lower)) return "image";
+
+  // Music
+  if (/음악|노래|작곡|가사|편곡|멜로디|비트|music|song|compose|melody|beat|tts|음성.*변환/.test(lower)) return "music";
+
+  // Document — "번역해줘" goes here (not interpreter), plus synthesis/slides
+  if (/문서|보고서|요약|번역|pptx|docx|pdf|document|report|슬라이드|발표\s*자료|종합\s*문서|synthesis|summarize|변환/.test(lower)) return "document";
+
+  // Work
+  if (/이메일|업무|보고|회의|미팅|email|meeting|일정.*관리|프로젝트|task|notion|slack|airtable|업무.*지시/.test(lower)) return "work";
+
+  // Daily life
+  if (/날씨|일정|맛집|추천|여행|길\s*찾|weather|schedule|recipe|요리|레시피|뉴스|news|검색|search|알람|타이머/.test(lower)) return "daily";
+
   return "other";
 }
 
@@ -196,7 +211,7 @@ export const CATEGORY_SKILLS: Record<string, string[]> = {
 const MODEL_CREDIT_COSTS: Record<string, number> = {
   "local/slm-default": 0, "local/fallback": 0, "cache/hit": 0,
   "groq/kimi-k2-0905": 1, "groq/llama-3.3-70b-versatile": 1,
-  "gemini/gemini-2.0-flash": 2, "gemini/gemini-2.5-flash": 2,
+  "gemini/gemini-3-flash": 2, "gemini/gemini-2.5-flash": 2, "gemini/gemini-2.0-flash": 2,
   "deepseek/deepseek-chat": 3,
   "mistral/mistral-small": 3, "mistral/mistral-large": 6,
   "xai/grok-3-mini": 4, "xai/grok-3": 8,
@@ -311,7 +326,8 @@ async function callOpenAI(key: string, system: string, messages: LLMMessage[], m
   return null;
 }
 
-const GEMINI_MODELS = ["gemini-2.0-flash", "gemini-2.5-flash"];
+// Primary: Gemini 3.0 Flash (official preview ID), fallbacks for older accounts
+const GEMINI_MODELS = ["gemini-3-flash-preview", "gemini-2.5-flash-preview-04-17", "gemini-2.0-flash"];
 
 async function callGemini(key: string, system: string, messages: LLMMessage[]): Promise<string | null> {
   const normalized = normalizeMessages(messages);
@@ -456,12 +472,10 @@ async function tryLlmCall(messages: LLMMessage[], category: string, strategy: st
   const skills = CATEGORY_SKILLS[category] ?? CATEGORY_SKILLS.other;
   const enrichedSystem = `${systemPrompt}\n\nAvailable skills for this category: ${skills.join(", ")}`;
 
-  // Read ALL available env keys (Vercel environment variables)
+  // Server env keys — only Anthropic + Gemini used for Phase 2 (pay-to-use, 2x credit)
+  // Groq/DeepSeek/OpenAI/xAI/Mistral: user must provide their own keys
   const envAnthropicKey = process.env.ANTHROPIC_API_KEY;
-  const envOpenaiKey = process.env.OPENAI_API_KEY;
   const envGeminiKey = process.env.GEMINI_API_KEY;
-  const envGroqKey = process.env.GROQ_API_KEY;
-  const envDeepseekKey = process.env.DEEPSEEK_API_KEY;
 
   const decryptKey = (provider: string) => {
     const raw = keys.find((k: { provider: string }) => k.provider === provider)?.encrypted_key;
@@ -477,18 +491,18 @@ async function tryLlmCall(messages: LLMMessage[], category: string, strategy: st
 
   const hasUserQualityKeys = !!(userAnthropicKey || userOpenaiKey || userGeminiKey || userMistralKey || userXaiKey);
 
-  console.info(`[ai-engine] Strategy: ${strategy} | User keys: ${keys.length} (quality: ${hasUserQualityKeys}) | Env keys: anthropic=${!!envAnthropicKey} openai=${!!envOpenaiKey} gemini=${!!envGeminiKey} groq=${!!envGroqKey} deepseek=${!!envDeepseekKey}`);
+  console.info(`[ai-engine] Strategy: ${strategy} | User keys: ${keys.length} (quality: ${hasUserQualityKeys}) | Server keys: anthropic=${!!envAnthropicKey} gemini=${!!envGeminiKey}`);
 
   // Phase 1: User's own API keys — best quality first
   if (hasUserQualityKeys) {
     if (strategy === "max-performance") {
       if (userAnthropicKey) { const r = await callAnthropic(userAnthropicKey, enrichedSystem, messages, "claude-opus-4-6"); if (r) return { text: r, model: "anthropic/claude-opus-4-6", usedEnvKey: false }; }
       if (userOpenaiKey) { const r = await callOpenAI(userOpenaiKey, enrichedSystem, messages, "gpt-4o"); if (r) return { text: r, model: "openai/gpt-4o", usedEnvKey: false }; }
-      if (userGeminiKey) { const r = await callGemini(userGeminiKey, enrichedSystem, messages); if (r) return { text: r, model: "gemini/gemini-2.0-flash", usedEnvKey: false }; }
+      if (userGeminiKey) { const r = await callGemini(userGeminiKey, enrichedSystem, messages); if (r) return { text: r, model: "gemini/gemini-3-flash", usedEnvKey: false }; }
       if (userXaiKey) { const r = await callXai(userXaiKey, enrichedSystem, messages, "grok-3"); if (r) return { text: r, model: "xai/grok-3", usedEnvKey: false }; }
       if (userMistralKey) { const r = await callMistral(userMistralKey, enrichedSystem, messages, "mistral-large-latest"); if (r) return { text: r, model: "mistral/mistral-large", usedEnvKey: false }; }
     } else {
-      if (userGeminiKey) { const r = await callGemini(userGeminiKey, enrichedSystem, messages); if (r) return { text: r, model: "gemini/gemini-2.0-flash", usedEnvKey: false }; }
+      if (userGeminiKey) { const r = await callGemini(userGeminiKey, enrichedSystem, messages); if (r) return { text: r, model: "gemini/gemini-3-flash", usedEnvKey: false }; }
       if (userOpenaiKey) { const r = await callOpenAI(userOpenaiKey, enrichedSystem, messages, "gpt-4o-mini"); if (r) return { text: r, model: "openai/gpt-4o-mini", usedEnvKey: false }; }
       if (userAnthropicKey) { const r = await callAnthropic(userAnthropicKey, enrichedSystem, messages, "claude-sonnet-4-5-20250929"); if (r) return { text: r, model: "anthropic/claude-sonnet-4-5", usedEnvKey: false }; }
       if (userXaiKey) { const r = await callXai(userXaiKey, enrichedSystem, messages, "grok-3-mini"); if (r) return { text: r, model: "xai/grok-3-mini", usedEnvKey: false }; }
@@ -496,19 +510,15 @@ async function tryLlmCall(messages: LLMMessage[], category: string, strategy: st
     }
   }
 
-  // Phase 2: MoA server env keys (2x credit) — tries ALL configured providers
+  // Phase 2: MoA server env keys (2x credit)
+  //   가성비 → Gemini 3.0 Flash only
+  //   최고성능 → Claude Opus 4.6 (fallback to Gemini)
+  // Groq/DeepSeek are NOT offered via server keys — user must provide their own.
   if (strategy === "max-performance") {
     if (envAnthropicKey) { const r = await callAnthropic(envAnthropicKey, enrichedSystem, messages, "claude-opus-4-6"); if (r) return { text: r, model: "anthropic/claude-opus-4-6", usedEnvKey: true }; }
-    if (envOpenaiKey) { const r = await callOpenAI(envOpenaiKey, enrichedSystem, messages, "gpt-4o"); if (r) return { text: r, model: "openai/gpt-4o", usedEnvKey: true }; }
-    if (envGeminiKey) { const r = await callGemini(envGeminiKey, enrichedSystem, messages); if (r) return { text: r, model: "gemini/gemini-2.0-flash", usedEnvKey: true }; }
-    if (envGroqKey) { const r = await callGroq(envGroqKey, enrichedSystem, messages); if (r) return { text: r, model: "groq/llama-3.3-70b-versatile", usedEnvKey: true }; }
-    if (envDeepseekKey) { const r = await callDeepSeek(envDeepseekKey, enrichedSystem, messages); if (r) return { text: r, model: "deepseek/deepseek-chat", usedEnvKey: true }; }
+    if (envGeminiKey) { const r = await callGemini(envGeminiKey, enrichedSystem, messages); if (r) return { text: r, model: "gemini/gemini-3-flash", usedEnvKey: true }; }
   } else {
-    // Cost-efficient: Gemini first (cheapest), then Groq (free), then others
-    if (envGeminiKey) { const r = await callGemini(envGeminiKey, enrichedSystem, messages); if (r) return { text: r, model: "gemini/gemini-2.0-flash", usedEnvKey: true }; }
-    if (envGroqKey) { const r = await callGroq(envGroqKey, enrichedSystem, messages); if (r) return { text: r, model: "groq/llama-3.3-70b-versatile", usedEnvKey: true }; }
-    if (envDeepseekKey) { const r = await callDeepSeek(envDeepseekKey, enrichedSystem, messages); if (r) return { text: r, model: "deepseek/deepseek-chat", usedEnvKey: true }; }
-    if (envOpenaiKey) { const r = await callOpenAI(envOpenaiKey, enrichedSystem, messages, "gpt-4o-mini"); if (r) return { text: r, model: "openai/gpt-4o-mini", usedEnvKey: true }; }
+    if (envGeminiKey) { const r = await callGemini(envGeminiKey, enrichedSystem, messages); if (r) return { text: r, model: "gemini/gemini-3-flash", usedEnvKey: true }; }
     if (envAnthropicKey) { const r = await callAnthropic(envAnthropicKey, enrichedSystem, messages, "claude-haiku-4-5-20251001"); if (r) return { text: r, model: "anthropic/claude-haiku-4-5", usedEnvKey: true }; }
   }
 
@@ -530,18 +540,18 @@ function selectModelName(strategy: string, keys: any[]): string {
   if (strategy === "max-performance") {
     if (has("anthropic")) return "anthropic/claude-opus-4-6";
     if (has("openai")) return "openai/gpt-4o";
-    if (has("gemini")) return "gemini/gemini-2.0-flash";
+    if (has("gemini")) return "gemini/gemini-3-flash";
     if (has("xai")) return "xai/grok-3";
     if (has("mistral")) return "mistral/mistral-large";
   } else {
-    if (has("gemini")) return "gemini/gemini-2.0-flash";
+    if (has("gemini")) return "gemini/gemini-3-flash";
     if (has("anthropic")) return "anthropic/claude-sonnet-4-5";
     if (has("openai")) return "openai/gpt-4o-mini";
     if (has("xai")) return "xai/grok-3-mini";
     if (has("mistral")) return "mistral/mistral-small";
   }
   if (strategy === "max-performance") return "anthropic/claude-opus-4-6";
-  return "gemini/gemini-2.0-flash";
+  return "gemini/gemini-3-flash";
 }
 
 function getCategoryLabel(category: string): string {
@@ -582,6 +592,97 @@ function generateSmartResponse(message: string, category: string, model: string,
   }
 
   return `네, 말씀을 잘 들었습니다!\n\n> "${message.slice(0, 100)}${message.length > 100 ? "..." : ""}"\n\n현재 **${catLabel}** 모드에서 대화 중이에요.\n활용 가능한 스킬: ${catInfo}\n\nAPI 키가 설정되면 실시간 AI가 더 정확하게 답변해드립니다.\nhttps://mymoa.app/mypage`;
+}
+
+// ────────────────────────────────────────────
+// Skill Auto-Dispatch
+// ────────────────────────────────────────────
+
+/**
+ * Detect if the message requires a dedicated skill endpoint and call it.
+ * Returns a response if a skill handled the request, null otherwise.
+ */
+async function trySkillDispatch(
+  message: string,
+  category: string,
+  userId: string,
+): Promise<AIResponse | null> {
+  const lower = message.toLowerCase();
+  const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || process.env.VERCEL_URL
+    ? `https://${process.env.VERCEL_URL}`
+    : "http://localhost:3000";
+
+  try {
+    // ── Interpreter: auto-translate when text + language pair detected ──
+    if (category === "interpreter") {
+      const langMatch = message.match(
+        /(?:(.+?)(?:를|을|)\s*)?(?:(한국어|영어|일본어|중국어|스페인어|프랑스어|독일어|Korean|English|Japanese|Chinese|Spanish|French|German))(?:로|으로)\s*(?:번역|통역|바꿔|변환)/i,
+      );
+      if (langMatch) {
+        const langMap: Record<string, string> = {
+          한국어: "ko", 영어: "en", 일본어: "ja", 중국어: "zh",
+          스페인어: "es", 프랑스어: "fr", 독일어: "de",
+          korean: "ko", english: "en", japanese: "ja", chinese: "zh",
+          spanish: "es", french: "fr", german: "de",
+        };
+        const targetLang = langMap[langMatch[2].toLowerCase()] || "en";
+        // Extract source text (everything before the language instruction, or use context)
+        const sourceText = langMatch[1]?.trim() || message.replace(/(?:한국어|영어|일본어|중국어|스페인어|프랑스어|독일어|Korean|English|Japanese|Chinese|Spanish|French|German)(?:로|으로)\s*(?:번역|통역|바꿔|변환)/gi, "").trim();
+        if (sourceText.length > 2) {
+          const sourceLang = /[가-힣]/.test(sourceText) ? "ko" : "en";
+          const res = await fetch(`${baseUrl}/api/interpreter`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              text: sourceText,
+              source_lang: sourceLang,
+              target_lang: targetLang,
+              user_id: userId,
+            }),
+          });
+          if (res.ok) {
+            const data = await res.json();
+            if (data.translated_text) {
+              return {
+                text: `[원문] ${sourceText}\n[번역] ${data.translated_text}`,
+                model: `skill/interpreter`,
+                usedEnvKey: false,
+              };
+            }
+          }
+        }
+      }
+    }
+
+    // ── Autocode: detect explicit coding task requests ──
+    if (category === "coding" && /자동\s*코딩|코드\s*(?:작성|생성|만들어)|autocode|코딩\s*해줘/.test(lower)) {
+      const res = await fetch(`${baseUrl}/api/autocode`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          goal: message,
+          framework: "nextjs",
+          model: "auto",
+          iteration: 1,
+        }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (data.code) {
+          return {
+            text: `**자동 코딩 완료** (${data.model})\n\n\`\`\`\n${data.code.slice(0, 3000)}\n\`\`\``,
+            model: "skill/autocode",
+            usedEnvKey: false,
+          };
+        }
+      }
+    }
+  } catch (err) {
+    console.warn("[ai-engine] Skill dispatch failed:", err instanceof Error ? err.message : err);
+  }
+
+  // No skill matched — let the LLM handle it
+  return null;
 }
 
 // ────────────────────────────────────────────
@@ -655,6 +756,65 @@ export async function generateAIResponse(params: {
     activeKeys = keysResult ?? [];
     strategy = settingsResult?.model_strategy ?? "cost-efficient";
     conversationHistory = historyResult;
+  }
+
+  // ── Skill auto-dispatch: route specific tasks to dedicated endpoints ──
+  const skillResult = await trySkillDispatch(message.trim(), category, userId);
+  if (skillResult) {
+    // Skill handled the request — save response and return
+    if (supabase && userId && sessionId) {
+      await supabase.from("moa_chat_messages").insert({
+        user_id: userId, session_id: sessionId, role: "assistant",
+        content: skillResult.text, channel, model_used: skillResult.model, category,
+      }).catch(() => {});
+    }
+    return {
+      reply: skillResult.text,
+      model: skillResult.model,
+      category,
+      credits_used: 0,
+      credits_remaining: undefined,
+      key_source: "user",
+      timestamp: new Date().toISOString(),
+    };
+  }
+
+  // ── Credit pre-check: ensure user can afford an LLM call ──
+  // If using server env keys (Phase 2), check balance before making the call
+  const hasUserKeys = activeKeys.length > 0;
+  let userBalance: number | null = null;
+  if (supabase && userId && !hasUserKeys) {
+    try {
+      const { data: creditData } = await supabase
+        .from("moa_credits")
+        .select("balance")
+        .eq("user_id", userId)
+        .single();
+      userBalance = creditData?.balance ?? null;
+
+      // Estimate cost: server key usage = base cost × 2
+      const estimatedModel = strategy === "max-performance"
+        ? "anthropic/claude-opus-4-6"
+        : "gemini/gemini-3-flash";
+      const estimatedCost = getCreditCost(estimatedModel) * ENV_KEY_MULTIPLIER;
+
+      if (userBalance !== null && userBalance < estimatedCost) {
+        return {
+          reply: `크레딧이 부족합니다. 현재 잔액: ${userBalance} 크레딧\n\n` +
+            `예상 비용: ${estimatedCost} 크레딧 (MoA 키 사용 시 2배)\n\n` +
+            `크레딧을 충전하거나 직접 API 키를 등록하면 무료로 이용할 수 있습니다.\n` +
+            `https://mymoa.app/mypage`,
+          model: "system/credit-check",
+          category,
+          credits_used: 0,
+          credits_remaining: userBalance,
+          key_source: "moa",
+          timestamp: new Date().toISOString(),
+        };
+      }
+    } catch {
+      // Credit check failed — proceed anyway (best-effort)
+    }
   }
 
   // ── Build multi-turn messages for LLM ──
