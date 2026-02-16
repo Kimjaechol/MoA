@@ -3,6 +3,9 @@ import { getServiceSupabase } from "@/lib/supabase";
 import { hashPassword, verifyPassword, generateSessionToken } from "@/lib/crypto";
 import { validatePhoneNumber, findCountryByCode } from "@/lib/phone-validation";
 
+// scryptSync requires Node.js runtime (not Edge)
+export const runtime = "nodejs";
+
 /**
  * POST /api/auth
  *
@@ -179,9 +182,10 @@ export async function POST(request: NextRequest) {
           passwordHash = hashPassword(password);
           passphraseHash = hashPassword(passphrase);
         } catch (hashErr) {
-          console.error("[auth] Password hashing failed:", hashErr);
+          const errMsg = hashErr instanceof Error ? hashErr.message : String(hashErr);
+          console.error("[auth] Password hashing failed:", errMsg, hashErr);
           return NextResponse.json(
-            { error: "서버 오류가 발생했습니다. 잠시 후 다시 시도해주세요. (HASH)" },
+            { error: `서버 오류가 발생했습니다. 잠시 후 다시 시도해주세요. (HASH: ${errMsg})` },
             { status: 500 },
           );
         }

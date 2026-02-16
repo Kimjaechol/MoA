@@ -89,6 +89,8 @@ const SALT_BYTES = 32;
 const SCRYPT_COST = 32768;
 const SCRYPT_BLOCK_SIZE = 8;
 const SCRYPT_PARALLELIZATION = 1;
+// Explicit maxmem: 128*N*r = 32MB exactly equals Node default; set 64MB to avoid boundary issues
+const SCRYPT_MAX_MEM = 64 * 1024 * 1024;
 
 /** Hash a password → "salt:hash" (both hex-encoded) */
 export function hashPassword(password: string): string {
@@ -97,6 +99,7 @@ export function hashPassword(password: string): string {
     cost: SCRYPT_COST,
     blockSize: SCRYPT_BLOCK_SIZE,
     parallelization: SCRYPT_PARALLELIZATION,
+    maxmem: SCRYPT_MAX_MEM,
   });
   return `${salt.toString("hex")}:${derived.toString("hex")}`;
 }
@@ -112,6 +115,7 @@ export function verifyPassword(password: string, stored: string): boolean {
     cost: SCRYPT_COST,
     blockSize: SCRYPT_BLOCK_SIZE,
     parallelization: SCRYPT_PARALLELIZATION,
+    maxmem: SCRYPT_MAX_MEM,
   });
 
   if (derived.length !== expected.length) return false;
