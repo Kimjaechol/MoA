@@ -20,7 +20,17 @@ export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
     const { action } = body;
-    const supabase = getServiceSupabase();
+
+    let supabase;
+    try {
+      supabase = getServiceSupabase();
+    } catch (envErr) {
+      console.error("[email-verify] Supabase init failed:", envErr);
+      return NextResponse.json(
+        { error: "서버 설정 오류입니다. 관리자에게 문의해주세요. (DB_INIT)" },
+        { status: 500 },
+      );
+    }
 
     switch (action) {
       // ── Send verification email ──
@@ -229,7 +239,11 @@ export async function POST(request: NextRequest) {
         return NextResponse.json({ error: "Invalid action" }, { status: 400 });
     }
   } catch (err) {
-    console.error("[email-verify] Unexpected error:", err);
-    return NextResponse.json({ error: "Internal server error" }, { status: 500 });
+    const errMsg = err instanceof Error ? err.message : String(err);
+    console.error("[email-verify] Unexpected error:", errMsg, err);
+    return NextResponse.json(
+      { error: `서버 오류가 발생했습니다. 잠시 후 다시 시도해주세요. (${errMsg.slice(0, 80)})` },
+      { status: 500 },
+    );
   }
 }
