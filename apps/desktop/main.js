@@ -151,13 +151,18 @@ function createWindow() {
     show: false, // show after ready-to-show
   });
 
-  // Load MoA web app
-  mainWindow.loadURL(MOA_URL);
+  // Load MoA chat page directly (desktop app = chat-first experience)
+  mainWindow.loadURL(`${MOA_URL}/chat`);
 
   // Show when ready (prevents white flash)
   mainWindow.once("ready-to-show", () => {
     mainWindow.show();
     mainWindow.focus();
+  });
+
+  // Inject desktop-specific navigation bar on page load
+  mainWindow.webContents.on("did-finish-load", () => {
+    injectDesktopNav();
   });
 
   // Handle external links in system browser
@@ -184,6 +189,60 @@ function createWindow() {
   if (IS_DEV) {
     mainWindow.webContents.openDevTools();
   }
+}
+
+/* -----------------------------------------------------------------
+   Desktop Navigation Bar
+   Injected into the web page for desktop-app-specific navigation.
+   Only shown when NOT already on a page with its own sidebar.
+   ----------------------------------------------------------------- */
+
+function injectDesktopNav() {
+  if (!mainWindow) return;
+  mainWindow.webContents.executeJavaScript(`
+    (function() {
+      // Remove any existing desktop nav
+      const existing = document.getElementById('moa-desktop-nav');
+      if (existing) existing.remove();
+
+      const nav = document.createElement('div');
+      nav.id = 'moa-desktop-nav';
+      nav.style.cssText = 'position:fixed;top:0;left:0;right:0;z-index:99990;background:linear-gradient(135deg,#0d0d2b,#1a1a3e);border-bottom:1px solid rgba(255,255,255,0.08);display:flex;align-items:center;padding:0 16px;height:40px;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;-webkit-app-region:drag;user-select:none;';
+
+      const items = [
+        { label: 'AI \uCC44\uD305', path: '/chat', icon: '\uD83D\uDCAC' },
+        { label: '\uC885\uD569\uBB38\uC11C', path: '/synthesis', icon: '\uD83D\uDCD1' },
+        { label: 'AI \uCF54\uB529', path: '/autocode', icon: '\uD83E\uDD16' },
+        { label: '\uC5D0\uB514\uD130', path: '/editor', icon: '\uD83D\uDCDD' },
+        { label: '\uD1B5\uC5ED', path: '/interpreter', icon: '\uD83D\uDDE3\uFE0F' },
+        { label: '\uCC44\uB110', path: '/channels', icon: '\uD83D\uDCE1' },
+        { label: '\uB9C8\uC774\uD398\uC774\uC9C0', path: '/mypage', icon: '\u2699\uFE0F' },
+      ];
+
+      // Logo
+      const logo = document.createElement('span');
+      logo.textContent = 'MoA';
+      logo.style.cssText = 'font-weight:900;font-size:14px;color:#667eea;margin-right:20px;cursor:pointer;-webkit-app-region:no-drag;';
+      logo.onclick = function() { window.location.href = '/chat'; };
+      nav.appendChild(logo);
+
+      items.forEach(function(item) {
+        const btn = document.createElement('button');
+        const isActive = window.location.pathname === item.path || window.location.pathname.startsWith(item.path + '/');
+        btn.textContent = item.icon + ' ' + item.label;
+        btn.style.cssText = 'background:' + (isActive ? 'rgba(102,126,234,0.2)' : 'none') + ';border:none;color:' + (isActive ? '#667eea' : 'rgba(255,255,255,0.6)') + ';font-size:12px;padding:6px 10px;border-radius:6px;cursor:pointer;font-weight:' + (isActive ? '700' : '500') + ';transition:all 0.15s;margin-right:2px;-webkit-app-region:no-drag;';
+        btn.onmouseenter = function() { if (!isActive) btn.style.background = 'rgba(255,255,255,0.06)'; btn.style.color = '#fff'; };
+        btn.onmouseleave = function() { if (!isActive) btn.style.background = 'none'; btn.style.color = isActive ? '#667eea' : 'rgba(255,255,255,0.6)'; };
+        btn.onclick = function() { window.location.href = item.path; };
+        nav.appendChild(btn);
+      });
+
+      document.body.prepend(nav);
+
+      // Push page content down to accommodate nav bar
+      document.body.style.paddingTop = '40px';
+    })();
+  `).catch(() => {});
 }
 
 /* -----------------------------------------------------------------
@@ -562,6 +621,45 @@ function getTrayIconPath() {
 }
 
 /* -----------------------------------------------------------------
+   Application Menu
+   ----------------------------------------------------------------- */
+
+function setupAppMenu() {
+  const isMac = process.platform === "darwin";
+
+  const nav = (path) => () => {
+    if (mainWindow) {
+      mainWindow.loadURL(`${MOA_URL}${path}`);
+      mainWindow.show();
+    }
+  };
+
+  const template = [
+    ...(isMac ? [{ role: "appMenu" }] : []),
+    {
+      label: "MoA",
+      submenu: [
+        { label: "AI 채팅", accelerator: "CmdOrCtrl+1", click: nav("/chat") },
+        { label: "종합문서", accelerator: "CmdOrCtrl+2", click: nav("/synthesis") },
+        { label: "AI 자동코딩", accelerator: "CmdOrCtrl+3", click: nav("/autocode") },
+        { label: "문서 에디터", accelerator: "CmdOrCtrl+4", click: nav("/editor") },
+        { label: "실시간 통역", accelerator: "CmdOrCtrl+5", click: nav("/interpreter") },
+        { type: "separator" },
+        { label: "채널 허브", click: nav("/channels") },
+        { label: "마이페이지", click: nav("/mypage") },
+        { label: "결제", click: nav("/billing") },
+      ],
+    },
+    { role: "editMenu" },
+    { role: "viewMenu" },
+    { role: "windowMenu" },
+  ];
+
+  const menu = Menu.buildFromTemplate(template);
+  Menu.setApplicationMenu(menu);
+}
+
+/* -----------------------------------------------------------------
    App Lifecycle
    ----------------------------------------------------------------- */
 
@@ -581,6 +679,7 @@ if (!gotLock) {
 
 app.whenReady().then(() => {
   setupIPC();
+  setupAppMenu();
   createWindow();
   createTray();
   setupAutoUpdater();
