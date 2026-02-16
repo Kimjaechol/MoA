@@ -29,9 +29,12 @@ const MODEL_PRICING: Record<string, { input: number; output: number }> = {
   "o1": { input: 15000, output: 60000 },
   "o1-mini": { input: 3000, output: 12000 },
   // Gemini models
+  "gemini-3-flash": { input: 100, output: 400 },
   "gemini-2.0-flash": { input: 75, output: 300 },
   "gemini-1.5-pro": { input: 1250, output: 5000 },
   "gemini-1.5-flash": { input: 75, output: 300 },
+  // Claude Opus 4.6
+  "claude-opus-4-6": { input: 20000, output: 100000 },
 };
 
 // Default model if not specified

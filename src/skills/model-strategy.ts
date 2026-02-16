@@ -31,7 +31,7 @@ export const PROVIDER_MODELS: Record<
     displayName: "OpenAI",
   },
   gemini: {
-    costEfficient: "gemini-2.5-flash",
+    costEfficient: "gemini-3-flash",
     maxPerformance: "gemini-3-pro",
     displayName: "Google Gemini",
   },
@@ -64,10 +64,10 @@ export const PROVIDER_MODELS: Record<
 /**
  * API 키를 입력하지 않은 사용자에게 적용되는 기본 모델.
  * 크레딧 차감 방식으로 운영 (최초 가입 시 일정량 무료 크레딧 제공).
+ * 크레딧 차감 금액 = 원가(운영자가 API 제공사에 지불하는 비용)의 2배.
  *
- * - 가성비: Gemini 2.5 Flash (Thinking) — $0.30/$2.50 per 1M tokens
- *   Thinking 동적 할당 (thinkingBudget: -1) 적용, 비용 추가 부담 없음
- * - 최고성능: Claude Opus 4.6 — $5/$25 per 1M tokens
+ * - 가성비: Gemini 3.0 Flash — $0.15/$0.60 per 1M tokens
+ * - 최고성능: Claude Opus 4.6 — $15/$75 per 1M tokens
  *   Terminal-Bench 65.4%, BigLaw 90.2%, SWE-bench 80.8%
  */
 export const MOA_CREDIT_MODELS: Record<
@@ -81,9 +81,8 @@ export const MOA_CREDIT_MODELS: Record<
 > = {
   "cost-efficient": {
     provider: "gemini",
-    model: "gemini-2.5-flash-thinking",
-    displayName: "Gemini 2.5 Flash (Thinking)",
-    thinkingBudget: -1, // 동적 할당 — 비용 추가 없음
+    model: "gemini-3-flash",
+    displayName: "Gemini 3.0 Flash",
   },
   "max-performance": {
     provider: "anthropic",
@@ -100,18 +99,18 @@ export const MOA_CREDIT_MODELS: Record<
  * 가성비 전략
  *
  * - API 키 보유 → 해당 LLM의 가성비 최적 모델 (추가 비용 없음)
- * - API 키 없음 → MoA 크레딧으로 Gemini 2.5 Flash (Thinking) 사용
+ * - API 키 없음 → MoA 크레딧으로 Gemini 3.0 Flash 사용 (원가의 2배 크레딧 차감)
  */
 const COST_EFFICIENT_STRATEGY: ModelStrategyDefinition = {
   id: "cost-efficient",
   name: "가성비 전략",
   description:
-    "API 키가 있으면 해당 LLM의 가성비 모델을, 없으면 MoA 크레딧으로 Gemini 2.5 Flash (Thinking)를 사용합니다.",
+    "API 키가 있으면 해당 LLM의 가성비 모델을, 없으면 MoA 크레딧으로 Gemini 3.0 Flash를 사용합니다 (원가의 2배 크레딧 차감).",
   tiers: [
     {
       priority: 1,
       label: "API 키 보유 사용자",
-      description: "사용자의 LLM 구독에서 가성비 최적 모델 자동 선택 (추가 비용 없음)",
+      description: "사용자의 LLM API 키로 가성비 모델 자동 선택 (크레딧 차감 없음)",
       models: Object.entries(PROVIDER_MODELS).map(
         ([provider, m]) => `${provider}/${m.costEfficient}`,
       ),
@@ -120,8 +119,8 @@ const COST_EFFICIENT_STRATEGY: ModelStrategyDefinition = {
     {
       priority: 2,
       label: "MoA 크레딧 (기본)",
-      description: "Gemini 2.5 Flash (Thinking) — Thinking 동적 할당, 크레딧 차감",
-      models: ["gemini/gemini-2.5-flash-thinking"],
+      description: "Gemini 3.0 Flash — 크레딧 차감 (원가의 2배)",
+      models: ["gemini/gemini-3-flash"],
       free: false,
     },
   ],
@@ -132,18 +131,18 @@ const COST_EFFICIENT_STRATEGY: ModelStrategyDefinition = {
  * 최고성능 전략
  *
  * - API 키 보유 → 해당 LLM의 최고 성능, 최신 모델 (추가 비용 없음)
- * - API 키 없음 → MoA 크레딧으로 Claude Opus 4.6 사용
+ * - API 키 없음 → MoA 크레딧으로 Claude Opus 4.6 사용 (원가의 2배 크레딧 차감)
  */
 const MAX_PERFORMANCE_STRATEGY: ModelStrategyDefinition = {
   id: "max-performance",
   name: "최고성능 전략",
   description:
-    "API 키가 있으면 해당 LLM의 최고 성능 모델을, 없으면 MoA 크레딧으로 Claude Opus 4.6을 사용합니다.",
+    "API 키가 있으면 해당 LLM의 최고 성능 모델을, 없으면 MoA 크레딧으로 Claude Opus 4.6을 사용합니다 (원가의 2배 크레딧 차감).",
   tiers: [
     {
       priority: 1,
       label: "API 키 보유 사용자",
-      description: "사용자의 LLM 구독에서 최고 성능 모델 자동 선택 (추가 비용 없음)",
+      description: "사용자의 LLM API 키로 최고 성능 모델 자동 선택 (크레딧 차감 없음)",
       models: Object.entries(PROVIDER_MODELS).map(
         ([provider, m]) => `${provider}/${m.maxPerformance}`,
       ),
@@ -152,7 +151,7 @@ const MAX_PERFORMANCE_STRATEGY: ModelStrategyDefinition = {
     {
       priority: 2,
       label: "MoA 크레딧 (기본)",
-      description: "Claude Opus 4.6 — 코딩/법률/추론 모든 영역 최강",
+      description: "Claude Opus 4.6 — 코딩/법률/추론 최강 (원가의 2배 크레딧 차감)",
       models: ["anthropic/claude-opus-4-6"],
       free: false,
     },
@@ -186,11 +185,11 @@ export function detectSubscribedProviders(): string[] {
  *
  * 핵심 로직:
  * 1. primaryOverride → 사용자 지정 모델 사용
- * 2. API 키 등록 프로바이더 있음 → 해당 프로바이더의 모델만 사용
- *    - cost-efficient → 가성비 모델 (충분한 능력의 가장 저렴한 모델)
- *    - max-performance → 최고 성능 모델 (최신/최강 모델)
- * 3. API 키 없음 → MoA 크레딧 차감 기본 모델
- *    - cost-efficient → Gemini 2.5 Flash (Thinking)
+ * 2. API 키 등록 프로바이더 있음 → 해당 프로바이더의 모델만 사용 (크레딧 차감 없음)
+ *    - cost-efficient → 가성비 모델
+ *    - max-performance → 최고 성능 모델
+ * 3. API 키 없음 → MoA 크레딧 차감 (원가의 2배)
+ *    - cost-efficient → Gemini 3.0 Flash
  *    - max-performance → Claude Opus 4.6
  */
 export function resolveModelStrategy(
@@ -258,8 +257,8 @@ export function resolveModelStrategy(
     parallel: false,
     explanation:
       config.strategy === "cost-efficient"
-        ? `MoA 크레딧 → ${creditModel.displayName} 적용 (Thinking 동적 할당)`
-        : `MoA 크레딧 → ${creditModel.displayName} 적용 (코딩/법률/추론 최강)`,
+        ? `MoA 크레딧 → ${creditModel.displayName} 적용 (원가의 2배 크레딧 차감)`
+        : `MoA 크레딧 → ${creditModel.displayName} 적용 (원가의 2배 크레딧 차감)`,
     modelConfig:
       creditModel.thinkingBudget !== undefined
         ? { thinkingBudget: creditModel.thinkingBudget }
@@ -301,10 +300,7 @@ export function explainModelStrategy(config: UserModelStrategyConfig): string {
     const creditModel = MOA_CREDIT_MODELS[config.strategy];
     lines.push("💳 MoA 크레딧 사용 (API 키 미등록)");
     lines.push(`   → ${creditModel.displayName}`);
-    if (creditModel.thinkingBudget !== undefined) {
-      lines.push(`   → Thinking 동적 할당 (thinkingBudget: ${creditModel.thinkingBudget})`);
-    }
-    lines.push("   → 크레딧 차감 방식 (최초 가입 시 무료 크레딧 제공)");
+    lines.push("   → 크레딧 차감: 원가의 2배 (최초 가입 시 무료 크레딧 제공)");
   }
 
   return lines.join("\n");

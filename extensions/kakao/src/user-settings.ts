@@ -81,6 +81,7 @@ export const PROVIDERS: Record<LLMProvider, ProviderInfo> = {
       { id: "claude-3-5-sonnet-20241022", name: "Claude 3.5 Sonnet", provider: "anthropic", inputPrice: 3000, outputPrice: 15000, contextWindow: 200000 },
       { id: "claude-sonnet-4-20250514", name: "Claude Sonnet 4", provider: "anthropic", inputPrice: 3000, outputPrice: 15000, contextWindow: 200000 },
       { id: "claude-opus-4-5-20251101", name: "Claude Opus 4.5", provider: "anthropic", inputPrice: 15000, outputPrice: 75000, contextWindow: 200000 },
+      { id: "claude-opus-4-6", name: "Claude Opus 4.6", provider: "anthropic", inputPrice: 20000, outputPrice: 100000, contextWindow: 200000 },
     ],
   },
   openai: {
@@ -107,7 +108,8 @@ export const PROVIDERS: Record<LLMProvider, ProviderInfo> = {
     freeCredits: "월 1,500회 무료 (Gemini Flash)",
     freeTier: true,
     models: [
-      { id: "gemini-2.0-flash", name: "Gemini 2.0 Flash", provider: "google", inputPrice: 0, outputPrice: 0, contextWindow: 1000000, recommended: true, free: true },
+      { id: "gemini-3-flash", name: "Gemini 3.0 Flash", provider: "google", inputPrice: 100, outputPrice: 400, contextWindow: 1000000, recommended: true },
+      { id: "gemini-2.0-flash", name: "Gemini 2.0 Flash", provider: "google", inputPrice: 0, outputPrice: 0, contextWindow: 1000000, free: true },
       { id: "gemini-1.5-flash", name: "Gemini 1.5 Flash", provider: "google", inputPrice: 75, outputPrice: 300, contextWindow: 1000000, free: true },
       { id: "gemini-1.5-pro", name: "Gemini 1.5 Pro", provider: "google", inputPrice: 1250, outputPrice: 5000, contextWindow: 2000000 },
     ],
@@ -173,8 +175,9 @@ export const FREE_MODELS: ModelInfo[] = ALL_MODELS.filter(m => m.free);
 // 4단계: API 미설정 시 → 플랫폼 유료 API 사용
 // ============================================
 
-/** 1~2단계: 무료 폴백 체인 */
+/** 1~2단계: 무료 폴백 체인 (manual 모드에서만 사용) */
 export const FREE_FALLBACK_CHAIN: { provider: LLMProvider; model: string; tier: string }[] = [
+  { provider: "google", model: "gemini-3-flash", tier: "가성비" },
   { provider: "google", model: "gemini-2.0-flash", tier: "무료 고성능" },
   { provider: "groq", model: "llama-3.3-70b-versatile", tier: "무료" },
   { provider: "openrouter", model: "google/gemini-2.0-flash-exp:free", tier: "무료" },
@@ -199,7 +202,7 @@ export const PAID_FALLBACK_CHAIN: { provider: LLMProvider; model: string; tier: 
   { provider: "together", model: "meta-llama/Llama-3.3-70B-Instruct-Turbo", tier: "유료 저렴" },
   { provider: "openai", model: "gpt-4o", tier: "유료 고성능" },
   { provider: "anthropic", model: "claude-sonnet-4-20250514", tier: "유료 고성능" },
-  { provider: "anthropic", model: "claude-opus-4-5-20251101", tier: "유료 최고성능" },
+  { provider: "anthropic", model: "claude-opus-4-6", tier: "유료 최고성능" },
 ];
 
 /**
@@ -209,7 +212,7 @@ export const PAID_FALLBACK_CHAIN: { provider: LLMProvider; model: string; tier: 
  * Claude Opus 4.5 → GPT-4o → Claude Sonnet 4 → Gemini Pro → GPT-4o Mini → Haiku → Together
  */
 export const PERFORMANCE_FALLBACK_CHAIN: { provider: LLMProvider; model: string; tier: string }[] = [
-  { provider: "anthropic", model: "claude-opus-4-5-20251101", tier: "최고성능" },
+  { provider: "anthropic", model: "claude-opus-4-6", tier: "최고성능" },
   { provider: "openai", model: "gpt-4o", tier: "고성능" },
   { provider: "anthropic", model: "claude-sonnet-4-20250514", tier: "고성능" },
   { provider: "google", model: "gemini-1.5-pro", tier: "고성능" },
@@ -579,16 +582,18 @@ export interface ResolvedModel {
 /**
  * Resolve which model to use for a request
  *
- * 모드별 폴백 체인:
+ * 핵심 로직 (단순화):
  *
  * [manual] 이용자 직접 선택 모드
  *   → 선택한 모델만 사용, 실패 시 에러
  *
- * [cost_effective] 무료/가성비 우선 (기본값)
- *   → 무료 → 유료 가성비순 → 플랫폼 API → 에러
+ * [cost_effective] 가성비 전략
+ *   → API 키 있음: 사용자 키로 해당 프로바이더 모델 (크레딧 차감 없음)
+ *   → API 키 없음: 플랫폼 Gemini 3.0 Flash (원가의 2배 크레딧 차감)
  *
- * [best_performance] 최고 성능 우선
- *   → 최고성능 유료 → 무료 → 플랫폼 API → 에러
+ * [best_performance] 최고성능 전략
+ *   → API 키 있음: 사용자 키로 해당 프로바이더 모델 (크레딧 차감 없음)
+ *   → API 키 없음: 플랫폼 Claude Opus 4.6 (원가의 2배 크레딧 차감)
  */
 export async function resolveModel(
   kakaoUserId: string,
@@ -611,7 +616,7 @@ export async function resolveModel(
             `"${settings.preferredModel}" 모델을 사용하려면 크레딧이 필요합니다.`,
             "",
             "API 키를 직접 등록하거나 크레딧을 충전해주세요.",
-            '또는 "AI 모드 가성비"로 변경하면 무료 모델을 자동 사용합니다.',
+            '또는 "AI 모드 가성비"로 변경하면 Gemini 3.0 Flash를 사용합니다.',
           ].join("\n"),
         };
       }
@@ -628,18 +633,19 @@ export async function resolveModel(
         `"${settings.preferredModel}" 모델의 API 키가 없습니다.`,
         "",
         "API 키를 등록하거나, 다른 모드를 선택해주세요:",
-        '• "AI 모드 가성비" → 무료/저렴한 모델 자동 적용',
-        '• "AI 모드 최고성능" → 최고 성능 모델 우선 적용',
+        '• "AI 모드 가성비" → Gemini 3.0 Flash 적용',
+        '• "AI 모드 최고성능" → Claude Opus 4.6 적용',
       ].join("\n"),
     };
   }
 
   // ============================================
-  // [best_performance] 최고 성능 우선 모드
-  // 성능 좋은 유료 모델 먼저 → 무료 → 플랫폼 API
+  // [best_performance] 최고성능 전략
+  // API 키 있음 → 사용자 키 (무료)
+  // API 키 없음 → 플랫폼 Claude Opus 4.6 (원가의 2배 크레딧 차감)
   // ============================================
   if (mode === "best_performance") {
-    // 사용자 API 키로 최고 성능 모델 먼저
+    // 1. 사용자 API 키로 해당 프로바이더의 최고 성능 모델 사용 (무료)
     for (const fallback of PERFORMANCE_FALLBACK_CHAIN) {
       const key = settings.apiKeys[fallback.provider];
       if (key) {
@@ -653,52 +659,39 @@ export async function resolveModel(
       }
     }
 
-    // 플랫폼 크레딧으로 최고 성능 모델
+    // 2. API 키 없음 → 플랫폼 Claude Opus 4.6 (원가의 2배 크레딧 차감)
     if (hasCredits) {
-      for (const fallback of PERFORMANCE_FALLBACK_CHAIN) {
-        const platformKey = getPlatformApiKey(fallback.provider);
-        if (platformKey) {
-          return {
-            provider: fallback.provider,
-            model: fallback.model,
-            apiKey: platformKey,
-            isFallback: false,
-            isFree: false,
-          };
-        }
-      }
-    }
-
-    // 크레딧도 없으면 무료 모델이라도 사용
-    for (const fallback of FREE_FALLBACK_CHAIN) {
-      const key = settings.apiKeys[fallback.provider] ?? getPlatformApiKey(fallback.provider);
-      if (key) {
+      const platformKey = getPlatformApiKey("anthropic");
+      if (platformKey) {
         return {
-          provider: fallback.provider,
-          model: fallback.model,
-          apiKey: key,
-          isFallback: true,
-          isFree: true,
+          provider: "anthropic",
+          model: "claude-opus-4-6",
+          apiKey: platformKey,
+          isFallback: false,
+          isFree: false,
         };
       }
     }
 
     return {
       error: [
-        "최고 성능 모델을 사용하려면 API 키 또는 크레딧이 필요합니다.",
+        "최고성능 전략에는 크레딧 또는 API 키가 필요합니다.",
         "",
-        "API 키를 등록하거나 크레딧을 충전해주세요.",
-        '또는 "AI 모드 가성비"로 변경하면 무료 모델을 자동 사용합니다.',
+        "💰 크레딧 충전 시: Claude Opus 4.6 적용 (원가의 2배 차감)",
+        "🔑 API 키 등록 시: 해당 프로바이더 최고 모델 무료 사용",
+        "",
+        '"충전" 또는 "API키 등록"이라고 말씀해주세요.',
       ].join("\n"),
     };
   }
 
   // ============================================
-  // [cost_effective] 무료/가성비 우선 모드 (기본값)
-  // 무료 → 유료 가성비순 → 플랫폼 API → 에러
+  // [cost_effective] 가성비 전략 (기본값)
+  // API 키 있음 → 사용자 키 (무료)
+  // API 키 없음 → 플랫폼 Gemini 3.0 Flash (원가의 2배 크레딧 차감)
   // ============================================
 
-  // 사용자가 직접 선택한 선호 모델이 있고 키가 있으면 우선
+  // 1. 사용자가 직접 등록한 API 키가 있으면 해당 프로바이더 사용 (무료)
   const preferredKey = settings.apiKeys[settings.preferredProvider];
   if (preferredKey) {
     return {
@@ -710,62 +703,47 @@ export async function resolveModel(
     };
   }
 
-  // 1단계: 무료 모델
-  if (settings.autoFallback) {
-    for (const fallback of FREE_FALLBACK_CHAIN) {
-      const key = settings.apiKeys[fallback.provider] ?? getPlatformApiKey(fallback.provider);
-      if (key) {
+  // 다른 프로바이더의 API 키가 있는지 확인
+  for (const [provider, key] of Object.entries(settings.apiKeys)) {
+    if (key) {
+      const providerInfo = PROVIDERS[provider as LLMProvider];
+      const model = providerInfo?.models.find(m => m.recommended) ?? providerInfo?.models[0];
+      if (model) {
         return {
-          provider: fallback.provider,
-          model: fallback.model,
+          provider: provider as LLMProvider,
+          model: model.id,
           apiKey: key,
-          isFallback: true,
+          isFallback: false,
           isFree: true,
         };
       }
     }
   }
 
-  // 2단계: 유료 모델 (사용자 API 키, 가성비순)
-  for (const fallback of PAID_FALLBACK_CHAIN) {
-    const key = settings.apiKeys[fallback.provider];
-    if (key) {
+  // 2. API 키 없음 → 플랫폼 Gemini 3.0 Flash (원가의 2배 크레딧 차감)
+  if (hasCredits) {
+    const platformKey = getPlatformApiKey("google");
+    if (platformKey) {
       return {
-        provider: fallback.provider,
-        model: fallback.model,
-        apiKey: key,
-        isFallback: true,
-        isFree: true,
+        provider: "google",
+        model: "gemini-3-flash",
+        apiKey: platformKey,
+        isFallback: false,
+        isFree: false,
       };
     }
   }
 
-  // 3단계: 플랫폼 유료 API (가성비순)
-  if (hasCredits) {
-    for (const fallback of PAID_FALLBACK_CHAIN) {
-      const platformKey = getPlatformApiKey(fallback.provider);
-      if (platformKey) {
-        return {
-          provider: fallback.provider,
-          model: fallback.model,
-          apiKey: platformKey,
-          isFallback: false,
-          isFree: false,
-        };
-      }
-    }
-  }
-
-  // 4단계: 안내
+  // 3. 크레딧도 없고 API 키도 없음 → 안내
   return {
     error: [
-      "사용 가능한 API 키가 없습니다.",
+      "API 키 또는 크레딧이 필요합니다.",
       "",
-      "🆓 무료로 사용하는 방법:",
-      '"Gemini 무료" → Google Gemini API 키 등록 (월 1,500회 무료)',
-      '"Groq 무료" → Groq API 키 등록 (완전 무료)',
+      "🔑 API 키 등록 시: 크레딧 차감 없이 무료 사용!",
+      '  "API키 등록"이라고 말씀해주세요.',
       "",
-      "💰 유료 사용: 크레딧을 충전하면 모든 모델을 사용할 수 있습니다.",
+      "💰 크레딧 충전 시: Gemini 3.0 Flash 적용 (원가의 2배 차감)",
+      '  "충전"이라고 말씀해주세요.',
     ].join("\n"),
   };
 }

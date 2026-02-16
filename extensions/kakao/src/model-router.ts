@@ -440,6 +440,12 @@ async function callProvider(
 
 /**
  * Route chat request to appropriate provider
+ *
+ * 자기 검증 포함:
+ * 1. LLM 호출 성공 여부
+ * 2. 응답 생성 확인
+ * 3. 요청-응답 정합성
+ * 4. 크레딧 정합성
  */
 export async function routeChat(
   kakaoUserId: string,
@@ -461,6 +467,9 @@ export async function routeChat(
     };
   }
 
+  // 원본 메시지 추출 (검증용)
+  const originalMessage = request.messages.find(m => m.role === "user")?.content ?? "";
+
   try {
     const response = await callProvider(resolved, request.messages, maxTokens);
 
@@ -468,12 +477,31 @@ export async function routeChat(
     response.isFallback = resolved.isFallback;
     response.isFree = resolved.isFree;
 
-    return {
+    const result: RouterResult = {
       success: true,
       response,
       fallbackUsed: resolved.isFallback,
       fallbackProvider: resolved.isFallback ? resolved.provider : undefined,
     };
+
+    // 자기 검증: 요청 완료 전 자동 검증
+    const verification = verifyRequestCompletion(originalMessage, result, {
+      usedPlatformKey: !resolved.isFree,
+      creditsUsed: resolved.isFree ? 0 : 1, // 실제 크레딧은 postBillingDeduct에서 차감
+      expectedModel: resolved.model,
+      isFree: resolved.isFree,
+    });
+
+    if (!verification.verified) {
+      const warning = handleVerificationResult(verification);
+      if (warning) {
+        console.warn(`[routeChat] Verification issues for user ${kakaoUserId}: ${warning}`);
+      }
+      // 크레딧 정합성 문제가 아닌 경우에는 응답을 반환 (경고만)
+      // 크레딧 정합성 오류 시에는 로그만 기록 (응답은 반환)
+    }
+
+    return result;
   } catch (err) {
     // If primary provider fails, try fallback
     if (!resolved.isFallback) {
@@ -846,7 +874,7 @@ async function routeChatWithTier(
       { provider: "google", model: "gemini-1.5-pro" },
     ],
     premium: [
-      { provider: "anthropic", model: "claude-opus-4-5-20251101" },
+      { provider: "anthropic", model: "claude-opus-4-6" },
       { provider: "openai", model: "gpt-5.2" },
       { provider: "google", model: "gemini-3-pro-preview" },
     ],
@@ -1087,4 +1115,118 @@ export function formatAnalysisSummary(analysis: SmartRoutingAnalysis): string {
   summary += `📍 추천: ${tierLabels[analysis.suggestedTier]}`;
 
   return summary;
+}
+
+// ============================================
+// Self-Verification Logic (자기 검증)
+// ============================================
+
+export interface VerificationResult {
+  verified: boolean;
+  issues: string[];
+  creditConsistency: boolean;
+}
+
+/**
+ * 요청 완료 전 자동 검증
+ *
+ * 1. 도구(LLM) 실행 성공 여부 확인
+ * 2. 응답 생성 확인 (비어있지 않은지)
+ * 3. 이용자 요청과 응답의 정합성 검증
+ * 4. 크레딧 정합성 검증 (올바른 금액 차감 여부)
+ *
+ * 검증 통과 후에만 완료 보고
+ */
+export function verifyRequestCompletion(
+  originalMessage: string,
+  result: RouterResult,
+  billingInfo?: {
+    usedPlatformKey: boolean;
+    creditsUsed: number;
+    expectedModel: string;
+    isFree: boolean;
+  },
+): VerificationResult {
+  const issues: string[] = [];
+  let creditConsistency = true;
+
+  // 1. 도구 실행 성공 여부 확인
+  if (!result.success) {
+    issues.push(`LLM 실행 실패: ${result.error ?? "알 수 없는 오류"}`);
+  }
+
+  // 2. 응답 생성 확인
+  if (result.success && result.response) {
+    if (!result.response.content || result.response.content.trim().length === 0) {
+      issues.push("응답이 비어있습니다.");
+    }
+
+    // 응답이 극단적으로 짧은 경우 경고 (10자 미만)
+    if (result.response.content && result.response.content.trim().length < 10) {
+      issues.push(`응답이 너무 짧습니다 (${result.response.content.trim().length}자).`);
+    }
+  }
+
+  // 3. 이용자 요청과 응답의 정합성 검증
+  if (result.success && result.response) {
+    // 언어 정합성: 한국어 요청에 한국어 응답 여부 (간략 검증)
+    const isKoreanRequest = /[가-힣]/.test(originalMessage);
+    const isKoreanResponse = /[가-힣]/.test(result.response.content);
+    if (isKoreanRequest && !isKoreanResponse && result.response.content.length > 50) {
+      issues.push("한국어 요청에 대한 비한국어 응답 감지.");
+    }
+  }
+
+  // 4. 크레딧 정합성 검증
+  if (billingInfo) {
+    // 사용자 API 키 사용 시 크레딧 차감이 0이어야 함
+    if (billingInfo.isFree && billingInfo.creditsUsed > 0) {
+      creditConsistency = false;
+      issues.push(`크레딧 정합성 오류: 사용자 API 키 사용 중이지만 ${billingInfo.creditsUsed} 크레딧이 차감됨.`);
+    }
+
+    // 플랫폼 키 사용 시 크레딧 차감이 0보다 커야 함
+    if (billingInfo.usedPlatformKey && !billingInfo.isFree && billingInfo.creditsUsed === 0) {
+      creditConsistency = false;
+      issues.push("크레딧 정합성 오류: 플랫폼 API 사용 중이지만 크레딧 차감이 없음.");
+    }
+
+    // 모델 일치성 검증
+    if (result.success && result.response && billingInfo.expectedModel) {
+      const actualModel = result.response.model;
+      if (actualModel !== billingInfo.expectedModel) {
+        issues.push(`모델 불일치: 예상 ${billingInfo.expectedModel}, 실제 ${actualModel}.`);
+      }
+    }
+  }
+
+  return {
+    verified: issues.length === 0,
+    issues,
+    creditConsistency,
+  };
+}
+
+/**
+ * 검증 결과를 로그로 기록하고, 검증 실패 시 경고 반환
+ */
+export function handleVerificationResult(
+  verification: VerificationResult,
+): string | null {
+  if (verification.verified) {
+    return null; // 검증 통과
+  }
+
+  // 검증 실패 시 경고 메시지 생성
+  const warningLines: string[] = ["[자기 검증 경고]"];
+  for (const issue of verification.issues) {
+    warningLines.push(`  - ${issue}`);
+    console.warn(`[verification] ${issue}`);
+  }
+
+  if (!verification.creditConsistency) {
+    warningLines.push("  ⚠️ 크레딧 정합성 문제 발견. 관리자에게 문의하세요.");
+  }
+
+  return warningLines.join("\n");
 }

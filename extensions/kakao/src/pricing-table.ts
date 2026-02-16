@@ -438,6 +438,15 @@ export const LLM_PRICING: LlmPricing[] = [
     freeTier: false,
   },
   {
+    modelId: "gemini/gemini-3-flash",
+    provider: "Google",
+    name: "Gemini 3.0 Flash",
+    inputUsdPer1M: 0.15,
+    outputUsdPer1M: 0.60,
+    creditsPerConversation: 2,
+    freeTier: false,
+  },
+  {
     modelId: "gemini/gemini-2.5-flash",
     provider: "Google",
     name: "Gemini 2.5 Flash",
