@@ -51,7 +51,9 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=45s --retries=3 \
 # Ensure startup script is executable
 RUN chmod +x scripts/railway-start.sh
 
-# Create data directory for OpenClaw state (Railway Volume mounts over /data)
+# Create data directory for OpenClaw state (Railway Volume mounts over /data).
+# NOTE: Railway volume mounts replace /data at runtime, so this only helps
+# non-volume deployments. The startup script handles volume permission fallback.
 RUN mkdir -p /data/.openclaw && chown -R node:node /data
 
 # Security hardening: Run as non-root user
