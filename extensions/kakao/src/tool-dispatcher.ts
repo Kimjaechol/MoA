@@ -70,6 +70,17 @@ import {
   isLiveTranslationIntent,
 } from './tools/translation-session.js';
 import { getConsultationButton, parseLawCallRoutes } from './lawcall-router.js';
+import { selectSkill, formatSelectionDebug, type AutoSelectionResult } from './skill-auto-selector.js';
+import {
+  startRequestTracking,
+  recordSkillUsage,
+  recordLlmUsage,
+  selfVerify,
+  completeRequestTracking,
+  formatUsageFooter,
+  type RequestUsageSummary,
+} from './usage-tracker.js';
+import { formatCreditsCompact } from './pricing-table.js';
 
 export interface ToolDispatchResult {
   handled: boolean;
@@ -91,10 +102,21 @@ export interface ToolDispatchResult {
     mode: string; // "bidirectional:en:ko" 등
     context?: string;
   };
+  /** 스킬 자동 선택 결과 */
+  skillSelection?: AutoSelectionResult;
+  /** 요청별 사용량 추적 ID */
+  trackingId?: string;
+  /** 완료된 사용량 요약 (Replit 스타일 표시용) */
+  usageSummary?: RequestUsageSummary;
 }
 
 /**
  * 메시지를 분석하고 적절한 도구 호출
+ *
+ * 스킬 자동 선택 우선순위:
+ * 1. 무료 도구 (API Key 불필요) → 0 크레딧
+ * 2. 무료 도구 (API Key 필요, 이용자 보유) → 0 크레딧
+ * 3. 유료 도구 (저렴한 순 → 비싼 순) → 크레딧 차감
  */
 export async function dispatchTool(
   userId: string,
@@ -102,86 +124,223 @@ export async function dispatchTool(
 ): Promise<ToolDispatchResult> {
   const intent = classifyIntent(message);
 
+  // ━━ 요청 추적 시작 ━━
+  const trackingId = startRequestTracking(userId);
+
+  // 스킬 자동 선택 수행
+  const skillSelection = selectSkill(intent.type);
+  console.log(formatSelectionDebug(skillSelection));
+
   // 기본 결과
   const result: ToolDispatchResult = {
     handled: false,
     intent,
     systemPrompt: getSystemPromptForIntent(intent),
+    skillSelection,
+    trackingId,
   };
 
   try {
     // ━━ 통역 대화 흐름: "언어 선택 대기 중" 체크 ━━
-    // MoA가 "어느 나라 말로 통역할까요?" 라고 물은 후, 사용자 응답 처리
     if (isAwaitingLanguage(userId)) {
       const languageResult = handleLanguageSelection(userId, message, result);
-      if (languageResult) return languageResult;
-      // 언어를 파싱하지 못한 경우 → 일반 의도 분류로 폴스루
+      if (languageResult) return finalizeResult(languageResult, trackingId);
     }
+
+    let handlerResult: ToolDispatchResult;
 
     switch (intent.type) {
       case 'weather':
-        return await handleWeather(message, intent, result);
+        handlerResult = await handleWeather(message, intent, result);
+        break;
 
       case 'calendar':
-        return await handleCalendar(userId, message, intent, result);
+        handlerResult = await handleCalendar(userId, message, intent, result);
+        break;
 
       case 'sports':
-        return await handleSports(message, intent, result);
+        handlerResult = await handleSports(message, intent, result);
+        break;
 
       case 'public_data':
-        return await handlePublicData(message, intent, result);
+        handlerResult = await handlePublicData(message, intent, result);
+        break;
 
       case 'web_search':
-        return await handleWebSearch(message, intent, result);
+        handlerResult = await handleWebSearch(message, intent, result);
+        break;
 
       case 'legal_info':
-        return await handleLegalInfo(message, intent, result);
+        handlerResult = await handleLegalInfo(message, intent, result);
+        break;
 
       case 'legal_consult':
       case 'medical_consult':
       case 'tax_consult':
-        return await handleExpertConsult(message, intent, result);
+        handlerResult = await handleExpertConsult(message, intent, result);
+        break;
 
       case 'creative_image':
-        return await handleCreativeImage(message, intent, result);
+        handlerResult = await handleCreativeImage(message, intent, result);
+        break;
 
       case 'creative_emoticon':
-        return await handleCreativeEmoticon(message, intent, result);
+        handlerResult = await handleCreativeEmoticon(message, intent, result);
+        break;
 
       case 'creative_music':
-        return await handleCreativeMusic(message, intent, result);
+        handlerResult = await handleCreativeMusic(message, intent, result);
+        break;
 
       case 'creative_qrcode':
-        return await handleCreativeQRCode(message, intent, result);
+        handlerResult = await handleCreativeQRCode(message, intent, result);
+        break;
 
       case 'freepik_generate':
-        return await handleFreepikGenerate(message, intent, result);
+        handlerResult = await handleFreepikGenerate(message, intent, result);
+        break;
 
       case 'freepik_search':
-        return await handleFreepikSearch(message, intent, result);
+        handlerResult = await handleFreepikSearch(message, intent, result);
+        break;
 
       case 'translate':
-        return await handleTranslate(userId, message, intent, result);
+        handlerResult = await handleTranslate(userId, message, intent, result);
+        break;
 
       case 'travel_help':
-        return await handleTravelHelp(message, intent, result);
+        handlerResult = await handleTravelHelp(message, intent, result);
+        break;
 
       case 'chat':
       default:
         // 일반 대화는 LLM에 위임
-        // 단, 웹 검색이 필요한 경우 search 결과를 컨텍스트로 추가
         if (needsWebSearch(message)) {
-          return await handleWebSearch(message, intent, result);
+          handlerResult = await handleWebSearch(message, intent, result);
+        } else {
+          handlerResult = result;
         }
-        return result;
+        break;
     }
+
+    return finalizeResult(handlerResult, trackingId);
   } catch (error) {
     console.error(`Tool dispatch error for ${intent.type}:`, error);
-    return {
-      ...result,
-      handled: false,
-    };
+    return finalizeResult({ ...result, handled: false }, trackingId);
   }
+}
+
+/**
+ * Finalize result: 자기 검증 + 사용량 추적 완료 + Replit 스타일 크레딧 표시 추가
+ */
+function finalizeResult(
+  result: ToolDispatchResult,
+  trackingId: string,
+): ToolDispatchResult {
+  // 도구 사용 기록
+  if (result.usedTool && result.handled) {
+    const toolName = TOOL_DISPLAY_NAMES[result.usedTool] ?? result.usedTool;
+    const creditsCost = TOOL_CREDIT_COSTS[result.usedTool] ?? 0;
+
+    recordSkillUsage(trackingId, {
+      toolId: result.usedTool,
+      toolName,
+      creditsUsed: creditsCost,
+      usedOwnKey: isToolUsingOwnKey(result.usedTool),
+      durationMs: 0, // Will be measured by webhook layer
+      success: true,
+    });
+  }
+
+  // 자기 검증 수행
+  const verification = selfVerify(trackingId, result.response ?? null);
+
+  // 사용량 추적 완료
+  const usageSummary = completeRequestTracking(trackingId);
+
+  // ━━ Replit 스타일: 응답 하단에 크레딧 소진량 작게 표시 ━━
+  if (usageSummary && result.response && result.handled) {
+    const footer = formatUsageFooter(usageSummary);
+    if (footer) {
+      result.response += footer;
+    }
+  }
+
+  return {
+    ...result,
+    trackingId,
+    usageSummary: usageSummary ?? undefined,
+  };
+}
+
+// ============================================
+// Tool Display Names & Credit Costs (intent → tool mapping)
+// ============================================
+
+const TOOL_DISPLAY_NAMES: Record<string, string> = {
+  weather: "기상청 날씨",
+  calendar: "일정 조회",
+  sports: "스포츠 일정",
+  holidays: "공휴일 조회",
+  air_quality: "대기질 조회",
+  search_perplexity: "Perplexity 검색",
+  search_google: "Google 검색",
+  search_fallback: "웹 검색",
+  legal_rag: "법률 정보 검색",
+  expert_legal_consult: "법률 상담",
+  expert_medical_consult: "의료 상담",
+  expert_tax_consult: "세무 상담",
+  image_generation: "이미지 생성",
+  emoticon_generation: "이모티콘 생성",
+  music_generation: "음악 생성",
+  qrcode_generation: "QR 코드 생성",
+  freepik_generate: "Freepik AI 이미지",
+  freepik_search: "Freepik 검색",
+  translate: "번역",
+  live_translate: "실시간 통역",
+  travel_phrases: "여행 회화",
+  travel_help: "여행 도우미",
+};
+
+const TOOL_CREDIT_COSTS: Record<string, number> = {
+  weather: 0,
+  calendar: 0,
+  sports: 0,
+  holidays: 0,
+  air_quality: 0,
+  legal_rag: 0,
+  travel_phrases: 0,
+  travel_help: 0,
+  qrcode_generation: 0,
+  freepik_generate: 0,  // freemium
+  freepik_search: 0,     // freemium
+  translate: 0,           // papago free tier
+  search_perplexity: 2,
+  search_google: 7,
+  search_fallback: 0,
+  image_generation: 54,   // DALL-E 3 standard
+  emoticon_generation: 54,
+  music_generation: 68,   // Suno
+  live_translate: 3,      // Gemini Live
+};
+
+/** Check if a tool is using the user's own API key (no credit charge) */
+function isToolUsingOwnKey(toolId: string): boolean {
+  const toolEnvMap: Record<string, string> = {
+    search_perplexity: "PERPLEXITY_API_KEY",
+    search_google: "GOOGLE_AI_API_KEY",
+    image_generation: "OPENAI_API_KEY",
+    emoticon_generation: "OPENAI_API_KEY",
+    music_generation: "SUNO_API_KEY",
+    live_translate: "GEMINI_API_KEY",
+    freepik_generate: "FREEPIK_API_KEY",
+    translate: "NAVER_CLIENT_ID",
+  };
+
+  const envVar = toolEnvMap[toolId];
+  if (!envVar) return false;
+  const value = process.env[envVar];
+  return !!value && value.trim() !== "";
 }
 
 // ==================== 통역 대화 흐름 핸들러 ====================
