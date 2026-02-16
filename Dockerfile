@@ -45,14 +45,24 @@ ENV NODE_ENV=production
 EXPOSE 8788
 
 # Health check for Railway/Docker
-HEALTHCHECK --interval=30s --timeout=10s --start-period=15s --retries=3 \
+HEALTHCHECK --interval=30s --timeout=10s --start-period=45s --retries=3 \
   CMD wget --no-verbose --tries=1 --spider http://localhost:${PORT:-8788}/health || exit 1
+
+# Ensure startup script is executable
+RUN chmod +x scripts/railway-start.sh
+
+# Create data directory for OpenClaw state (Railway Volume mounts over /data)
+RUN mkdir -p /data/.openclaw && chown -R node:node /data
 
 # Security hardening: Run as non-root user
 USER node
 
-# Start MoA (Master of AI) webhook server
-# CMD is used (not ENTRYPOINT) to avoid conflicts with Railway's startCommand.
-# Even if Railway overrides CMD with `npm start`, package.json `start` script
-# now points to the MoA server (not the OpenClaw CLI).
-CMD ["./node_modules/.bin/tsx", "extensions/kakao/server.ts"]
+# Start MoA + OpenClaw gateway via unified startup script.
+# The script starts the OpenClaw gateway (heartbeat, cron, memory, tools)
+# in the background, then starts the MoA webhook server in the foreground.
+# If the gateway fails, MoA still works with direct LLM calls.
+#
+# To run MoA ONLY (no OpenClaw gateway):
+#   Set OPENCLAW_GATEWAY_ENABLED=false in Railway env vars
+#   Or override CMD: ["./node_modules/.bin/tsx", "extensions/kakao/server.ts"]
+CMD ["bash", "scripts/railway-start.sh"]

@@ -6,12 +6,25 @@
  *   2. DB queries parallelized with Promise.all
  *   3. Semantic cache integration (optional, via @/lib/semantic-cache)
  *   4. Multi-turn conversation context with cross-channel history
+ *   5. OpenClaw Agent integration — full agent capabilities when gateway is available
+ *
+ * OpenClaw Agent provides:
+ *   - Pi RPC agent with tools (browsing, file management, code execution)
+ *   - 100+ skills (weather, calendar, search, coding, etc.)
+ *   - Memory/knowledge base with vector search
+ *   - Browser automation via Playwright
+ *   - Plugin/extension system (32+ extensions)
+ *
+ * When OPENCLAW_GATEWAY_URL is configured and the gateway is reachable,
+ * messages are routed through the OpenClaw agent for enhanced responses.
+ * Falls back to direct LLM calls when the agent is unavailable.
  *
  * This module runs on Node.js runtime (needs node:crypto for key decryption).
  */
 
 import { safeDecrypt } from "@/lib/crypto";
 import { detectAndMaskSensitiveData } from "@/lib/security";
+import { sendToOpenClawAgent, isOpenClawAvailable, isOpenClawConfigured } from "@/lib/openclaw-bridge";
 
 // ────────────────────────────────────────────
 // Types
@@ -208,24 +221,28 @@ export const CATEGORY_SKILLS: Record<string, string[]> = {
 // Credit System
 // ────────────────────────────────────────────
 
+// Cross-verified credit costs (synced with pricing-table.ts & credits.ts)
 const MODEL_CREDIT_COSTS: Record<string, number> = {
   "local/slm-default": 0, "local/fallback": 0, "cache/hit": 0,
-  "groq/kimi-k2-0905": 1, "groq/llama-3.3-70b-versatile": 1,
+  "groq/kimi-k2-0905": 0, "groq/llama-3.3-70b-versatile": 0,
+  "deepseek/deepseek-chat": 1,
   "gemini/gemini-3-flash": 2, "gemini/gemini-2.5-flash": 2, "gemini/gemini-2.0-flash": 2,
-  "deepseek/deepseek-chat": 3,
-  "mistral/mistral-small": 3, "mistral/mistral-large": 6,
+  "openai/gpt-4o-mini": 2,
+  "mistral/mistral-small-latest": 2, "mistral/mistral-large-latest": 6,
   "xai/grok-3-mini": 4, "xai/grok-3": 8,
-  "openai/gpt-4o": 5, "openai/gpt-4o-mini": 3,
-  "anthropic/claude-sonnet-4-5": 8, "anthropic/claude-haiku-4-5": 4,
-  "openai/gpt-5": 10,
-  "anthropic/claude-opus-4-6": 15,
+  "anthropic/claude-haiku-4-5": 6,
+  "gemini/gemini-3-pro": 8,
+  "openai/gpt-4o": 15,
+  "anthropic/claude-sonnet-4-5": 22,
+  "openai/gpt-5": 25,
+  "anthropic/claude-opus-4-6": 100,
 };
 
 function getCreditCost(model: string): number {
   if (MODEL_CREDIT_COSTS[model] !== undefined) return MODEL_CREDIT_COSTS[model];
-  if (model.startsWith("groq/")) return 1;
+  if (model.startsWith("groq/")) return 0;
+  if (model.startsWith("deepseek/")) return 1;
   if (model.startsWith("gemini/")) return 2;
-  if (model.startsWith("deepseek/")) return 3;
   if (model.startsWith("mistral/")) return 4;
   if (model.startsWith("xai/")) return 5;
   if (model.startsWith("openai/")) return 5;
@@ -836,7 +853,38 @@ export async function generateAIResponse(params: {
     // Semantic cache not available — no-op
   }
 
-  // Call LLM if no cache hit
+  // ── Try OpenClaw Agent first (full agent capabilities) ──
+  // When the OpenClaw gateway is available, route through it for:
+  // tools, skills, memory, browser automation, and richer responses.
+  if (!aiResponse && isOpenClawConfigured()) {
+    try {
+      const agentResult = await sendToOpenClawAgent({
+        message: message.trim(),
+        userId,
+        sessionKey: `moa:${channel}:${userId}`,
+        channel,
+        category,
+      });
+      if (agentResult && agentResult.text) {
+        const toolInfo = agentResult.toolsUsed.length > 0
+          ? ` [tools: ${agentResult.toolsUsed.join(", ")}]`
+          : "";
+        console.info(`[ai-engine] OpenClaw agent responded (${agentResult.model})${toolInfo}`);
+        aiResponse = {
+          text: agentResult.text,
+          model: `openclaw/${agentResult.model}`,
+          usedEnvKey: false,
+        };
+        if (setCachedResponseFn) {
+          setCachedResponseFn(message, category, agentResult.text).catch(() => {});
+        }
+      }
+    } catch (agentErr) {
+      console.warn("[ai-engine] OpenClaw agent failed, falling back to direct LLM:", agentErr instanceof Error ? agentErr.message : agentErr);
+    }
+  }
+
+  // Call LLM directly if no cache hit and no agent response
   if (!aiResponse) {
     try {
       aiResponse = await tryLlmCall(llmMessages, category, strategy, activeKeys);
@@ -867,11 +915,20 @@ export async function generateAIResponse(params: {
     creditInfo = creditResult;
   }
 
+  // ── Replit-style: append credit usage footer to response ──
+  const creditCost = creditInfo.cost ?? 0;
+  let replyText = aiResponse.text;
+  if (creditCost > 0) {
+    const modelName = aiResponse.model.split("/").pop() ?? aiResponse.model;
+    const keyLabel = aiResponse.usedEnvKey ? " (MoA 키)" : "";
+    replyText += `\n\n─\n⚡ ${modelName}${keyLabel} | ${creditCost}C 사용`;
+  }
+
   return {
-    reply: aiResponse.text,
+    reply: replyText,
     model: aiResponse.model,
     category,
-    credits_used: creditInfo.cost ?? 0,
+    credits_used: creditCost,
     credits_remaining: creditInfo.balance,
     key_source: aiResponse.usedEnvKey ? "moa" : "user",
     timestamp: new Date().toISOString(),

@@ -1,12 +1,14 @@
 /**
  * Message Processing Pipeline
  *
- * Flow: Incoming Message → Validate → Rate Limit → Allowlist → Mask → AI → Deliver
+ * Flow: Incoming Message → Validate → Rate Limit → Allowlist → Mask → OpenClaw Agent / MoA API → Deliver
  *
- * The gateway calls the MoA Web API for AI processing,
- * keeping the AI engine centralized (single source of truth for credits, models, etc.)
+ * When the OpenClaw gateway is configured and available, messages are first
+ * routed through the OpenClaw agent for enhanced AI processing (tools, skills,
+ * memory, browser automation). Falls back to the MoA Web API for direct LLM calls.
  */
 
+import { randomUUID } from "node:crypto";
 import type { GatewayConfig } from "../config.js";
 import type { IncomingMessage, ProcessedResult } from "./types.js";
 import type { RateLimiter } from "../security/rate-limiter.js";
@@ -87,15 +89,47 @@ export async function processMessage(
     });
   }
 
-  // 5. Call MoA API for AI processing
+  // 5. Try OpenClaw Agent first (if configured), then fall back to MoA API
+  const userId = `gateway_${msg.channel}_${msg.senderId}`;
+  const sessionId = `gw_${msg.channel}_${msg.senderId}`;
+
   try {
-    const result = await callMoaApi(config, {
-      user_id: `gateway_${msg.channel}_${msg.senderId}`,
-      session_id: `gw_${msg.channel}_${msg.senderId}`,
-      content: validation.sanitizedText,
-      channel: msg.channel,
-      content_for_storage: sensitiveResult.detected ? sensitiveResult.maskedText : undefined,
-    });
+    let result: ProcessedResult | null = null;
+
+    // 5a. Try OpenClaw Agent for enhanced AI (tools, skills, memory)
+    if (config.openclawGatewayUrl) {
+      try {
+        result = await callOpenClawAgent(config, {
+          message: validation.sanitizedText,
+          userId,
+          sessionKey: `moa:${msg.channel}:${msg.senderId}`,
+          channel: msg.channel,
+        });
+        if (result) {
+          logger.info("OpenClaw agent responded", {
+            ...logCtx,
+            model: result.model,
+          });
+        }
+      } catch (agentErr) {
+        const agentMsg = agentErr instanceof Error ? agentErr.message : String(agentErr);
+        logger.warn("OpenClaw agent failed, falling back to MoA API", {
+          ...logCtx,
+          error: agentMsg,
+        });
+      }
+    }
+
+    // 5b. Fall back to MoA API for direct LLM calls
+    if (!result) {
+      result = await callMoaApi(config, {
+        user_id: userId,
+        session_id: sessionId,
+        content: validation.sanitizedText,
+        channel: msg.channel,
+        content_for_storage: sensitiveResult.detected ? sensitiveResult.maskedText : undefined,
+      });
+    }
 
     logger.info("AI response received", {
       ...logCtx,
@@ -160,6 +194,156 @@ async function callMoaApi(
     keySource: (data.key_source as "moa" | "user") ?? "moa",
     timestamp: (data.timestamp as string) ?? new Date().toISOString(),
   };
+}
+
+/**
+ * Call the OpenClaw gateway agent via HTTP health check + WebSocket RPC.
+ * Returns null if the agent is unavailable, allowing fallback to MoA API.
+ */
+async function callOpenClawAgent(
+  config: GatewayConfig,
+  params: {
+    message: string;
+    userId: string;
+    sessionKey: string;
+    channel: string;
+  },
+): Promise<ProcessedResult | null> {
+  const gatewayUrl = config.openclawGatewayUrl;
+  if (!gatewayUrl) return null;
+
+  // Health check (HTTP, fast)
+  const httpUrl = gatewayUrl.replace(/^ws:/, "http:").replace(/^wss:/, "https:");
+  const healthRes = await fetch(`${httpUrl}/health`, {
+    signal: AbortSignal.timeout(5_000),
+  });
+  if (!healthRes.ok) return null;
+
+  // Use dynamic import for WebSocket
+  const { default: WebSocket } = await import("ws");
+
+  return new Promise<ProcessedResult | null>((resolve) => {
+    const ws = new WebSocket(gatewayUrl, { handshakeTimeout: 10_000 });
+    const connectId = randomUUID();
+    const sendId = randomUUID();
+    const idempotencyKey = randomUUID();
+
+    let responseText = "";
+    let modelUsed = "";
+    let connected = false;
+
+    const timer = setTimeout(() => {
+      try { ws.close(); } catch { /* ignore */ }
+      resolve(null);
+    }, config.openclawTimeoutMs);
+
+    function cleanup() {
+      clearTimeout(timer);
+      try { ws.close(); } catch { /* ignore */ }
+    }
+
+    ws.on("error", () => { cleanup(); resolve(null); });
+    ws.on("close", () => {
+      clearTimeout(timer);
+      if (responseText) {
+        resolve({
+          reply: responseText,
+          model: modelUsed || "openclaw/agent",
+          category: "other",
+          creditsUsed: 0,
+          keySource: "user",
+          timestamp: new Date().toISOString(),
+        });
+      } else {
+        resolve(null);
+      }
+    });
+
+    ws.on("open", () => {
+      ws.send(JSON.stringify({
+        type: "req", id: connectId, method: "connect",
+        params: {
+          minProtocol: 1, maxProtocol: 1,
+          client: {
+            id: `moa-gw-${params.channel}`,
+            displayName: `MoA Gateway (${params.channel})`,
+            version: "1.0.0", platform: "server", mode: "backend",
+            instanceId: randomUUID(),
+          },
+          auth: config.openclawGatewayToken ? { token: config.openclawGatewayToken } : {},
+          scopes: ["operator.admin"],
+        },
+      }));
+    });
+
+    ws.on("message", (raw: Buffer) => {
+      let frame: { type: string; id?: string; ok?: boolean; payload?: Record<string, unknown>; error?: { message: string }; event?: string };
+      try { frame = JSON.parse(raw.toString()); } catch { return; }
+
+      if (frame.type === "res") {
+        if (frame.id === connectId) {
+          if (frame.ok) {
+            connected = true;
+            ws.send(JSON.stringify({
+              type: "req", id: sendId, method: "chat.send",
+              params: {
+                sessionKey: params.sessionKey,
+                message: params.message,
+                idempotencyKey,
+                timeoutMs: config.openclawTimeoutMs,
+              },
+            }));
+          } else {
+            cleanup(); resolve(null);
+          }
+        } else if (frame.id === sendId && !frame.ok) {
+          cleanup(); resolve(null);
+        }
+      }
+
+      if (frame.type === "event" && frame.event === "chat" && frame.payload) {
+        const payload = frame.payload;
+        const state = payload.state as string;
+
+        // Accumulate streaming text
+        if (payload.delta) {
+          const delta = payload.delta as { type: string; text?: string };
+          if (delta.type === "text" && delta.text) responseText += delta.text;
+        }
+
+        if (state === "final") {
+          const msg = payload.message as { content?: Array<{ type: string; text?: string }>; model?: string } | undefined;
+          if (msg?.content) {
+            const text = msg.content.filter((c) => c.type === "text" && c.text).map((c) => c.text).join("\n");
+            if (text) responseText = text;
+          }
+          if (msg?.model) modelUsed = msg.model;
+
+          cleanup();
+          resolve({
+            reply: responseText,
+            model: modelUsed || "openclaw/agent",
+            category: "other",
+            creditsUsed: 0,
+            keySource: "user",
+            timestamp: new Date().toISOString(),
+          });
+        }
+
+        if (state === "error") {
+          cleanup();
+          resolve(responseText ? {
+            reply: responseText,
+            model: modelUsed || "openclaw/agent",
+            category: "other",
+            creditsUsed: 0,
+            keySource: "user",
+            timestamp: new Date().toISOString(),
+          } : null);
+        }
+      }
+    });
+  });
 }
 
 /**

@@ -54,6 +54,7 @@ console.log(
 import type { RelayCallbacks } from "./src/relay/index.js";
 import type { ResolvedKakaoAccount } from "./src/types.js";
 import type { MoAMessageHandler } from "./src/channels/types.js";
+import { MoltbotGatewayClient } from "./src/moltbot/gateway-client.js";
 import { resolveKakaoAccount, getDefaultKakaoConfig } from "./src/config.js";
 import { handleInstallRequest } from "./src/installer/index.js";
 import { handleSettingsRequest } from "./src/settings/index.js";
@@ -156,6 +157,24 @@ import {
 const PORT = parseInt(process.env.PORT ?? process.env.KAKAO_WEBHOOK_PORT ?? "8788", 10);
 const HOST = process.env.HOST ?? "0.0.0.0";
 const WEBHOOK_PATH = process.env.KAKAO_WEBHOOK_PATH ?? "/kakao/webhook";
+
+// ============================================
+// OpenClaw Gateway Integration (optional)
+// ============================================
+//
+// When the OpenClaw gateway runs alongside MoA (e.g. via railway-start.sh),
+// AI messages are routed through the full OpenClaw agent which provides:
+//   - Memory search (vector + FTS)
+//   - Tool execution (bash, file ops, browsing)
+//   - 104 built-in skills
+//   - Multi-turn conversation with context
+//   - Heartbeat & cron (proactive AI)
+//
+// If the gateway is unavailable, MoA falls back to direct LLM API calls.
+// End users never need to configure this — the operator sets it once.
+//
+let openclawGateway: MoltbotGatewayClient | null = null;
+let openclawGatewayOnline = false;
 
 /**
  * MoA install page URL — always use the public-facing domain.
@@ -1450,15 +1469,21 @@ MoA를 설치하면 이 모든 것이 가능합니다!
     }
   }
 
-  // 8) General AI chat — use LLM with MoA-optimized system prompt
-  const llm = detectLlmProvider();
+  // 8) AI chat via OpenClaw gateway (unified — memory + tools + skills + LLM)
+  //
+  // OpenClaw gateway IS the AI engine. It calls the LLM internally while also
+  // providing memory search, tool execution, 104 skills, heartbeat, and cron.
+  //
+  // LLM model selection (determined by user's strategy):
+  //   - User provided their own API key → that provider's best model
+  //   - No API key + 최고성능 전략 → Claude Opus 4.6 (MoA operator key)
+  //   - No API key + 가성비 전략   → Gemini 3.0 Flash (MoA operator key)
+  //
+  // Direct LLM calls are only used as an emergency fallback when the
+  // gateway process is down (e.g. startup failure, OOM).
 
-  if (!llm) {
-    return {
-      text: '현재 AI 응답 기능이 준비 중입니다.\n\nMoA 에이전트를 설치하시면 더 강력한 AI 기능을 이용할 수 있습니다!\n\n"설치"라고 입력해보세요.',
-      quickReplies: ["설치", "기능 소개", "도움말"],
-    };
-  }
+  const llm = detectLlmProvider();
+  const modelOverride = llm?.model;
 
   // Build injection-resistant system prompt and sanitized user message
   const baseSystemPrompt = getMoASystemPrompt(channelId);
@@ -1471,41 +1496,63 @@ MoA를 설치하면 이 모든 것이 가능합니다!
     : params.text;
 
   try {
-    let responseText: string;
+    let responseText: string | undefined;
 
-    switch (llm.provider) {
-      case "anthropic":
-        responseText = await callAnthropic(llm.apiKey, llm.model, systemPrompt, userMessage);
-        break;
-      case "openai":
-        responseText = await callOpenAICompatible(
-          llm.endpoint,
-          llm.apiKey,
-          llm.model,
+    // Primary path: OpenClaw gateway (memory + tools + skills + LLM)
+    if (openclawGateway) {
+      try {
+        const gwResponse = await openclawGateway.sendMessage({
+          userId: params.userId,
+          text: userMessage,
+          sessionKey: `${channelId}:${params.userId}`,
+          useMemory: true,
+          model: modelOverride,
           systemPrompt,
-          userMessage,
-        );
-        break;
-      case "google":
-        responseText = await callGemini(llm.apiKey, llm.model, systemPrompt, userMessage);
-        break;
-      case "groq":
-        responseText = await callOpenAICompatible(
-          llm.endpoint,
-          llm.apiKey,
-          llm.model,
-          systemPrompt,
-          userMessage,
-        );
-        break;
-      default:
-        responseText = "지원되지 않는 AI 제공자입니다.";
+        });
+        if (gwResponse.success && gwResponse.text) {
+          openclawGatewayOnline = true;
+          responseText = gwResponse.text;
+        }
+      } catch (err) {
+        openclawGatewayOnline = false;
+        console.warn(`[MoA] Gateway unavailable, using direct LLM: ${err instanceof Error ? err.message : err}`);
+      }
+    }
+
+    // Emergency fallback: direct LLM call (only when gateway process is down)
+    if (!responseText && llm) {
+      switch (llm.provider) {
+        case "anthropic":
+          responseText = await callAnthropic(llm.apiKey, llm.model, systemPrompt, userMessage);
+          break;
+        case "openai":
+        case "groq":
+          responseText = await callOpenAICompatible(
+            llm.endpoint,
+            llm.apiKey,
+            llm.model,
+            systemPrompt,
+            userMessage,
+          );
+          break;
+        case "google":
+          responseText = await callGemini(llm.apiKey, llm.model, systemPrompt, userMessage);
+          break;
+        default:
+          responseText = "지원되지 않는 AI 제공자입니다.";
+      }
+    }
+
+    if (!responseText) {
+      return {
+        text: '현재 AI 응답 기능이 준비 중입니다.\n\nMoA 에이전트를 설치하시면 더 강력한 AI 기능을 이용할 수 있습니다!\n\n"설치"라고 입력해보세요.',
+        quickReplies: ["설치", "기능 소개", "도움말"],
+      };
     }
 
     // Truncate to channel's limit
-    const truncateAt = maxLen - 3;
     if (responseText.length > maxLen) {
-      responseText = responseText.slice(0, truncateAt) + "...";
+      responseText = responseText.slice(0, maxLen - 3) + "...";
     }
 
     return {
@@ -1513,7 +1560,9 @@ MoA를 설치하면 이 모든 것이 가능합니다!
       quickReplies: channelId === "kakao" ? ["설치", "도움말"] : undefined,
     };
   } catch (err) {
-    console.error(`[MoA] LLM API error (${llm.provider}/${llm.model}):`, err);
+    const provider = llm?.provider ?? "unknown";
+    const model = llm?.model ?? "unknown";
+    console.error(`[MoA] AI error (${provider}/${model}):`, err);
     return {
       text: `AI 응답 생성 중 오류가 발생했습니다.\n\n${err instanceof Error ? err.message : String(err)}\n\nMoA 에이전트를 설치하시면 더 안정적인 AI를 이용할 수 있습니다.\n"설치"라고 입력해보세요.`,
       quickReplies: ["설치", "도움말"],
@@ -1589,6 +1638,31 @@ async function main() {
   const skills = getLoadedSkills();
   console.log(`[MoA] Skills: ${skills.length} loaded (${skills.filter((s) => s.eligible).length} eligible)`);
 
+  // Check OpenClaw gateway (provides agent with memory, tools, skills, heartbeat, cron)
+  const gatewayUrl = process.env.MOA_OPENCLAW_GATEWAY_URL;
+  if (gatewayUrl) {
+    openclawGateway = new MoltbotGatewayClient({
+      url: gatewayUrl,
+      agentId: process.env.OPENCLAW_AGENT_ID ?? "main",
+    });
+    try {
+      const gwStatus = await openclawGateway.checkStatus();
+      openclawGatewayOnline = gwStatus.online;
+      if (gwStatus.online) {
+        console.log(`[MoA] OpenClaw gateway: CONNECTED (${gatewayUrl}, v${gwStatus.version ?? "?"})`);
+        if (gwStatus.memoryStatus) {
+          console.log(`[MoA] OpenClaw memory: ${gwStatus.memoryStatus.files} files, ${gwStatus.memoryStatus.chunks} chunks`);
+        }
+      } else {
+        console.log(`[MoA] OpenClaw gateway: configured but offline (${gatewayUrl})`);
+      }
+    } catch (err) {
+      console.log(`[MoA] OpenClaw gateway: connection failed (${err instanceof Error ? err.message : err})`);
+    }
+  } else {
+    console.log("[MoA] OpenClaw gateway: not configured (set MOA_OPENCLAW_GATEWAY_URL to enable agent features)");
+  }
+
   // Initialize encrypted vault and run scheduled backup
   if (process.env.MOA_OWNER_SECRET) {
     try {
@@ -1659,6 +1733,41 @@ async function main() {
         await sendWelcomeAfterPairing(userId, deviceName, account);
       }
     },
+
+    // Event-driven immediate response: push result to user's chat within seconds
+    onResultReceived: async ({ userId, deviceName, commandId, status, resultSummary }) => {
+      const statusText = status === "completed" ? "완료" : "실패";
+      console.log(`[MoA] Command ${statusText}: ${commandId.slice(0, 8)} from ${deviceName}`);
+
+      // Try multi-channel notification (free-first: Gateway → FCM/APNs → AlimTalk)
+      if (notificationService.isConfigured()) {
+        const { getUserPhoneNumberById } = await import("./src/proactive-messaging.js");
+        const phone = await getUserPhoneNumberById(userId);
+        if (phone) {
+          const result = await notificationService.notifyCommandResult(phone, {
+            deviceName,
+            commandText: "원격 명령",
+            status: statusText,
+            resultSummary: resultSummary || "(결과 없음)",
+            commandId: commandId.slice(0, 8),
+          });
+          console.log(`[MoA] Result push: ${result.method} ${result.success ? "OK" : result.error}`);
+        }
+      }
+
+      // Also try OpenClaw gateway broadcast (reaches WebSocket-connected clients)
+      if (openclawGateway && openclawGatewayOnline) {
+        try {
+          await openclawGateway.sendMessage({
+            userId,
+            text: `[기기 ${deviceName}] 명령 ${statusText}: ${resultSummary || "(완료)"}`,
+            sessionKey: `relay:${userId}`,
+          });
+        } catch {
+          // Gateway broadcast is best-effort
+        }
+      }
+    },
   };
 
   try {
@@ -1676,6 +1785,7 @@ async function main() {
         if (urlPath === "/health" && req.method === "GET") {
           const status = {
             status: "ok",
+            openclawGateway: openclawGatewayOnline,
             kakao: hasKeys,
             telegram: isTelegramConfigured(),
             whatsapp: isWhatsAppConfigured(),
