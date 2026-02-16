@@ -33,7 +33,16 @@ export async function POST(request: NextRequest) {
     const body = await request.json();
     const { action } = body;
 
-    const supabase = getServiceSupabase();
+    let supabase;
+    try {
+      supabase = getServiceSupabase();
+    } catch (envErr) {
+      console.error("[auth] Supabase init failed:", envErr);
+      return NextResponse.json(
+        { error: "서버 설정 오류입니다. 관리자에게 문의해주세요. (DB_INIT)" },
+        { status: 500 },
+      );
+    }
 
     switch (action) {
       // ── Register ──────────────────────────────────────
@@ -97,11 +106,20 @@ export async function POST(request: NextRequest) {
         }
 
         // Check duplicate username
-        const { data: existing } = await supabase
+        const { data: existing, error: usernameCheckErr } = await supabase
           .from("moa_users")
           .select("id")
           .eq("username", username.toLowerCase())
           .single();
+
+        if (usernameCheckErr && usernameCheckErr.code !== "PGRST116") {
+          // PGRST116 = "not found" — expected when username is available
+          console.error("[auth] Username check failed:", usernameCheckErr);
+          return NextResponse.json(
+            { error: "서버 오류가 발생했습니다. 잠시 후 다시 시도해주세요. (DB_QUERY)" },
+            { status: 500 },
+          );
+        }
 
         if (existing) {
           return NextResponse.json(
@@ -111,11 +129,19 @@ export async function POST(request: NextRequest) {
         }
 
         // Check duplicate email
-        const { data: existingEmail } = await supabase
+        const { data: existingEmail, error: emailCheckErr } = await supabase
           .from("moa_users")
           .select("id")
           .eq("email", email.toLowerCase())
           .single();
+
+        if (emailCheckErr && emailCheckErr.code !== "PGRST116") {
+          console.error("[auth] Email check failed:", emailCheckErr);
+          return NextResponse.json(
+            { error: "서버 오류가 발생했습니다. 잠시 후 다시 시도해주세요. (DB_QUERY)" },
+            { status: 500 },
+          );
+        }
 
         if (existingEmail) {
           return NextResponse.json(
@@ -125,11 +151,19 @@ export async function POST(request: NextRequest) {
         }
 
         // Check duplicate phone (E.164 normalized)
-        const { data: existingPhone } = await supabase
+        const { data: existingPhone, error: phoneCheckErr } = await supabase
           .from("moa_users")
           .select("id")
           .eq("phone", phoneResult.normalized!)
           .single();
+
+        if (phoneCheckErr && phoneCheckErr.code !== "PGRST116") {
+          console.error("[auth] Phone check failed:", phoneCheckErr);
+          return NextResponse.json(
+            { error: "서버 오류가 발생했습니다. 잠시 후 다시 시도해주세요. (DB_QUERY)" },
+            { status: 500 },
+          );
+        }
 
         if (existingPhone) {
           return NextResponse.json(
@@ -139,8 +173,18 @@ export async function POST(request: NextRequest) {
         }
 
         // Hash password and passphrase
-        const passwordHash = hashPassword(password);
-        const passphraseHash = hashPassword(passphrase);
+        let passwordHash: string;
+        let passphraseHash: string;
+        try {
+          passwordHash = hashPassword(password);
+          passphraseHash = hashPassword(passphrase);
+        } catch (hashErr) {
+          console.error("[auth] Password hashing failed:", hashErr);
+          return NextResponse.json(
+            { error: "서버 오류가 발생했습니다. 잠시 후 다시 시도해주세요. (HASH)" },
+            { status: 500 },
+          );
+        }
 
         // Create user record
         const userId = `user_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
@@ -157,12 +201,15 @@ export async function POST(request: NextRequest) {
         });
 
         if (insertError) {
-          console.error("[auth] Register failed:", insertError);
-          return NextResponse.json({ error: "회원가입에 실패했습니다." }, { status: 500 });
+          console.error("[auth] Register insert failed:", insertError);
+          return NextResponse.json(
+            { error: "회원가입에 실패했습니다. 잠시 후 다시 시도해주세요. (DB_INSERT)" },
+            { status: 500 },
+          );
         }
 
         // Also create user_settings entry
-        await supabase.from("moa_user_settings").upsert({
+        const { error: settingsError } = await supabase.from("moa_user_settings").upsert({
           user_id: userId,
           model_strategy: "cost-efficient",
           trial_started_at: new Date().toISOString(),
@@ -172,14 +219,24 @@ export async function POST(request: NextRequest) {
           phone_verified: false,
         }, { onConflict: "user_id" });
 
+        if (settingsError) {
+          console.error("[auth] User settings creation failed:", settingsError);
+          // Non-fatal: user was created, continue
+        }
+
         // Create initial credits
-        await supabase.from("moa_credits").upsert({
+        const { error: creditsError } = await supabase.from("moa_credits").upsert({
           user_id: userId,
           balance: 100,
           monthly_quota: 100,
           monthly_used: 0,
           plan: "free",
         }, { onConflict: "user_id" });
+
+        if (creditsError) {
+          console.error("[auth] Credits creation failed:", creditsError);
+          // Non-fatal: user was created, continue
+        }
 
         // No session token yet — user must verify email first.
         // The email-verify API will issue a session token after verification.
@@ -407,8 +464,12 @@ export async function POST(request: NextRequest) {
         return NextResponse.json({ error: "Invalid action" }, { status: 400 });
     }
   } catch (err) {
-    console.error("[auth] Unexpected error:", err);
-    return NextResponse.json({ error: "Internal server error" }, { status: 500 });
+    const errMsg = err instanceof Error ? err.message : String(err);
+    console.error("[auth] Unexpected error:", errMsg, err);
+    return NextResponse.json(
+      { error: `서버 오류가 발생했습니다. 잠시 후 다시 시도해주세요. (${errMsg.slice(0, 80)})` },
+      { status: 500 },
+    );
   }
 }
 

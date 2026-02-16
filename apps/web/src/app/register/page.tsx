@@ -131,7 +131,13 @@ export default function RegisterPage() {
         }),
       });
 
-      const data = await res.json();
+      let data;
+      try {
+        data = await res.json();
+      } catch {
+        setError(`서버 오류가 발생했습니다. (HTTP ${res.status})`);
+        return;
+      }
 
       if (data.success) {
         // Send verification email
