@@ -279,7 +279,11 @@ async function callAnthropic(key: string, system: string, messages: LLMMessage[]
       const data = await res.json();
       return data.content?.[0]?.text ?? null;
     }
-  } catch { /* fall through */ }
+    const errBody = await res.text().catch(() => "");
+    console.error(`[ai-engine] Anthropic ${model} failed (${res.status}):`, errBody.slice(0, 200));
+  } catch (err) {
+    console.error(`[ai-engine] Anthropic ${model} error:`, err instanceof Error ? err.message : err);
+  }
   return null;
 }
 
@@ -299,7 +303,11 @@ async function callOpenAI(key: string, system: string, messages: LLMMessage[], m
       const data = await res.json();
       return data.choices?.[0]?.message?.content ?? null;
     }
-  } catch { /* fall through */ }
+    const errBody = await res.text().catch(() => "");
+    console.error(`[ai-engine] OpenAI ${model} failed (${res.status}):`, errBody.slice(0, 200));
+  } catch (err) {
+    console.error(`[ai-engine] OpenAI ${model} error:`, err instanceof Error ? err.message : err);
+  }
   return null;
 }
 
@@ -324,7 +332,11 @@ async function callGemini(key: string, system: string, messages: LLMMessage[]): 
       const data = await res.json();
       return data.candidates?.[0]?.content?.parts?.[0]?.text ?? null;
     }
-  } catch { /* fall through */ }
+    const errBody = await res.text().catch(() => "");
+    console.error(`[ai-engine] Gemini ${GEMINI_MODEL} failed (${res.status}):`, errBody.slice(0, 200));
+  } catch (err) {
+    console.error(`[ai-engine] Gemini ${GEMINI_MODEL} error:`, err instanceof Error ? err.message : err);
+  }
   return null;
 }
 
@@ -344,7 +356,11 @@ async function callGroq(key: string, system: string, messages: LLMMessage[]): Pr
       const data = await res.json();
       return data.choices?.[0]?.message?.content ?? null;
     }
-  } catch { /* fall through */ }
+    const errBody = await res.text().catch(() => "");
+    console.error(`[ai-engine] Groq failed (${res.status}):`, errBody.slice(0, 200));
+  } catch (err) {
+    console.error("[ai-engine] Groq error:", err instanceof Error ? err.message : err);
+  }
   return null;
 }
 
@@ -364,7 +380,11 @@ async function callDeepSeek(key: string, system: string, messages: LLMMessage[])
       const data = await res.json();
       return data.choices?.[0]?.message?.content ?? null;
     }
-  } catch { /* fall through */ }
+    const errBody = await res.text().catch(() => "");
+    console.error(`[ai-engine] DeepSeek failed (${res.status}):`, errBody.slice(0, 200));
+  } catch (err) {
+    console.error("[ai-engine] DeepSeek error:", err instanceof Error ? err.message : err);
+  }
   return null;
 }
 
@@ -384,7 +404,11 @@ async function callXai(key: string, system: string, messages: LLMMessage[], mode
       const data = await res.json();
       return data.choices?.[0]?.message?.content ?? null;
     }
-  } catch { /* fall through */ }
+    const errBody = await res.text().catch(() => "");
+    console.error(`[ai-engine] xAI ${model} failed (${res.status}):`, errBody.slice(0, 200));
+  } catch (err) {
+    console.error(`[ai-engine] xAI ${model} error:`, err instanceof Error ? err.message : err);
+  }
   return null;
 }
 
@@ -404,7 +428,11 @@ async function callMistral(key: string, system: string, messages: LLMMessage[], 
       const data = await res.json();
       return data.choices?.[0]?.message?.content ?? null;
     }
-  } catch { /* fall through */ }
+    const errBody = await res.text().catch(() => "");
+    console.error(`[ai-engine] Mistral ${model} failed (${res.status}):`, errBody.slice(0, 200));
+  } catch (err) {
+    console.error(`[ai-engine] Mistral ${model} error:`, err instanceof Error ? err.message : err);
+  }
   return null;
 }
 
@@ -441,6 +469,8 @@ async function tryLlmCall(messages: LLMMessage[], category: string, strategy: st
   const userDeepseekKey = decryptKey("deepseek");
 
   const hasUserQualityKeys = !!(userAnthropicKey || userOpenaiKey || userGeminiKey || userMistralKey || userXaiKey);
+
+  console.info(`[ai-engine] Strategy: ${strategy} | User keys: ${keys.length} (quality: ${hasUserQualityKeys}) | Env keys: anthropic=${!!envAnthropicKey} openai=${!!envOpenaiKey} gemini=${!!envGeminiKey}`);
 
   // Phase 1: User's own API keys — best quality first
   if (hasUserQualityKeys) {
