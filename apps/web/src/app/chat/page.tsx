@@ -2,6 +2,7 @@
 
 import { useState, useRef, useEffect, useCallback } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 
 interface ChatMessage {
   id: string;
@@ -107,6 +108,10 @@ declare global {
 }
 
 export default function ChatPage() {
+  const router = useRouter();
+  const [hasAgent, setHasAgent] = useState<boolean | null>(null); // null = checking
+  const [redirectCountdown, setRedirectCountdown] = useState(3);
+
   const [userId] = useState(() => {
     if (typeof window !== "undefined") {
       let id = localStorage.getItem("moa_user_id");
@@ -145,6 +150,41 @@ export default function ChatPage() {
   const scrollToBottom = useCallback(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, []);
+
+  // Check if user has at least 1 registered device/agent
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+
+    // Desktop app (Electron) always has an agent
+    if (window.moaDesktop) {
+      setHasAgent(true);
+      return;
+    }
+
+    const saved = sessionStorage.getItem("moa_web_auth");
+    if (saved) {
+      try {
+        const data = JSON.parse(saved);
+        if (data.devices && data.devices.length > 0) {
+          setHasAgent(true);
+          return;
+        }
+      } catch { /* ignore */ }
+    }
+    // No auth or no devices
+    setHasAgent(false);
+  }, []);
+
+  // Countdown and redirect to download page
+  useEffect(() => {
+    if (hasAgent !== false) return;
+    if (redirectCountdown <= 0) {
+      router.push("/download");
+      return;
+    }
+    const timer = setTimeout(() => setRedirectCountdown((c) => c - 1), 1000);
+    return () => clearTimeout(timer);
+  }, [hasAgent, redirectCountdown, router]);
 
   useEffect(() => { scrollToBottom(); }, [messages, scrollToBottom]);
 
@@ -322,6 +362,61 @@ export default function ChatPage() {
 
   const currentCategory = CATEGORIES.find((c) => c.id === selectedCategory)!;
   const quickActions = CATEGORY_ACTIONS[selectedCategory];
+
+  // Show redirect notice if no agent installed
+  if (hasAgent === false) {
+    return (
+      <div style={{
+        display: "flex", alignItems: "center", justifyContent: "center",
+        minHeight: "100vh", background: "var(--bg)",
+      }}>
+        <div style={{
+          textAlign: "center", maxWidth: "480px", padding: "48px 32px",
+          background: "var(--card)", borderRadius: "16px",
+          border: "1px solid var(--border)", boxShadow: "0 8px 32px rgba(0,0,0,0.3)",
+        }}>
+          <div style={{ fontSize: "4rem", marginBottom: "16px" }}>{"📱"}</div>
+          <h2 style={{ fontSize: "1.5rem", fontWeight: 800, marginBottom: "12px" }}>
+            먼저 MoA 에이전트를 설치하세요
+          </h2>
+          <p style={{ color: "var(--text-muted)", fontSize: "0.95rem", marginBottom: "8px", lineHeight: 1.6 }}>
+            웹 채팅을 사용하려면 최소 1대의 기기에 MoA가 설치되어 있어야 합니다.
+          </p>
+          <p style={{ color: "var(--text-muted)", fontSize: "0.85rem", marginBottom: "24px" }}>
+            {redirectCountdown}초 후 다운로드 페이지로 이동합니다...
+          </p>
+          <div style={{ display: "flex", gap: "12px", justifyContent: "center" }}>
+            <Link
+              href="/download"
+              className="btn btn-primary"
+              style={{ padding: "14px 32px", fontSize: "1rem", fontWeight: 700 }}
+            >
+              지금 다운로드
+            </Link>
+            <Link
+              href="/"
+              className="btn btn-outline"
+              style={{ padding: "14px 24px", fontSize: "0.95rem" }}
+            >
+              홈으로
+            </Link>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // Still checking — show loading
+  if (hasAgent === null) {
+    return (
+      <div style={{
+        display: "flex", alignItems: "center", justifyContent: "center",
+        minHeight: "100vh", background: "var(--bg)",
+      }}>
+        <div style={{ color: "var(--text-muted)", fontSize: "1rem" }}>로딩 중...</div>
+      </div>
+    );
+  }
 
   return (
     <div className="chat-layout">

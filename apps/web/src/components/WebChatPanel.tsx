@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useRef, useEffect, useCallback } from "react";
+import Link from "next/link";
 
 interface ChatMessage {
   id: string;
@@ -109,15 +110,27 @@ export default function WebChatPanel() {
           }),
         );
 
-        // Welcome message
-        setMessages([
-          {
-            id: "welcome",
-            role: "assistant",
-            content: `${username.trim()}님 환영합니다! 🤖\n\n등록된 기기${deviceList.length > 0 ? ` (${deviceList.length}대)` : ""}에 연결되었습니다.\n메시지를 보내면 MoA AI가 응답합니다.`,
-            created_at: new Date().toISOString(),
-          },
-        ]);
+        // No devices → show install prompt instead of chat
+        if (deviceList.length === 0) {
+          setMessages([
+            {
+              id: "no-device",
+              role: "system",
+              content: "등록된 기기가 없습니다. MoA 에이전트를 먼저 설치해주세요.",
+              created_at: new Date().toISOString(),
+            },
+          ]);
+        } else {
+          // Welcome message
+          setMessages([
+            {
+              id: "welcome",
+              role: "assistant",
+              content: `${username.trim()}님 환영합니다! 🤖\n\n등록된 기기 (${deviceList.length}대)에 연결되었습니다.\n메시지를 보내면 MoA AI가 응답합니다.`,
+              created_at: new Date().toISOString(),
+            },
+          ]);
+        }
       } else {
         setLoginError(data.error || "로그인에 실패했습니다.");
       }
@@ -250,6 +263,43 @@ export default function WebChatPanel() {
             MoA를 설치한 기기가 있어야 합니다.{" "}
             <a href="#download" style={{ color: "var(--primary)" }}>먼저 설치하기</a>
           </p>
+        </div>
+      </div>
+    );
+  }
+
+  // ── No devices: show install prompt ──
+  if (loggedIn && devices.length === 0) {
+    return (
+      <div className="web-chat-panel">
+        <div style={{
+          display: "flex", flexDirection: "column", alignItems: "center",
+          justifyContent: "center", height: "100%", padding: "48px 24px",
+          textAlign: "center",
+        }}>
+          <div style={{ fontSize: "3.5rem", marginBottom: "16px" }}>{"📱"}</div>
+          <h3 style={{ fontSize: "1.3rem", fontWeight: 800, marginBottom: "8px" }}>
+            먼저 MoA 에이전트를 설치하세요
+          </h3>
+          <p style={{ color: "var(--text-muted)", fontSize: "0.9rem", marginBottom: "24px", lineHeight: 1.6 }}>
+            웹 채팅을 사용하려면 최소 1대의 기기에<br />MoA가 설치되어 있어야 합니다.
+          </p>
+          <div style={{ display: "flex", gap: "12px", flexWrap: "wrap", justifyContent: "center" }}>
+            <Link
+              href="/download"
+              className="btn btn-primary"
+              style={{ padding: "12px 28px", fontSize: "0.95rem", fontWeight: 700 }}
+            >
+              지금 다운로드
+            </Link>
+            <button
+              className="btn btn-outline"
+              style={{ padding: "12px 20px", fontSize: "0.85rem" }}
+              onClick={handleLogout}
+            >
+              로그아웃
+            </button>
+          </div>
         </div>
       </div>
     );
