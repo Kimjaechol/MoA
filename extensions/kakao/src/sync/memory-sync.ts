@@ -45,6 +45,12 @@ import {
   getMoltbotMemoryStats,
   type MoltbotMemoryExport,
 } from "../moltbot/index.js";
+import {
+  SyncReconciler,
+  type ReconcilerState,
+  type ReconcilerStatus,
+  type SyncDelta,
+} from "./sync-reconciler.js";
 
 // Max chunk size for large data (4MB base64 ≈ 3MB binary)
 const MAX_CHUNK_SIZE = 4 * 1024 * 1024;
@@ -72,6 +78,10 @@ export interface SyncConfig {
   ephemeralTtlMs?: number;
   /** Callback: when another device pushes a delta via Realtime */
   onRealtimeDelta?: (delta: RealtimeDeltaPayload) => Promise<void>;
+  /** Callback: when reconciler applies a re-relayed delta */
+  onApplyReconciledDelta?: (delta: SyncDelta) => Promise<void>;
+  /** Saved reconciler state from previous session (for journal restore) */
+  savedReconcilerState?: ReconcilerState;
 }
 
 export interface MemoryData {
@@ -127,6 +137,11 @@ export interface SyncStatus {
   devices: DeviceInfo[];
   syncMode: SyncMode;
   realtimeConnected: boolean;
+  reconciler?: {
+    journalSize: number;
+    bufferedDeltas: number;
+    broadcastConnected: boolean;
+  };
 }
 
 export interface DeviceInfo {
@@ -164,6 +179,7 @@ export class MemorySyncManager {
   private keySalt: string | null = null;
   private realtimeChannel: RealtimeChannel | null = null;
   private realtimeConnected = false;
+  private reconciler: SyncReconciler | null = null;
 
   readonly syncMode: SyncMode;
   readonly ephemeralTtlMs: number;
@@ -207,10 +223,11 @@ export class MemorySyncManager {
     // Register device
     await this.registerDevice();
 
-    // In ephemeral mode, start Realtime subscription for instant push
+    // In ephemeral mode, start Realtime + Reconciler
     if (this.syncMode === "ephemeral") {
       await this.subscribeToRealtime();
-      console.log("[MemorySync] Ephemeral mode: Realtime subscription started");
+      await this.startReconciler();
+      console.log("[MemorySync] Ephemeral mode: Realtime + Reconciler started");
     }
 
     return {
@@ -329,6 +346,84 @@ export class MemorySyncManager {
   }
 
   // ============================================
+  // Reconciler (누락 방지 + 순서 보장)
+  // ============================================
+
+  /**
+   * 재조정기 시작.
+   *
+   * - 로컬 델타 저널로 재전송 보장 (상대 오프라인 → TTL 경과해도 OK)
+   * - 시퀀스 넘버로 순서 보장 (순서 꼬여도 올바르게 정렬)
+   * - Supabase Realtime broadcast로 P2P 시그널링 (DB 저장 없음)
+   */
+  private async startReconciler(): Promise<void> {
+    if (this.reconciler) return;
+
+    this.reconciler = new SyncReconciler({
+      supabase: this.config.supabase,
+      userId: this.config.userId,
+      deviceId: this.config.deviceId,
+      onApplyDelta: this.config.onApplyReconciledDelta,
+      onGapDetected: (fromDevice, expected, received) => {
+        console.log(
+          `[MemorySync] Seq gap from ${fromDevice}: expected ${expected}, got ${received}`,
+        );
+      },
+    });
+
+    // 이전 세션 상태 복원 (앱 재시작 후에도 저널 유지)
+    if (this.config.savedReconcilerState) {
+      this.reconciler.restoreState(this.config.savedReconcilerState);
+    }
+
+    await this.reconciler.start();
+  }
+
+  /**
+   * 재조정기 정지.
+   */
+  private async stopReconciler(): Promise<void> {
+    if (this.reconciler) {
+      await this.reconciler.stop();
+      this.reconciler = null;
+    }
+  }
+
+  /**
+   * 재조정기 상태 내보내기 (앱 종료 시 로컬에 저장).
+   *
+   * 앱이 종료될 때 이 값을 AsyncStorage/localStorage 등에 저장하고,
+   * 다음 실행 시 SyncConfig.savedReconcilerState로 전달하면
+   * 앱 재시작 후에도 재전송이 가능합니다.
+   */
+  exportReconcilerState(): ReconcilerState | null {
+    return this.reconciler?.exportState() ?? null;
+  }
+
+  /**
+   * 재조정기 상태 조회
+   */
+  getReconcilerStatus(): ReconcilerStatus | null {
+    return this.reconciler?.getStatus() ?? null;
+  }
+
+  /**
+   * 델타를 재조정기에 등록 (시퀀스 번호 부여 + 저널 저장).
+   *
+   * uploadMemory() 등에서 업로드 성공 후 호출.
+   * 상대 기기가 TTL 내에 못 받아도, 재연결 시 재조정기가 자동 재전송.
+   */
+  registerDeltaForReconciliation(
+    deltaType: SyncDelta["deltaType"],
+    entityType: SyncDelta["entityType"],
+    encryptedPayload: string,
+    iv: string,
+    authTag: string,
+  ): SyncDelta | null {
+    return this.reconciler?.createDelta(deltaType, entityType, encryptedPayload, iv, authTag) ?? null;
+  }
+
+  // ============================================
   // Ephemeral TTL Helpers
   // ============================================
 
@@ -413,6 +508,12 @@ export class MemorySyncManager {
           return { success: false, error: result?.error_message ?? "Upload failed" };
         }
 
+        // Ephemeral: 재조정기에 등록 (재전송 보장)
+        this.registerDeltaForReconciliation(
+          "update", "memory_chunk",
+          encrypted.ciphertext, encrypted.iv, encrypted.authTag,
+        );
+
         return {
           success: true,
           version: result.new_version,
@@ -447,6 +548,12 @@ export class MemorySyncManager {
             finalVersion = result.new_version;
           }
         }
+
+        // Ephemeral: 재조정기에 등록 (재전송 보장)
+        this.registerDeltaForReconciliation(
+          "update", "memory_chunk",
+          encrypted.ciphertext, encrypted.iv, encrypted.authTag,
+        );
 
         return {
           success: true,
@@ -561,6 +668,12 @@ export class MemorySyncManager {
         return { success: false, error: error.message };
       }
 
+      // Ephemeral: 재조정기에 등록 (재전송 보장)
+      this.registerDeltaForReconciliation(
+        "update", "conversation",
+        encrypted.ciphertext, encrypted.iv, encrypted.authTag,
+      );
+
       return { success: true, version: newVersion };
     } catch (err) {
       return { success: false, error: err instanceof Error ? err.message : "Unknown error" };
@@ -662,6 +775,11 @@ export class MemorySyncManager {
         })) ?? [],
       syncMode: this.syncMode,
       realtimeConnected: this.realtimeConnected,
+      reconciler: this.reconciler ? {
+        journalSize: this.reconciler.getStatus().journalSize,
+        bufferedDeltas: this.reconciler.getStatus().bufferedDeltas,
+        broadcastConnected: this.reconciler.getStatus().broadcastConnected,
+      } : undefined,
     };
   }
 
@@ -672,8 +790,9 @@ export class MemorySyncManager {
     const { supabase, userId } = this.config;
 
     try {
-      // Unsubscribe from Realtime first
+      // Unsubscribe from Realtime + Reconciler first
       await this.unsubscribeFromRealtime();
+      await this.stopReconciler();
 
       await Promise.all([
         supabase.from("memory_sync").delete().eq("user_id", userId),
@@ -700,8 +819,12 @@ export class MemorySyncManager {
     console.log(`[MemorySync] Switched to ${newMode} mode`);
 
     if (newMode === "ephemeral") {
-      // Start Realtime for instant delivery (ephemeral needs it)
+      // Start Realtime + Reconciler for instant delivery (ephemeral needs it)
       await this.subscribeToRealtime();
+      await this.startReconciler();
+    } else {
+      // Persistent mode doesn't need reconciler
+      await this.stopReconciler();
     }
   }
 
@@ -743,9 +866,6 @@ export class MemorySyncManager {
    *
    * This exports the local Moltbot memory and sessions, encrypts them,
    * and uploads to Supabase for cross-device sync.
-   *
-   * Note: full_backup is always persistent (no TTL) regardless of syncMode,
-   * because backups are explicitly opt-in and should be durable.
    */
   async uploadMoltbotData(agentId: string): Promise<SyncResult & { stats?: { files: number; chunks: number; sessions: number } }> {
     if (!this.encryptionKey) {
@@ -774,7 +894,7 @@ export class MemorySyncManager {
       const dataSize = encrypted.ciphertext.length;
 
       if (dataSize <= MAX_CHUNK_SIZE) {
-        // Single chunk upload (full_backup = always persistent, no expires_at)
+        // Single chunk upload
         const { data, error } = await supabase.rpc("upload_sync_data", {
           p_user_id: userId,
           p_encrypted_data: encrypted.ciphertext,
@@ -807,7 +927,7 @@ export class MemorySyncManager {
           },
         };
       } else {
-        // Multi-chunk upload (full_backup = always persistent, no expires_at)
+        // Multi-chunk upload
         const chunks = this.splitIntoChunks(encrypted.ciphertext, MAX_CHUNK_SIZE);
         const totalChunks = chunks.length;
         let finalVersion = 0;

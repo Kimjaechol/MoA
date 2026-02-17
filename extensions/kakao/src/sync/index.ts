@@ -43,6 +43,17 @@ export {
   type SyncStatus,
 } from "./memory-sync.js";
 
+// Sync reconciler (누락 방지 + 순서 보장)
+export {
+  SyncReconciler,
+  type BroadcastMessage,
+  type ReconcilerConfig,
+  type ReconcilerState,
+  type ReconcilerStatus,
+  type SyncDelta,
+  type VersionVector,
+} from "./sync-reconciler.js";
+
 // Sync commands
 export {
   handleSyncCommand,
