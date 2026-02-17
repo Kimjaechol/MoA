@@ -353,7 +353,7 @@ export async function processHeartbeat(
     ? { recovered: recovery.recovered, pendingCount: recovery.pendingTasks.length }
     : undefined;
 
-  // If recovered from offline, dispatch queued tasks
+  // If recovered from offline, dispatch queued tasks (auto-deduplicates)
   if (recovery.recovered && recovery.pendingTasks.length > 0 && keys) {
     try {
       const dispatched = await dispatchRecoveredTasks(
@@ -362,7 +362,10 @@ export async function processHeartbeat(
         dispatchConfig,
       );
       console.log(
-        `[MoA] Heartbeat: dispatched ${dispatched.dispatched} recovered tasks`,
+        `[MoA] Heartbeat: dispatched ${dispatched.dispatched} recovered tasks` +
+        (dispatched.deduplicatedFrom > dispatched.dispatched + dispatched.failed
+          ? ` (deduplicated from ${dispatched.deduplicatedFrom})`
+          : ""),
       );
     } catch (error) {
       console.warn("[MoA] Heartbeat: failed to dispatch recovered tasks:", error);

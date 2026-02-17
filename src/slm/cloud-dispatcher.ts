@@ -448,20 +448,65 @@ export async function processAllPendingDelegations(
 }
 
 /**
+ * Deduplicate tasks by userMessage + taskDescription.
+ * Keeps the most recent task per unique key and sums duplicateCounts.
+ */
+function deduplicateTasks(tasks: QueuedCloudTask[]): {
+  unique: QueuedCloudTask[];
+  duplicateIds: string[];
+} {
+  const seen = new Map<string, QueuedCloudTask>();
+  const duplicateIds: string[] = [];
+
+  for (const task of tasks) {
+    const key = `${task.userMessage.trim().toLowerCase()}::${task.taskDescription.trim().toLowerCase()}`;
+    const existing = seen.get(key);
+
+    if (existing) {
+      // Keep the one with more complete context
+      duplicateIds.push(task.id);
+      if (task.contextSummary.length > existing.contextSummary.length) {
+        existing.contextSummary = task.contextSummary;
+      }
+      existing.duplicateCount = (existing.duplicateCount || 1) + (task.duplicateCount || 1);
+    } else {
+      seen.set(key, { ...task });
+    }
+  }
+
+  return { unique: Array.from(seen.values()), duplicateIds };
+}
+
+/**
  * Process offline queue tasks that were recovered.
  *
  * When the device comes back online, queued tasks are dispatched.
- * Each task is converted to a delegation file and processed.
+ * Duplicate/identical events are merged into a single dispatch —
+ * only one cloud API call per unique task.
  */
 export async function dispatchRecoveredTasks(
   tasks: QueuedCloudTask[],
   apiKeys: { google?: string; anthropic?: string },
   config?: CloudDispatcherConfig,
-): Promise<{ dispatched: number; failed: number }> {
+): Promise<{ dispatched: number; failed: number; deduplicatedFrom: number }> {
+  // Deduplicate: same userMessage + taskDescription → 1 dispatch
+  const { unique, duplicateIds } = deduplicateTasks(tasks);
+
+  if (unique.length < tasks.length) {
+    console.log(
+      `[CloudDispatcher] Deduplicated ${tasks.length} queued tasks → ${unique.length} unique`,
+    );
+  }
+
+  // Remove duplicate entries from offline queue
+  for (const id of duplicateIds) {
+    dequeueOfflineTask(id);
+  }
+
   let dispatched = 0;
   let failed = 0;
 
-  for (const task of tasks) {
+  for (const task of unique) {
     // Convert queued task to delegation file
     const delegationId = writeDelegationFile(
       {
@@ -484,5 +529,5 @@ export async function dispatchRecoveredTasks(
     }
   }
 
-  return { dispatched, failed };
+  return { dispatched, failed, deduplicatedFrom: tasks.length };
 }

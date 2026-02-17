@@ -142,6 +142,12 @@ function buildOfflineNotification(
   task: QueuedCloudTask,
 ): OfflineNotification {
   const cloud = CLOUD_MODELS[task.strategy];
+  const queue = getOfflineQueue();
+  const { unique } = countUniqueTasks(queue);
+
+  const dupeNote = task.duplicateCount > 1
+    ? `\n(동일한 요청이 ${task.duplicateCount}회 감지되어 1건으로 병합됨)`
+    : "";
 
   return {
     type: "task_queued",
@@ -154,24 +160,43 @@ function buildOfflineNotification(
       `🤖 필요한 AI: ${cloud.model} (${cloud.provider})\n\n` +
       `위 작업은 고급 AI 모델(${cloud.model})이 필요하지만, ` +
       `현재 오프라인이라서 처리할 수 없습니다.\n\n` +
-      `✅ 인터넷에 연결되면 자동으로 처리됩니다.\n` +
-      `대기 중인 작업 수: ${getOfflineQueue().length}건`,
+      `✅ 인터넷에 연결되면 자동으로 처리됩니다.${dupeNote}\n` +
+      `대기 중인 고유 작업 수: ${unique}건`,
     taskId: task.id,
     taskDescription: task.taskDescription,
     timestamp: new Date().toISOString(),
   };
 }
 
+/**
+ * Count unique tasks (deduplicating same userMessage + taskDescription).
+ * Returns both unique count and original total.
+ */
+function countUniqueTasks(tasks: QueuedCloudTask[]): { unique: number; total: number } {
+  const seen = new Set<string>();
+  for (const task of tasks) {
+    const key = `${task.userMessage.trim().toLowerCase()}::${task.taskDescription.trim().toLowerCase()}`;
+    seen.add(key);
+  }
+  return { unique: seen.size, total: tasks.length };
+}
+
 function buildOnlineRecoveryNotification(
-  taskCount: number,
+  tasks: QueuedCloudTask[],
 ): OfflineNotification {
+  const { unique, total } = countUniqueTasks(tasks);
+
+  const dedupeNote = total > unique
+    ? `\n(중복 이벤트 ${total - unique}건이 병합되어 ${unique}건으로 처리됩니다)`
+    : "";
+
   return {
     type: "online_recovered",
     channels: ["popup", "push", "chat"],
     title: "MoA: 온라인 복귀 - 작업 처리 시작",
     body:
       `인터넷 연결이 복구되었습니다! 🎉\n\n` +
-      `대기 중이던 ${taskCount}건의 작업을 클라우드 AI에 전송합니다.\n` +
+      `대기 중이던 ${unique}건의 작업을 클라우드 AI에 전송합니다.${dedupeNote}\n` +
       `잠시만 기다려주세요...`,
     timestamp: new Date().toISOString(),
   };
@@ -180,10 +205,15 @@ function buildOnlineRecoveryNotification(
 function buildTaskDispatchedNotification(
   dispatched: number,
   failed: number,
+  deduplicatedFrom?: number,
 ): OfflineNotification {
+  const dedupeNote = deduplicatedFrom && deduplicatedFrom > dispatched + failed
+    ? `\n(원본 ${deduplicatedFrom}건 중 중복 제거 후 ${dispatched + failed}건 처리)`
+    : "";
+
   const body = failed > 0
-    ? `대기 중이던 작업 처리 완료!\n\n✅ 성공: ${dispatched}건\n❌ 실패: ${failed}건\n\n실패한 작업은 다시 시도됩니다.`
-    : `대기 중이던 작업 ${dispatched}건이 모두 처리되었습니다! ✅`;
+    ? `대기 중이던 작업 처리 완료!\n\n✅ 성공: ${dispatched}건\n❌ 실패: ${failed}건${dedupeNote}\n\n실패한 작업은 다시 시도됩니다.`
+    : `대기 중이던 작업 ${dispatched}건이 모두 처리되었습니다! ✅${dedupeNote}`;
 
   return {
     type: "task_dispatched",
@@ -348,13 +378,11 @@ async function handleOnlineRecovery(config: OfflineMonitorConfig): Promise<void>
     return;
   }
 
-  const taskCount = recovery.pendingTasks.length;
-
-  // Step 1: Notify user — online recovery
-  const recoveryNotification = buildOnlineRecoveryNotification(taskCount);
+  // Step 1: Notify user — online recovery (with deduplicated count)
+  const recoveryNotification = buildOnlineRecoveryNotification(recovery.pendingTasks);
   await sendNotification(recoveryNotification, config);
 
-  // Step 2: Dispatch queued tasks to cloud
+  // Step 2: Dispatch queued tasks to cloud (auto-deduplicates)
   if (config.apiKeys) {
     try {
       const result = await dispatchRecoveredTasks(
@@ -363,10 +391,11 @@ async function handleOnlineRecovery(config: OfflineMonitorConfig): Promise<void>
         config.dispatchConfig,
       );
 
-      // Step 3: Notify user — dispatch results
+      // Step 3: Notify user — dispatch results (with dedup info)
       const dispatchNotification = buildTaskDispatchedNotification(
         result.dispatched,
         result.failed,
+        result.deduplicatedFrom,
       );
       await sendNotification(dispatchNotification, config);
     } catch (error) {

@@ -101,6 +101,8 @@ export interface QueuedCloudTask {
   taskDescription: string;
   queuedAt: string;
   strategy: CloudStrategy;
+  /** Number of duplicate events merged into this task */
+  duplicateCount: number;
 }
 
 // ============================================
@@ -132,13 +134,50 @@ function saveOfflineQueue(queue: QueuedCloudTask[]): void {
   }
 }
 
-export function enqueueOfflineTask(task: Omit<QueuedCloudTask, "id" | "queuedAt">): string {
+/**
+ * Compute a dedup key for a task.
+ * Same userMessage + same taskDescription = same event.
+ */
+function taskDedupeKey(task: { userMessage: string; taskDescription: string }): string {
+  const msg = task.userMessage.trim().toLowerCase();
+  const desc = task.taskDescription.trim().toLowerCase();
+  return `${msg}::${desc}`;
+}
+
+/**
+ * Enqueue an offline task. If an identical event (same userMessage +
+ * taskDescription) is already queued, increment its duplicateCount
+ * instead of creating a new entry.
+ */
+export function enqueueOfflineTask(
+  task: Omit<QueuedCloudTask, "id" | "queuedAt" | "duplicateCount">,
+): string {
   const queue = loadOfflineQueue();
+  const key = taskDedupeKey(task);
+
+  // Check for existing duplicate
+  const existing = queue.find((t) => taskDedupeKey(t) === key);
+  if (existing) {
+    existing.duplicateCount += 1;
+    existing.queuedAt = new Date().toISOString(); // update timestamp
+    // Merge context if the new one is longer (more complete)
+    if (task.contextSummary.length > existing.contextSummary.length) {
+      existing.contextSummary = task.contextSummary;
+    }
+    saveOfflineQueue(queue);
+    console.log(
+      `[SLM] Duplicate task merged into ${existing.id} (count: ${existing.duplicateCount})`,
+    );
+    return existing.id;
+  }
+
+  // New unique task
   const id = `task-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
   queue.push({
     ...task,
     id,
     queuedAt: new Date().toISOString(),
+    duplicateCount: 1,
   });
   saveOfflineQueue(queue);
   return id;
