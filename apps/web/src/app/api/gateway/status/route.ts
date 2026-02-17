@@ -32,7 +32,7 @@ export async function GET(request: NextRequest) {
     // Gateway not configured, but OpenClaw agent might still be available
     const openclawStatus = isOpenClawConfigured()
       ? await getOpenClawStatus()
-      : { available: false, url: "" };
+      : ({ available: false, url: "" } as OpenClawStatus);
 
     return NextResponse.json({
       online: false,
@@ -66,9 +66,9 @@ export async function GET(request: NextRequest) {
     const data = await response.json() as Record<string, unknown>;
 
     // Check OpenClaw agent status in parallel
-    const openclawStatus: OpenClawStatus = isOpenClawConfigured()
+    const openclawStatus = isOpenClawConfigured()
       ? await getOpenClawStatus()
-      : { available: false, url: "" };
+      : ({ available: false, url: "" } as OpenClawStatus);
 
     return NextResponse.json({
       online: true,
