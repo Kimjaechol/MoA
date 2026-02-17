@@ -5,6 +5,8 @@ import {
   MODEL_STRATEGIES,
   PROVIDER_MODELS,
   MOA_CREDIT_MODELS,
+  MOA_CREDIT_SUB_MODEL,
+  LOCAL_HEARTBEAT_MODEL,
   resolveModelStrategy,
   explainModelStrategy,
   isValidStrategy,
@@ -54,21 +56,41 @@ describe("Model Strategy System", () => {
     it("anthropic cost-efficient should be claude-haiku-4-5", () => {
       expect(PROVIDER_MODELS.anthropic.costEfficient).toBe("claude-haiku-4-5");
     });
+
+    it("gemini max-performance should be gemini-3-pro", () => {
+      expect(PROVIDER_MODELS.gemini.maxPerformance).toBe("gemini-3-pro");
+    });
+
+    it("gemini cost-efficient should be gemini-3-flash", () => {
+      expect(PROVIDER_MODELS.gemini.costEfficient).toBe("gemini-3-flash");
+    });
   });
 
-  describe("MoA credit models", () => {
-    it("cost-efficient credit model should be Gemini 2.5 Flash Thinking", () => {
+  describe("MoA credit models (main agent)", () => {
+    it("cost-efficient credit model should be Gemini 3.0 Pro", () => {
       const model = MOA_CREDIT_MODELS["cost-efficient"];
       expect(model.provider).toBe("gemini");
-      expect(model.model).toBe("gemini-2.5-flash-thinking");
-      expect(model.thinkingBudget).toBe(-1);
+      expect(model.model).toBe("gemini-3-pro");
     });
 
     it("max-performance credit model should be Claude Opus 4.6", () => {
       const model = MOA_CREDIT_MODELS["max-performance"];
       expect(model.provider).toBe("anthropic");
       expect(model.model).toBe("claude-opus-4-6");
-      expect(model.thinkingBudget).toBeUndefined();
+    });
+  });
+
+  describe("MoA credit sub model", () => {
+    it("sub agent should always use Gemini 3.0 Flash", () => {
+      expect(MOA_CREDIT_SUB_MODEL.provider).toBe("gemini");
+      expect(MOA_CREDIT_SUB_MODEL.model).toBe("gemini-3-flash");
+    });
+  });
+
+  describe("local heartbeat model", () => {
+    it("heartbeat should use Qwen3 0.6B via Ollama", () => {
+      expect(LOCAL_HEARTBEAT_MODEL.provider).toBe("ollama");
+      expect(LOCAL_HEARTBEAT_MODEL.model).toBe("qwen3:0.6b-q4_K_M");
     });
   });
 
@@ -88,90 +110,136 @@ describe("Model Strategy System", () => {
   });
 
   describe("resolveModelStrategy", () => {
-    describe("no API keys (MoA credit mode)", () => {
-      it("cost-efficient should resolve to Gemini 2.5 Flash Thinking", () => {
+    describe("no API keys - main agent (MoA credit mode)", () => {
+      it("cost-efficient should resolve to Gemini 3.0 Pro for main", () => {
         const config: UserModelStrategyConfig = {
           strategy: "cost-efficient",
           subscribedProviders: [],
         };
-        const result = resolveModelStrategy(config);
+        const result = resolveModelStrategy(config, "simple", "main");
         expect(result.strategy).toBe("cost-efficient");
-        expect(result.tierLabel).toBe("MoA 크레딧 (기본)");
+        expect(result.tierLabel).toBe("MoA 크레딧 (메인 에이전트)");
         expect(result.parallel).toBe(false);
         expect(result.selectedModels).toHaveLength(1);
         expect(result.selectedModels[0].provider).toBe("gemini");
-        expect(result.selectedModels[0].model).toBe("gemini-2.5-flash-thinking");
-        expect(result.modelConfig?.thinkingBudget).toBe(-1);
+        expect(result.selectedModels[0].model).toBe("gemini-3-pro");
       });
 
-      it("max-performance should resolve to Claude Opus 4.6", () => {
+      it("max-performance should resolve to Claude Opus 4.6 for main", () => {
         const config: UserModelStrategyConfig = {
           strategy: "max-performance",
           subscribedProviders: [],
         };
-        const result = resolveModelStrategy(config);
+        const result = resolveModelStrategy(config, "simple", "main");
         expect(result.strategy).toBe("max-performance");
-        expect(result.tierLabel).toBe("MoA 크레딧 (기본)");
-        expect(result.parallel).toBe(false);
-        expect(result.selectedModels).toHaveLength(1);
+        expect(result.tierLabel).toBe("MoA 크레딧 (메인 에이전트)");
         expect(result.selectedModels[0].provider).toBe("anthropic");
         expect(result.selectedModels[0].model).toBe("claude-opus-4-6");
-        expect(result.modelConfig).toBeUndefined();
+      });
+    });
+
+    describe("no API keys - sub agent", () => {
+      it("sub agent should always use Gemini 3.0 Flash regardless of strategy", () => {
+        const costEfficient: UserModelStrategyConfig = {
+          strategy: "cost-efficient",
+          subscribedProviders: [],
+        };
+        const result1 = resolveModelStrategy(costEfficient, "simple", "sub");
+        expect(result1.tierLabel).toBe("MoA 크레딧 (서브 에이전트)");
+        expect(result1.selectedModels[0].provider).toBe("gemini");
+        expect(result1.selectedModels[0].model).toBe("gemini-3-flash");
+
+        const maxPerf: UserModelStrategyConfig = {
+          strategy: "max-performance",
+          subscribedProviders: [],
+        };
+        const result2 = resolveModelStrategy(maxPerf, "simple", "sub");
+        expect(result2.selectedModels[0].model).toBe("gemini-3-flash");
+      });
+    });
+
+    describe("heartbeat - always local SLM", () => {
+      it("heartbeat should use Qwen3 0.6B regardless of API keys or strategy", () => {
+        const withKeys: UserModelStrategyConfig = {
+          strategy: "max-performance",
+          subscribedProviders: ["anthropic"],
+        };
+        const result1 = resolveModelStrategy(withKeys, "simple", "heartbeat");
+        expect(result1.tierLabel).toBe("로컬 SLM (Heartbeat)");
+        expect(result1.selectedModels[0].provider).toBe("ollama");
+        expect(result1.selectedModels[0].model).toBe("qwen3:0.6b-q4_K_M");
+
+        const withoutKeys: UserModelStrategyConfig = {
+          strategy: "cost-efficient",
+          subscribedProviders: [],
+        };
+        const result2 = resolveModelStrategy(withoutKeys, "simple", "heartbeat");
+        expect(result2.selectedModels[0].provider).toBe("ollama");
+        expect(result2.selectedModels[0].model).toBe("qwen3:0.6b-q4_K_M");
       });
     });
 
     describe("with API key (subscribed provider)", () => {
-      it("anthropic + cost-efficient should use claude-haiku-4-5", () => {
+      it("anthropic main should use claude-opus-4-6 (maxPerformance)", () => {
         const config: UserModelStrategyConfig = {
           strategy: "cost-efficient",
           subscribedProviders: ["anthropic"],
         };
-        const result = resolveModelStrategy(config);
-        expect(result.tierLabel).toBe("API 키 보유 사용자");
-        expect(result.selectedModels[0].provider).toBe("anthropic");
-        expect(result.selectedModels[0].model).toBe("claude-haiku-4-5");
-        expect(result.explanation).toContain("추가 비용 없음");
-      });
-
-      it("anthropic + max-performance should use claude-opus-4-6", () => {
-        const config: UserModelStrategyConfig = {
-          strategy: "max-performance",
-          subscribedProviders: ["anthropic"],
-        };
-        const result = resolveModelStrategy(config);
+        const result = resolveModelStrategy(config, "simple", "main");
         expect(result.tierLabel).toBe("API 키 보유 사용자");
         expect(result.selectedModels[0].provider).toBe("anthropic");
         expect(result.selectedModels[0].model).toBe("claude-opus-4-6");
+        expect(result.explanation).toContain("추가 비용 없음");
       });
 
-      it("openai + cost-efficient should use gpt-4o-mini", () => {
+      it("anthropic sub should use claude-haiku-4-5 (costEfficient)", () => {
         const config: UserModelStrategyConfig = {
           strategy: "cost-efficient",
-          subscribedProviders: ["openai"],
+          subscribedProviders: ["anthropic"],
         };
-        const result = resolveModelStrategy(config);
-        expect(result.selectedModels[0].provider).toBe("openai");
-        expect(result.selectedModels[0].model).toBe("gpt-4o-mini");
+        const result = resolveModelStrategy(config, "simple", "sub");
+        expect(result.selectedModels[0].provider).toBe("anthropic");
+        expect(result.selectedModels[0].model).toBe("claude-haiku-4-5");
       });
 
-      it("openai + max-performance should use gpt-5.2", () => {
+      it("openai main should use gpt-5.2", () => {
         const config: UserModelStrategyConfig = {
           strategy: "max-performance",
           subscribedProviders: ["openai"],
         };
-        const result = resolveModelStrategy(config);
+        const result = resolveModelStrategy(config, "simple", "main");
         expect(result.selectedModels[0].provider).toBe("openai");
         expect(result.selectedModels[0].model).toBe("gpt-5.2");
       });
 
-      it("gemini + cost-efficient should use gemini-2.5-flash", () => {
+      it("openai sub should use gpt-4o-mini", () => {
+        const config: UserModelStrategyConfig = {
+          strategy: "max-performance",
+          subscribedProviders: ["openai"],
+        };
+        const result = resolveModelStrategy(config, "simple", "sub");
+        expect(result.selectedModels[0].provider).toBe("openai");
+        expect(result.selectedModels[0].model).toBe("gpt-4o-mini");
+      });
+
+      it("gemini main should use gemini-3-pro", () => {
         const config: UserModelStrategyConfig = {
           strategy: "cost-efficient",
           subscribedProviders: ["gemini"],
         };
-        const result = resolveModelStrategy(config);
+        const result = resolveModelStrategy(config, "simple", "main");
         expect(result.selectedModels[0].provider).toBe("gemini");
-        expect(result.selectedModels[0].model).toBe("gemini-2.5-flash");
+        expect(result.selectedModels[0].model).toBe("gemini-3-pro");
+      });
+
+      it("gemini sub should use gemini-3-flash", () => {
+        const config: UserModelStrategyConfig = {
+          strategy: "cost-efficient",
+          subscribedProviders: ["gemini"],
+        };
+        const result = resolveModelStrategy(config, "simple", "sub");
+        expect(result.selectedModels[0].provider).toBe("gemini");
+        expect(result.selectedModels[0].model).toBe("gemini-3-flash");
       });
 
       it("should use first provider when multiple API keys are registered", () => {
@@ -179,7 +247,7 @@ describe("Model Strategy System", () => {
           strategy: "cost-efficient",
           subscribedProviders: ["openai", "anthropic"],
         };
-        const result = resolveModelStrategy(config);
+        const result = resolveModelStrategy(config, "simple", "main");
         expect(result.selectedModels[0].provider).toBe("openai");
       });
     });
@@ -191,7 +259,7 @@ describe("Model Strategy System", () => {
           subscribedProviders: ["anthropic"],
           primaryOverride: "openai/gpt-4o",
         };
-        const result = resolveModelStrategy(config);
+        const result = resolveModelStrategy(config, "simple", "main");
         expect(result.tierLabel).toBe("사용자 지정 모델");
         expect(result.selectedModels[0].provider).toBe("openai");
         expect(result.selectedModels[0].model).toBe("gpt-4o");
@@ -219,8 +287,10 @@ describe("Model Strategy System", () => {
       const text = explainModelStrategy(config);
       expect(text).toContain("가성비 전략");
       expect(text).toContain("MoA 크레딧");
-      expect(text).toContain("Gemini 2.5 Flash (Thinking)");
-      expect(text).toContain("thinkingBudget");
+      expect(text).toContain("Gemini 3.0 Pro");
+      expect(text).toContain("Gemini 3.0 Flash");
+      expect(text).toContain("Qwen3 0.6B");
+      expect(text).toContain("200K 토큰");
     });
 
     it("should show API key provider info when keys are registered", () => {
@@ -232,6 +302,8 @@ describe("Model Strategy System", () => {
       expect(text).toContain("최고성능 전략");
       expect(text).toContain("등록된 API 키");
       expect(text).toContain("claude-opus-4-6");
+      expect(text).toContain("claude-haiku-4-5");
+      expect(text).toContain("Heartbeat");
       expect(text).toContain("추가 비용 없음");
     });
 

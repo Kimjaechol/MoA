@@ -1,10 +1,15 @@
 # MoA SLM Installation Script for Windows
-# Installs Ollama and downloads Qwen3 models (Q4 quantized)
+# Installs Ollama and Qwen3-0.6B core model only (~400MB)
+# All advanced tasks use Gemini 2.0 Flash (cloud)
 
 $ErrorActionPreference = "Stop"
 
-Write-Host "🤖 MoA 로컬 AI 설치 스크립트" -ForegroundColor Cyan
+Write-Host "MoA 로컬 AI 설치 스크립트" -ForegroundColor Cyan
 Write-Host "================================"
+Write-Host ""
+Write-Host "Architecture:"
+Write-Host "  - Core: Qwen3-0.6B (local, ~400MB) - intent classification, routing, heartbeat"
+Write-Host "  - Cloud: Gemini 3.0 Flash (cost-effective) / Claude Opus 4.6 (max performance)"
 Write-Host ""
 
 # ============================================
@@ -55,7 +60,6 @@ function Start-OllamaServer {
     Write-Host ""
     Write-Host "[2/3] Ollama 서버 시작 중..." -ForegroundColor Yellow
 
-    # Check if already running
     try {
         $response = Invoke-WebRequest -Uri "http://127.0.0.1:11434/api/tags" -UseBasicParsing -TimeoutSec 2
         Write-Host "✓ Ollama 서버가 이미 실행 중입니다." -ForegroundColor Green
@@ -65,11 +69,9 @@ function Start-OllamaServer {
         # Server not running, start it
     }
 
-    # Start server in background
     Write-Host "서버 시작 중..."
     Start-Process -FilePath "ollama" -ArgumentList "serve" -WindowStyle Hidden
 
-    # Wait for server to start
     for ($i = 0; $i -lt 30; $i++) {
         Start-Sleep -Seconds 1
         try {
@@ -88,17 +90,16 @@ function Start-OllamaServer {
 }
 
 # ============================================
-# Step 3: Download Models
+# Step 3: Download Core Model (Tier 1 only)
 # ============================================
 
-function Download-Models {
+function Download-CoreModel {
     Write-Host ""
-    Write-Host "[3/3] MoA SLM 모델 다운로드 중..." -ForegroundColor Yellow
+    Write-Host "[3/3] MoA 코어 모델 다운로드 중..." -ForegroundColor Yellow
     Write-Host ""
 
-    # Tier 1: Qwen3-0.6B - Q4_K_M quantized
-    Write-Host "Tier 1: Qwen3-0.6B-Q4 (에이전트 코어)" -ForegroundColor Blue
-    Write-Host "  - 역할: 라우팅, 의도분류, 도구호출, 기본응답"
+    Write-Host "Qwen3-0.6B-Q4 (코어 게이트키퍼)" -ForegroundColor Blue
+    Write-Host "  - 역할: 의도분류, 라우팅, 하트비트 체크, 프라이버시 감지"
     Write-Host "  - 크기: ~400MB (Q4_K_M 양자화)"
     Write-Host ""
 
@@ -107,37 +108,15 @@ function Download-Models {
         Write-Host "✓ qwen3:0.6b-q4_K_M 이미 설치됨" -ForegroundColor Green
     }
     else {
-        Write-Host "다운로드 중... (약 400MB, Q4_K_M 양자화)"
+        Write-Host "다운로드 중... (약 400MB)"
         ollama pull qwen3:0.6b-q4_K_M
         Write-Host "✓ qwen3:0.6b-q4_K_M 설치 완료" -ForegroundColor Green
     }
 
     Write-Host ""
-
-    # Check memory for Tier 2
-    $totalMemGB = [math]::Round((Get-CimInstance Win32_ComputerSystem).TotalPhysicalMemory / 1GB)
-
-    if ($totalMemGB -lt 6) {
-        Write-Host "⚠ 메모리 부족 (${totalMemGB}GB) - Tier 2 건너뜀" -ForegroundColor Yellow
-        Write-Host "  Tier 2는 6GB 이상의 RAM이 필요합니다."
-        Write-Host "  나중에 'ollama pull qwen3:4b-q4_K_M'로 설치할 수 있습니다."
-    }
-    else {
-        # Tier 2: Qwen3-4B - Q4_K_M quantized
-        Write-Host "Tier 2: Qwen3-4B-Q4 (고급 처리)" -ForegroundColor Blue
-        Write-Host "  - 역할: 오프라인 심층추론, 복잡한 대화"
-        Write-Host "  - 크기: ~2.6GB (Q4_K_M 양자화)"
-        Write-Host ""
-
-        if ($models -match "qwen3:4b-q4_K_M") {
-            Write-Host "✓ qwen3:4b-q4_K_M 이미 설치됨" -ForegroundColor Green
-        }
-        else {
-            Write-Host "다운로드 중... (약 2.6GB, Q4_K_M 양자화)"
-            ollama pull qwen3:4b-q4_K_M
-            Write-Host "✓ qwen3:4b-q4_K_M 설치 완료" -ForegroundColor Green
-        }
-    }
+    Write-Host "고급 작업은 클라우드 AI가 처리합니다." -ForegroundColor Blue
+    Write-Host "  - 로컬 Tier 2/3 모델은 설치하지 않습니다."
+    Write-Host "  - 가성비: Gemini 3.0 Flash / 최고성능: Claude Opus 4.6"
 }
 
 # ============================================
@@ -179,16 +158,16 @@ function Main {
         exit 1
     }
 
-    Download-Models
+    Download-CoreModel
     Verify-Installation
 
     Write-Host ""
     Write-Host "================================"
-    Write-Host "🎉 MoA 로컬 AI 설치 완료!" -ForegroundColor Green
+    Write-Host "MoA 로컬 AI 설치 완료!" -ForegroundColor Green
     Write-Host ""
-    Write-Host "설치된 모델 (Q4_K_M 양자화):"
-    Write-Host "  • Tier 1: qwen3:0.6b-q4_K_M (~400MB) - 항시 실행"
-    Write-Host "  • Tier 2: qwen3:4b-q4_K_M (~2.6GB) - 온디맨드"
+    Write-Host "설치 구성:"
+    Write-Host "  - 코어 AI: qwen3:0.6b-q4_K_M (~400MB, 로컬) - 의도분류/라우팅/하트비트"
+    Write-Host "  - 클라우드 AI: Gemini 3.0 Flash (가성비) / Claude Opus 4.6 (최고성능)"
     Write-Host ""
     Write-Host "수동 테스트:"
     Write-Host "  ollama run qwen3:0.6b-q4_K_M '안녕하세요'"

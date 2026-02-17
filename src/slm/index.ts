@@ -1,17 +1,16 @@
 /**
- * KakaoTalk SLM Module
+ * MoA Core SLM Module
  *
- * Re-exports core SLM functionality from src/slm/ (app-wide module)
- * and adds KakaoTalk-specific command handlers.
+ * Single-tier architecture:
+ * - Qwen3-0.6B (local, ~400MB): always-on gatekeeper
+ *   -> intent classification, routing, heartbeat checks, privacy detection
+ * - Cloud strategy:
+ *   -> 가성비: Gemini 3.0 Flash (cost-effective)
+ *   -> 최고성능: Claude Opus 4.6 (max performance)
  *
- * Architecture:
- * - Core SLM (src/slm/): Ollama + Qwen3-0.6B gatekeeper + Gemini Flash fallback
- * - KakaoTalk handler (local): "MoA 설치", "AI 상태" commands for KakaoTalk users
+ * This is the app-wide SLM module. Extensions (e.g., kakao) should
+ * import from here for core SLM functionality.
  */
-
-// ============================================
-// Core SLM (re-exported from src/slm/)
-// ============================================
 
 // Ollama installer and model management
 export {
@@ -39,9 +38,9 @@ export {
   installMoaSLM,
   healthCheck,
   autoRecover,
-} from "../../../../src/slm/ollama-installer.js";
+} from "./ollama-installer.js";
 
-// SLM router
+// SLM router (local gatekeeper + cloud dispatch)
 export {
   type SLMMessage,
   type SLMRequest,
@@ -62,7 +61,7 @@ export {
   clearOfflineQueue,
   routeSLM,
   getSLMInfo,
-} from "../../../../src/slm/slm-router.js";
+} from "./slm-router.js";
 
 // MoA agent integration
 export {
@@ -79,9 +78,9 @@ export {
   processFollowUpCheck,
   getDisplayInfo,
   formatProgressForDisplay,
-} from "../../../../src/slm/moa-integration.js";
+} from "./moa-integration.js";
 
-// Auto-installer
+// Auto-installer (one-click setup)
 export {
   type AutoInstallConfig,
   type InstallStatus,
@@ -92,43 +91,34 @@ export {
   detectDevice,
   formatInstallStatus,
   formatInstallResult,
-} from "../../../../src/slm/auto-installer.js";
+} from "./auto-installer.js";
 
-// Cloud dispatcher
+// Cloud dispatcher (SLM → JSON → Cloud API pipeline)
 export {
   type DelegationFile,
   type CloudDispatchResult,
   type CloudDispatcherConfig,
   writeDelegationFile,
+  readDelegationFile,
+  getPendingDelegations,
+  cleanupDelegationFiles,
+  dispatchToCloud,
   processCloudDelegation,
   processAllPendingDelegations,
   dispatchRecoveredTasks,
-} from "../../../../src/slm/cloud-dispatcher.js";
+} from "./cloud-dispatcher.js";
 
-// Offline monitor
+// Offline monitor (network detection + notifications + auto-recovery)
 export {
+  type NotificationChannel,
   type OfflineNotification,
   type OfflineMonitorConfig,
   type OfflineMonitorStatus,
   checkNetworkStatus,
+  getNetworkInterfaces,
   startOfflineMonitor,
   stopOfflineMonitor,
   getOfflineMonitorStatus,
   notifyOfflineTaskQueued,
   forceNetworkCheck,
-} from "../../../../src/slm/offline-monitor.js";
-
-// ============================================
-// KakaoTalk-specific handler (local to extension)
-// ============================================
-export {
-  type KakaoInstallSession,
-  type SLMCommand,
-  handleInstallCommand,
-  handleInstallStart,
-  handleStatusCommand,
-  handleUninstallCommand,
-  detectSLMCommand,
-  handleSLMCommand,
-  checkAndInstallOnStartup,
-} from "./kakao-handler.js";
+} from "./offline-monitor.js";

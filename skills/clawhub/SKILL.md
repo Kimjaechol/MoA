@@ -1,106 +1,45 @@
 ---
 name: clawhub
-description: Use the ClawHub CLI to search, install, update, and publish agent skills from clawhub.com. Use when you need to fetch new skills on the fly, sync installed skills to latest or a specific version, or publish new/updated skill folders with the npm-installed clawhub CLI.
+description: "[MoA 보안 정책] ClawHub를 통한 스킬 검색/설치/업데이트는 관리자만 수행할 수 있습니다. 에이전트는 clawhub search, clawhub install, clawhub update 명령을 실행하지 마세요. 이미 설치된 스킬은 자유롭게 사용 가능합니다."
 metadata:
   {
     "openclaw":
       {
         "requires": { "bins": ["clawhub"] },
-        "install":
-          [
-            {
-              "id": "node",
-              "kind": "node",
-              "package": "clawhub",
-              "bins": ["clawhub"],
-              "label": "Install ClawHub CLI (npm)",
-            },
-          ],
+        "install": [],
       },
   }
 ---
 
-# ClawHub CLI
+# ClawHub CLI (MoA 보안 정책 적용)
 
-Install
+> **보안 정책:** MoA에서는 에이전트가 ClawHub를 통해 스킬을 검색하거나 설치/업데이트하는 것이 금지됩니다.
+> 스킬 추가는 반드시 관리자가 수동으로 수행해야 합니다.
+> **이미 설치된 스킬은 에이전트가 자유롭게 사용할 수 있습니다.**
 
-```bash
-npm i -g clawhub
+## 에이전트 금지 명령
+
+다음 명령은 에이전트가 실행해서는 안 됩니다:
+
+```
+clawhub search ...     ← 금지 (외부 레지스트리 검색)
+clawhub install ...    ← 금지 (스킬 설치)
+clawhub update ...     ← 금지 (스킬 업데이트)
+clawhub publish ...    ← 금지 (스킬 퍼블리싱)
+npm i -g clawhub       ← 금지 (CLI 도구 설치)
 ```
 
-Auth (publish)
+## 관리자용: 스킬 수동 추가 방법
 
 ```bash
-clawhub login
-clawhub whoami
+# 검증된 스킬 폴더를 직접 복사
+cp -r /path/to/verified-skill ./skills/my-skill
+
+# 또는 관리자가 직접 clawhub CLI로 설치 (관리자 권한 필요)
+# MOA_ADMIN_SKILL_INSTALL=1 npx clawhub install my-skill
 ```
 
-Search
+## 일반 사용자
 
-```bash
-clawhub search "postgres backups"
-```
-
-Install
-
-```bash
-clawhub install my-skill
-clawhub install my-skill --version 1.2.3
-```
-
-Update (hash-based match + upgrade)
-
-```bash
-clawhub update my-skill
-clawhub update my-skill --version 1.2.3
-clawhub update --all
-clawhub update my-skill --force
-clawhub update --all --no-input --force
-```
-
-List
-
-```bash
-clawhub list
-```
-
-Publish
-
-```bash
-clawhub publish ./my-skill --slug my-skill --name "My Skill" --version 1.2.0 --changelog "Fixes + docs"
-```
-
-## Auth Benefits
-
-ClawHub에 로그인하면:
-
-- **스킬 퍼블리싱** — 직접 만든 스킬을 커뮤니티에 공유
-- **프라이빗 스킬** — 비공개 스킬 설치 및 관리
-- **버전 관리** — 스킬 업데이트 이력 추적 및 롤백
-- **사용 통계** — 내 스킬의 설치 수, 평가 확인
-
-로그인 없이도 스킬 검색, 설치, 업데이트는 모두 정상 동작합니다.
-
-## Free Fallback (로그인 없이)
-
-로그인하지 않아도 대부분의 기능을 사용할 수 있습니다:
-
-1. **스킬 검색 및 설치** — `clawhub search`, `clawhub install` 모두 인증 불필요
-2. **스킬 업데이트** — `clawhub update` 인증 불필요
-3. **로컬 스킬 목록** — `clawhub list` 인증 불필요
-4. **수동 스킬 설치** — SKILL.md 파일을 직접 `skills/` 디렉토리에 복사
-
-```bash
-# 로그인 없이 스킬 검색 및 설치
-clawhub search "image generation"
-clawhub install nano-banana-pro
-
-# 수동 설치 (인터넷 없어도 가능)
-cp -r /path/to/my-skill ./skills/my-skill
-```
-
-Notes
-
-- Default registry: https://clawhub.com (override with CLAWHUB_REGISTRY or --registry)
-- Default workdir: cwd (falls back to OpenClaw workspace); install dir: ./skills (override with --workdir / --dir / CLAWHUB_WORKDIR)
-- Update command hashes local files, resolves matching version, and upgrades to latest unless --version is set
+스킬 추가가 필요하면 MoA 관리자에게 요청하세요.
+에이전트는 이미 설치된 스킬만 사용할 수 있습니다.

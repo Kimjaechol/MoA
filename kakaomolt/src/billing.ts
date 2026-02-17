@@ -9,33 +9,83 @@
 import { createHash, createCipheriv, createDecipheriv, randomBytes } from "node:crypto";
 import { getSupabase, isSupabaseConfigured } from "./supabase.js";
 
-// Credit cost multiplier when using platform API
+// Credit cost multiplier when using platform API (operator key)
 const PLATFORM_API_MULTIPLIER = 2;
 
-// LLM model pricing (per 1M tokens, in credits)
+// 200K token threshold for premium pricing tier
+const LONG_CONTEXT_THRESHOLD = 200_000;
+
+// =====================================================================
+// LLM Model Pricing (per 1M tokens, in KRW credits)
 // 1 credit = 1 KRW (Korean Won)
 // Updated: 2026-02
-const MODEL_PRICING: Record<string, { input: number; output: number }> = {
-  // Claude models (latest)
-  "claude-opus-4-5-20251101": { input: 15000, output: 75000 },
+//
+// Two-tier pricing:
+// - base: standard pricing (<=200K tokens)
+// - premium: long-context pricing (>200K tokens) — higher per-token cost
+//
+// Source: 2026-02 official API pricing pages
+// =====================================================================
+
+interface ModelPricingTier {
+  /** Standard pricing (<=200K context tokens), per 1M tokens in KRW */
+  input: number;
+  output: number;
+  /** Long-context premium pricing (>200K context tokens), per 1M tokens in KRW */
+  premiumInput?: number;
+  premiumOutput?: number;
+}
+
+const MODEL_PRICING: Record<string, ModelPricingTier> = {
+  // ── Claude models (Anthropic) ──────────────────────────────────
+  // Claude Opus 4.6 (2026-02 공식가, $1=1450KRW):
+  //   기본 구간: 입력 $5/1M → 7,250원, 출력 $25/1M → 36,250원
+  //   200K+ 장문: 입력 $10/1M → 14,500원, 출력 $37.5/1M → 54,375원
+  "claude-opus-4-6": { input: 7250, output: 36250, premiumInput: 14500, premiumOutput: 54375 },
+  "claude-opus-4-5-20251101": { input: 7250, output: 36250, premiumInput: 14500, premiumOutput: 54375 },
+  // Claude Sonnet 4
   "claude-sonnet-4-20250514": { input: 3000, output: 15000 },
   "claude-3-5-sonnet-20241022": { input: 3000, output: 15000 },
+  // Claude Haiku 4.5
+  "claude-haiku-4-5": { input: 800, output: 4000 },
   "claude-3-5-haiku-20241022": { input: 800, output: 4000 },
   "claude-3-haiku-20240307": { input: 250, output: 1250 },
-  // OpenAI models (latest)
+
+  // ── Gemini models (Google) ─────────────────────────────────────
+  // Gemini 3.0 Pro (2026-02 공식가, $1=1450KRW):
+  //   기본 구간: 입력 $2.5/1M → 3,625원, 출력 $12/1M → 17,400원
+  //   200K+ 장문: 입력 $4/1M → 5,800원, 출력 $18/1M → 26,100원
+  "gemini-3-pro": { input: 3625, output: 17400, premiumInput: 5800, premiumOutput: 26100 },
+  // Gemini 3.0 Flash: $0.15/$0.60 (프리미엄 구간 없음, 1M context)
+  "gemini-3-flash": { input: 218, output: 870 },
+  // Legacy Gemini
+  "gemini-2.0-flash": { input: 75, output: 300 },
+  "gemini-1.5-pro": { input: 1250, output: 5000, premiumInput: 2500, premiumOutput: 10000 },
+  "gemini-1.5-flash": { input: 75, output: 300 },
+
+  // ── OpenAI models ──────────────────────────────────────────────
+  "gpt-5.2": { input: 15000, output: 60000 },
   "gpt-4o": { input: 2500, output: 10000 },
   "gpt-4o-mini": { input: 150, output: 600 },
   "gpt-4-turbo": { input: 10000, output: 30000 },
   "o1": { input: 15000, output: 60000 },
   "o1-mini": { input: 3000, output: 12000 },
-  // Gemini models
-  "gemini-2.0-flash": { input: 75, output: 300 },
-  "gemini-1.5-pro": { input: 1250, output: 5000 },
-  "gemini-1.5-flash": { input: 75, output: 300 },
+
+  // ── Other providers ────────────────────────────────────────────
+  "grok-3": { input: 3000, output: 15000 },
+  "grok-3-mini": { input: 300, output: 1500 },
+  "deepseek-r1": { input: 550, output: 2190 },
+  "deepseek-chat": { input: 270, output: 1100 },
+  "kimi-k2-0905": { input: 200, output: 800 },
+  "mistral-large-latest": { input: 2000, output: 6000 },
+  "mistral-small-latest": { input: 100, output: 300 },
+
+  // ── Local SLM (비용 $0) ────────────────────────────────────────
+  "qwen3:0.6b-q4_K_M": { input: 0, output: 0 },
 };
 
 // Default model if not specified
-const DEFAULT_MODEL = "claude-3-5-haiku-20241022";
+const DEFAULT_MODEL = "gemini-3-flash";
 
 // Encryption key for API keys (32 bytes for AES-256)
 function getEncryptionKey(): Buffer {
@@ -220,7 +270,15 @@ export async function hasCustomApiKey(kakaoUserId: string): Promise<boolean> {
 }
 
 /**
- * Calculate cost in credits for a request
+ * Calculate cost in credits for a request.
+ *
+ * 200K 토큰 초과 시 프리미엄 요금 적용:
+ * - 입출력 토큰의 합계가 200K를 초과하면, 전체 토큰에 프리미엄 단가 적용
+ * - 프리미엄 단가가 없는 모델은 기본 단가 유지
+ *
+ * 플랫폼 키 사용 시 (API 키 미입력):
+ * - 최종 금액에 PLATFORM_API_MULTIPLIER(2배)를 곱함
+ * - 즉, 200K 초과 시: 프리미엄 API 단가 x 2배 = 실제 크레딧 차감액
  */
 export function calculateCost(
   model: string,
@@ -229,13 +287,21 @@ export function calculateCost(
   usePlatformKey: boolean,
 ): number {
   const pricing = MODEL_PRICING[model] ?? MODEL_PRICING[DEFAULT_MODEL];
+  const totalTokens = inputTokens + outputTokens;
 
-  // Cost per token (pricing is per 1M tokens)
-  const inputCost = (inputTokens / 1_000_000) * pricing.input;
-  const outputCost = (outputTokens / 1_000_000) * pricing.output;
+  // 200K 토큰 초과 시 프리미엄 단가 적용 (모델이 프리미엄 구간을 지원하는 경우)
+  const usePremium = totalTokens > LONG_CONTEXT_THRESHOLD
+    && pricing.premiumInput !== undefined
+    && pricing.premiumOutput !== undefined;
+
+  const inputRate = usePremium ? pricing.premiumInput! : pricing.input;
+  const outputRate = usePremium ? pricing.premiumOutput! : pricing.output;
+
+  const inputCost = (inputTokens / 1_000_000) * inputRate;
+  const outputCost = (outputTokens / 1_000_000) * outputRate;
   let totalCost = inputCost + outputCost;
 
-  // Apply multiplier if using platform key
+  // 플랫폼 키 사용 시 2배 마크업 (운영자 API 키 사용 비용 보전)
   if (usePlatformKey) {
     totalCost *= PLATFORM_API_MULTIPLIER;
   }
@@ -441,19 +507,27 @@ export function formatCredits(credits: number): string {
 }
 
 /**
- * Get pricing info message
+ * Get pricing info message (2026-02 기준)
  */
 export function getPricingMessage(): string {
-  return `💳 크레딧 안내
+  return `💳 크레딧 안내 (2026.02 기준)
 
 📌 나만의 API 키 사용 시: 무료!
    - Anthropic: console.anthropic.com
+   - Google: aistudio.google.com
    - OpenAI: platform.openai.com
 
-📌 플랫폼 API 사용 시: 2배 비용
-   - Claude Haiku: 약 1-2 크레딧/대화
-   - Claude Sonnet: 약 10-20 크레딧/대화
-   - GPT-4o-mini: 약 2-3 크레딧/대화
+📌 플랫폼 API 사용 시: 원가의 2배 크레딧 차감
+   [메인 에이전트]
+   - Claude Opus 4.6 (최고성능): 약 20-60 크레딧/대화
+   - Gemini 3.0 Pro (가성비): 약 8-20 크레딧/대화
+   [서브 에이전트/요약]
+   - Gemini 3.0 Flash: 약 1-3 크레딧/대화
+   [Heartbeat]
+   - Qwen3 0.6B (로컬): 무료
+
+⚠️ 200K 토큰 초과 시 프리미엄 요금 자동 적용
+   (장문 첨부파일 포함 질문은 비용이 높아질 수 있습니다)
 
 💰 크레딧 충전:
    "충전"이라고 말씀해주세요.`;

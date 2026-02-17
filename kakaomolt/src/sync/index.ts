@@ -27,6 +27,8 @@ export {
 // Memory sync manager
 export {
   createMemorySyncManager,
+  createEphemeralSyncManager,
+  createPersistentSyncManager,
   MemorySyncManager,
   type ConversationData,
   type ConversationMessage,
@@ -34,10 +36,25 @@ export {
   type MemoryChunk,
   type MemoryData,
   type MemoryMetadata,
+  type RealtimeDeltaPayload,
   type SyncConfig,
+  type SyncMode,
   type SyncResult,
   type SyncStatus,
 } from "./memory-sync.js";
+
+// Sync reconciler (누락 방지 + 순서 보장 + 수동 전체 동기화)
+export {
+  SyncReconciler,
+  type BroadcastMessage,
+  type FullSyncManifest,
+  type FullSyncResult,
+  type ReconcilerConfig,
+  type ReconcilerState,
+  type ReconcilerStatus,
+  type SyncDelta,
+  type VersionVector,
+} from "./sync-reconciler.js";
 
 // Sync commands
 export {

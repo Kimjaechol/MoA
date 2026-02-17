@@ -28,9 +28,9 @@ const WHY_MOA = [
   },
   {
     icon: "\uD83D\uDCB0",
-    title: "AI 최저비용 자동 전략",
-    desc: "내장 무료 SLM을 우선 사용하고, 유료 LLM의 무료 한도(Groq, Gemini 등)를 활용한 뒤, Kimi K2-0905 Groq 등 가성비 모델을 사용합니다. 이미 구독 중인 LLM이 있다면 우선 적용됩니다.",
-    highlight: "Kimi K2 Groq 가성비",
+    title: "심플한 AI 모델 적용",
+    desc: "내 API 키를 입력하면 해당 LLM의 최고 모델이 적용됩니다. API 키가 없어도 크레딧으로 Claude Opus 4.6(최고성능) 또는 Gemini 3.0 Flash(가성비)를 바로 사용할 수 있습니다.",
+    highlight: "API 키 또는 크레딧",
   },
   {
     icon: "\uD83C\uDD93",
@@ -98,7 +98,7 @@ const FEATURES = [
   {
     icon: "\uD83E\uDDE9",
     title: "AI 모델 전략 선택",
-    desc: "가성비(Kimi K2 Groq 우선) 또는 최대성능 전략 중 선택. 마이페이지에서 API 키를 직접 관리하고 전략을 변경할 수 있습니다.",
+    desc: "최고성능(Claude Opus 4.6) 또는 가성비(Gemini 3.0 Flash) 전략 중 선택. 내 API 키 입력 시 해당 LLM 최고 모델이 적용됩니다.",
   },
   {
     icon: "\uD83E\uDDEC",
@@ -202,30 +202,29 @@ const SKILL_CATEGORIES = [
 
 const MODEL_STRATEGIES = [
   {
-    id: "cost-efficient",
-    icon: "\uD83D\uDCB0",
-    title: "최저비용 (가성비 전략)",
+    id: "with-api-key",
+    icon: "\uD83D\uDD11",
+    title: "내 API 키 사용",
     color: "#48bb78",
-    desc: "비용을 최소화하면서 최적의 결과를 제공합니다. 회원가입 시 기본 설정되며, 앱에서 언제든지 변경 가능합니다.",
-    tiers: [
-      { step: "1", label: "무료 내장 SLM", detail: "기본 대화/요약을 무료로 처리", tag: "무료" },
-      { step: "2", label: "유료 LLM 무료 한도", detail: "Groq, Gemini 등의 무료 범위 활용", tag: "무료" },
-      { step: "3", label: "유료 LLM 가성비 버전", detail: "Kimi K2-0905 Groq → Gemini Flash → DeepSeek 등", tag: "유료" },
-      { step: "4", label: "유료 LLM 최고 버전", detail: "Opus, GPT-5 등 프리미엄 모델", tag: "유료" },
+    desc: "마이페이지에서 LLM의 API 키를 직접 입력하면, 해당 LLM의 최고 수준 모델이 자동 적용됩니다.",
+    items: [
+      { label: "OpenAI 키 입력", detail: "GPT-5 등 최신 모델 적용" },
+      { label: "Anthropic 키 입력", detail: "Claude Opus 4.6 적용" },
+      { label: "Google 키 입력", detail: "Gemini 최신 모델 적용" },
     ],
-    note: "이미 구독 중인 유료 LLM이 있다면 해당 모델이 우선 적용됩니다. 마이페이지에서 API 키를 직접 관리하세요.",
+    note: "내 키를 사용하므로 MoA 크레딧 소모 없이 해당 LLM을 직접 이용합니다.",
   },
   {
-    id: "max-performance",
-    icon: "\uD83E\uDDE0",
-    title: "최고지능 (최대성능 전략)",
+    id: "without-api-key",
+    icon: "\uD83C\uDFAF",
+    title: "API 키 없이 사용",
     color: "#667eea",
-    desc: "현 시점 최고 성능의 AI를 항상 사용합니다. 복잡한 요청은 여러 AI가 동시에 처리하여 최상의 결과를 선택합니다.",
-    tiers: [
-      { step: "1", label: "최고 성능 단일 모델", detail: "Opus, GPT-5, Gemini Pro 등 최신 모델", tag: "프리미엄" },
-      { step: "2", label: "병렬 멀티 모델", detail: "5개 이상 최고급 AI가 동시 처리 후 최적 결과 선택", tag: "프리미엄" },
+    desc: "API 키를 입력하지 않아도 MoA 크레딧으로 AI를 이용할 수 있습니다. 전략에 따라 적용 모델이 달라집니다.",
+    items: [
+      { label: "최고성능 전략", detail: "Claude Opus 4.6 모델 적용" },
+      { label: "가성비 전략", detail: "Gemini 3.0 Flash 모델 적용" },
     ],
-    note: "1개 모델로 처리가 어려운 복잡한 요청은 자동으로 여러 최고급 모델을 병렬 실행합니다.",
+    note: "MoA 사이트에서 크레딧을 결제한 후 사용할 수 있습니다.",
   },
 ];
 
@@ -595,9 +594,9 @@ export default function Home() {
         <div className="container">
           <div className="section-header">
             <span className="section-badge">AI 모델 전략</span>
-            <h2>나에게 맞는 AI 전략을 선택하세요</h2>
+            <h2>심플한 AI 모델 적용 방식</h2>
             <p>
-              회원가입 시 선택하고, MoA 앱에서 언제든지 변경할 수 있습니다
+              API 키 보유 여부에 따라 최적의 모델이 자동 적용됩니다
             </p>
           </div>
           <div className="grid-2">
@@ -629,9 +628,9 @@ export default function Home() {
                   {strat.desc}
                 </p>
                 <div style={{ display: "flex", flexDirection: "column", gap: "10px", marginBottom: "16px" }}>
-                  {strat.tiers.map((tier) => (
+                  {strat.items.map((item) => (
                     <div
-                      key={tier.step}
+                      key={item.label}
                       style={{
                         display: "flex",
                         alignItems: "center",
@@ -642,25 +641,12 @@ export default function Home() {
                         borderLeft: `3px solid ${strat.color}`,
                       }}
                     >
-                      <span
-                        style={{
-                          fontSize: "0.75rem",
-                          fontWeight: 700,
-                          color: strat.color,
-                          background: `${strat.color}20`,
-                          padding: "2px 8px",
-                          borderRadius: "10px",
-                          whiteSpace: "nowrap",
-                        }}
-                      >
-                        {tier.tag}
-                      </span>
                       <div style={{ flex: 1, minWidth: 0 }}>
                         <div style={{ fontWeight: 600, fontSize: "0.9rem", color: "var(--text-heading)" }}>
-                          {tier.step}. {tier.label}
+                          {item.label}
                         </div>
                         <div style={{ fontSize: "0.8rem", color: "var(--text-muted)" }}>
-                          {tier.detail}
+                          {item.detail}
                         </div>
                       </div>
                     </div>
@@ -674,47 +660,12 @@ export default function Home() {
           </div>
           <div style={{ textAlign: "center", marginTop: "40px" }}>
             <p style={{ color: "var(--text-muted)", fontSize: "0.95rem", maxWidth: "700px", margin: "0 auto 20px" }}>
-              GPT-4o, Claude, Gemini, DeepSeek, Kimi K2-0905 (Groq), Mistral, Grok 등 모든 주요 AI를 지원합니다.
-              마이페이지에서 각 LLM의 API 키를 직접 관리하고, 선택한 전략에 따라 MoA가 자동으로 모델을 운용합니다.
+              OpenAI, Anthropic, Google, DeepSeek, Mistral, xAI 등 주요 LLM을 지원합니다.
+              마이페이지에서 API 키를 등록하거나, 크레딧을 결제하여 바로 사용하세요.
             </p>
             <a href="/mypage" className="btn btn-outline btn-sm">
               마이페이지에서 API 키 관리하기
             </a>
-          </div>
-
-          {/* Free Trial Policy */}
-          <div
-            style={{
-              marginTop: "48px",
-              padding: "24px 32px",
-              borderRadius: "var(--radius-lg)",
-              background: "rgba(0,0,0,0.15)",
-              border: "1px solid var(--border)",
-              maxWidth: "800px",
-              margin: "48px auto 0",
-            }}
-          >
-            <h3 style={{ fontSize: "1.1rem", marginBottom: "16px", textAlign: "center" }}>
-              무료 체험 정책
-            </h3>
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: "16px", fontSize: "0.9rem" }}>
-              <div style={{ padding: "16px", borderRadius: "var(--radius)", background: "rgba(72,187,120,0.08)", border: "1px solid rgba(72,187,120,0.2)" }}>
-                <div style={{ fontWeight: 700, color: "var(--success)", marginBottom: "8px" }}>
-                  {"\u2705"} API 키 보유 시
-                </div>
-                <p style={{ color: "var(--text-muted)", fontSize: "0.85rem" }}>
-                  본인의 유료 LLM API 키로 무료 체험 기간 동안 모든 기능을 제한 없이 사용할 수 있습니다.
-                </p>
-              </div>
-              <div style={{ padding: "16px", borderRadius: "var(--radius)", background: "rgba(236,201,75,0.08)", border: "1px solid rgba(236,201,75,0.2)" }}>
-                <div style={{ fontWeight: 700, color: "var(--warning)", marginBottom: "8px" }}>
-                  {"\u26A0\uFE0F"} API 키 미보유 시
-                </div>
-                <p style={{ color: "var(--text-muted)", fontSize: "0.85rem" }}>
-                  무료 범위 내에서만 사용 가능합니다. (무료 SLM + 유료 LLM 무료 한도까지만)
-                </p>
-              </div>
-            </div>
           </div>
         </div>
       </section>

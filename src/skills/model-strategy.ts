@@ -7,14 +7,45 @@ import type {
 import { getConfiguredLlmProviders, LLM_PROVIDERS } from "./api-key-manager.js";
 
 // =====================================================================
+// Agent Role Types
+// =====================================================================
+
+/**
+ * 에이전트 역할별 모델 배정 기준:
+ *
+ * - "main": 메인 에이전트 (복잡한 계획/코드) → maxPerformance 모델
+ * - "sub": 서브 에이전트, 요약/압축 → costEfficient 모델
+ * - "heartbeat": Heartbeat → 항상 로컬 SLM (Qwen3 0.6B via Ollama)
+ */
+export type AgentRole = "main" | "sub" | "heartbeat";
+
+// =====================================================================
+// Local SLM (Heartbeat) Configuration
+// =====================================================================
+
+/**
+ * Heartbeat용 로컬 SLM 설정.
+ * Ollama + Qwen3 0.6B (Q4_K_M 양자화, ~400MB)
+ *
+ * 설치: bash scripts/install-slm.sh
+ * 수동: ollama pull qwen3:0.6b-q4_K_M
+ */
+export const LOCAL_HEARTBEAT_MODEL = {
+  provider: "ollama",
+  model: "qwen3:0.6b-q4_K_M",
+  displayName: "Qwen3 0.6B (로컬 SLM)",
+  ollamaBaseUrl: "http://127.0.0.1:11434/v1",
+} as const;
+
+// =====================================================================
 // Provider-Specific Model Maps
 // =====================================================================
 
 /**
  * 각 LLM 프로바이더별 전략에 맞는 모델 매핑
  *
- * costEfficient: 충분한 능력을 가진 모델 중 가장 저렴한 모델
- * maxPerformance: 가장 최신, 최고 성능의 모델
+ * costEfficient: 서브 에이전트, 요약/압축용 (가성비 모델)
+ * maxPerformance: 메인 에이전트용 (최고 성능 모델)
  */
 export const PROVIDER_MODELS: Record<
   string,
@@ -66,11 +97,19 @@ export const PROVIDER_MODELS: Record<
  * 크레딧 차감 방식으로 운영 (최초 가입 시 일정량 무료 크레딧 제공).
  * 크레딧 차감 금액 = 원가(운영자가 API 제공사에 지불하는 비용)의 2배.
  *
- * - 가성비: Gemini 3.0 Flash — $0.15/$0.60 per 1M tokens
- * - 최고성능: Claude Opus 4.6 — $15/$75 per 1M tokens
- *   Terminal-Bench 65.4%, BigLaw 90.2%, SWE-bench 80.8%
+ * 역할별 배정 (API 키 미입력 시):
+ *
+ * [메인 에이전트]
+ * - 최고성능 전략: Claude Opus 4.6 — $5/$25 per 1M tokens (200K+ 시 $10/$37.5)
+ * - 가성비 전략: Gemini 3.0 Pro — ~$2~2.5/$12 per 1M tokens (200K+ 시 $4/$18)
+ *
+ * [서브 에이전트 / 요약 / 압축]
+ * - 항상: Gemini 3.0 Flash — $0.15/$0.60 per 1M tokens
+ *
+ * [Heartbeat]
+ * - 항상: 로컬 SLM (Qwen3 0.6B via Ollama) — 비용 $0
  */
-export const MOA_CREDIT_MODELS: Record<
+export const MOA_CREDIT_MAIN_MODELS: Record<
   ModelStrategyId,
   {
     provider: string;
@@ -81,8 +120,8 @@ export const MOA_CREDIT_MODELS: Record<
 > = {
   "cost-efficient": {
     provider: "gemini",
-    model: "gemini-3-flash",
-    displayName: "Gemini 3.0 Flash",
+    model: "gemini-3-pro",
+    displayName: "Gemini 3.0 Pro",
   },
   "max-performance": {
     provider: "anthropic",
@@ -91,6 +130,15 @@ export const MOA_CREDIT_MODELS: Record<
   },
 };
 
+export const MOA_CREDIT_SUB_MODEL = {
+  provider: "gemini",
+  model: "gemini-3-flash",
+  displayName: "Gemini 3.0 Flash",
+} as const;
+
+// Backward-compatible alias
+export const MOA_CREDIT_MODELS = MOA_CREDIT_MAIN_MODELS;
+
 // =====================================================================
 // Model Strategy Definitions (for display/explanation)
 // =====================================================================
@@ -98,29 +146,30 @@ export const MOA_CREDIT_MODELS: Record<
 /**
  * 가성비 전략
  *
- * - API 키 보유 → 해당 LLM의 가성비 최적 모델 (추가 비용 없음)
- * - API 키 없음 → MoA 크레딧으로 Gemini 3.0 Flash 사용 (원가의 2배 크레딧 차감)
+ * - API 키 보유 → 메인: maxPerformance, 서브: costEfficient (추가 비용 없음)
+ * - API 키 없음 → 메인: Gemini 3.0 Pro, 서브: Gemini 3.0 Flash (원가의 2배 크레딧 차감)
+ * - Heartbeat → 항상 로컬 SLM (Qwen3 0.6B)
  */
 const COST_EFFICIENT_STRATEGY: ModelStrategyDefinition = {
   id: "cost-efficient",
   name: "가성비 전략",
   description:
-    "API 키가 있으면 해당 LLM의 가성비 모델을, 없으면 MoA 크레딧으로 Gemini 3.0 Flash를 사용합니다 (원가의 2배 크레딧 차감).",
+    "메인: API 키 시 해당 LLM 최고성능, 없으면 Gemini 3.0 Pro. 서브: 가성비 모델. Heartbeat: 로컬 SLM. (원가의 2배 크레딧 차감)",
   tiers: [
     {
       priority: 1,
       label: "API 키 보유 사용자",
-      description: "사용자의 LLM API 키로 가성비 모델 자동 선택 (크레딧 차감 없음)",
+      description: "메인: maxPerformance / 서브: costEfficient (크레딧 차감 없음)",
       models: Object.entries(PROVIDER_MODELS).map(
-        ([provider, m]) => `${provider}/${m.costEfficient}`,
+        ([provider, m]) => `${provider}/${m.maxPerformance}`,
       ),
       free: false,
     },
     {
       priority: 2,
       label: "MoA 크레딧 (기본)",
-      description: "Gemini 3.0 Flash — 크레딧 차감 (원가의 2배)",
-      models: ["gemini/gemini-3-flash"],
+      description: "메인: Gemini 3.0 Pro / 서브: Gemini 3.0 Flash (크레딧 차감)",
+      models: ["gemini/gemini-3-pro", "gemini/gemini-3-flash"],
       free: false,
     },
   ],
@@ -130,19 +179,20 @@ const COST_EFFICIENT_STRATEGY: ModelStrategyDefinition = {
 /**
  * 최고성능 전략
  *
- * - API 키 보유 → 해당 LLM의 최고 성능, 최신 모델 (추가 비용 없음)
- * - API 키 없음 → MoA 크레딧으로 Claude Opus 4.6 사용 (원가의 2배 크레딧 차감)
+ * - API 키 보유 → 메인: maxPerformance, 서브: costEfficient (추가 비용 없음)
+ * - API 키 없음 → 메인: Claude Opus 4.6, 서브: Gemini 3.0 Flash (원가의 2배 크레딧 차감)
+ * - Heartbeat → 항상 로컬 SLM (Qwen3 0.6B)
  */
 const MAX_PERFORMANCE_STRATEGY: ModelStrategyDefinition = {
   id: "max-performance",
   name: "최고성능 전략",
   description:
-    "API 키가 있으면 해당 LLM의 최고 성능 모델을, 없으면 MoA 크레딧으로 Claude Opus 4.6을 사용합니다 (원가의 2배 크레딧 차감).",
+    "메인: API 키 시 해당 LLM 최고성능, 없으면 Claude Opus 4.6. 서브: 가성비 모델. Heartbeat: 로컬 SLM. (원가의 2배 크레딧 차감)",
   tiers: [
     {
       priority: 1,
       label: "API 키 보유 사용자",
-      description: "사용자의 LLM API 키로 최고 성능 모델 자동 선택 (크레딧 차감 없음)",
+      description: "메인: maxPerformance / 서브: costEfficient (크레딧 차감 없음)",
       models: Object.entries(PROVIDER_MODELS).map(
         ([provider, m]) => `${provider}/${m.maxPerformance}`,
       ),
@@ -151,8 +201,8 @@ const MAX_PERFORMANCE_STRATEGY: ModelStrategyDefinition = {
     {
       priority: 2,
       label: "MoA 크레딧 (기본)",
-      description: "Claude Opus 4.6 — 코딩/법률/추론 최강 (원가의 2배 크레딧 차감)",
-      models: ["anthropic/claude-opus-4-6"],
+      description: "메인: Claude Opus 4.6 / 서브: Gemini 3.0 Flash (크레딧 차감)",
+      models: ["anthropic/claude-opus-4-6", "gemini/gemini-3-flash"],
       free: false,
     },
   ],
@@ -181,25 +231,41 @@ export function detectSubscribedProviders(): string[] {
 }
 
 /**
- * Resolve the model strategy for the current request.
+ * 역할별 모델 전략 해석 (Role-Aware Model Resolution)
  *
- * 핵심 로직:
- * 1. primaryOverride → 사용자 지정 모델 사용
- * 2. API 키 등록 프로바이더 있음 → 해당 프로바이더의 모델만 사용 (크레딧 차감 없음)
- *    - cost-efficient → 가성비 모델
- *    - max-performance → 최고 성능 모델
- * 3. API 키 없음 → MoA 크레딧 차감 (원가의 2배)
- *    - cost-efficient → Gemini 3.0 Flash
- *    - max-performance → Claude Opus 4.6
+ * 1단계: API 키 보유 사용자
+ *   - 메인 에이전트 → PROVIDER_MODELS[provider].maxPerformance
+ *   - 서브 에이전트 → PROVIDER_MODELS[provider].costEfficient
+ *   - Heartbeat → 항상 로컬 SLM (Qwen3 0.6B)
+ *
+ * 2단계: API 키 미입력 (MoA 크레딧 사용)
+ *   - 메인 에이전트 →
+ *       최고성능 전략: Claude Opus 4.6
+ *       가성비 전략: Gemini 3.0 Pro
+ *   - 서브 에이전트 → Gemini 3.0 Flash (항상)
+ *   - Heartbeat → 로컬 SLM (항상, 비용 $0)
+ *
+ * 주의: 200K 토큰 초과 시 API 요금이 인상됨 → billing에서 자동 반영.
  */
 export function resolveModelStrategy(
   config: UserModelStrategyConfig,
   _taskComplexity: "simple" | "complex" = "simple",
+  role: AgentRole = "main",
 ): ModelStrategyResolution {
+  // Heartbeat는 항상 로컬 SLM (전략/API 키 무관)
+  if (role === "heartbeat") {
+    return {
+      strategy: config.strategy,
+      tierLabel: "로컬 SLM (Heartbeat)",
+      selectedModels: [{ provider: LOCAL_HEARTBEAT_MODEL.provider, model: LOCAL_HEARTBEAT_MODEL.model }],
+      parallel: false,
+      explanation: `Heartbeat → ${LOCAL_HEARTBEAT_MODEL.displayName} (로컬 실행, 비용 $0)`,
+    };
+  }
+
   const strategyDef = MODEL_STRATEGIES[config.strategy];
   if (!strategyDef) {
-    // Fallback to cost-efficient if invalid
-    return resolveModelStrategy({ ...config, strategy: "cost-efficient" }, _taskComplexity);
+    return resolveModelStrategy({ ...config, strategy: "cost-efficient" }, _taskComplexity, role);
   }
 
   // 1. Primary override (사용자 직접 지정)
@@ -220,16 +286,17 @@ export function resolveModelStrategy(
   const subscribedProviders = config.subscribedProviders ?? detectSubscribedProviders();
 
   if (subscribedProviders.length > 0) {
-    // 이미 구독 중인 LLM의 API 키가 있는 사용자
-    // → 해당 프로바이더의 모델만 사용 (추가 비용 없음, 이중 결제 방지)
     const primaryProvider = subscribedProviders[0];
     const providerModels = PROVIDER_MODELS[primaryProvider];
 
     if (providerModels) {
-      const model =
-        config.strategy === "cost-efficient"
-          ? providerModels.costEfficient
-          : providerModels.maxPerformance;
+      // 역할에 따라 모델 선택
+      const model = role === "sub"
+        ? providerModels.costEfficient
+        : providerModels.maxPerformance;
+
+      const roleLabel = role === "sub" ? "서브 에이전트" : "메인 에이전트";
+      const modelTier = role === "sub" ? "가성비" : "최고 성능";
 
       const providerName =
         LLM_PROVIDERS.find((p) => p.id === primaryProvider)?.name ?? providerModels.displayName;
@@ -239,26 +306,35 @@ export function resolveModelStrategy(
         tierLabel: "API 키 보유 사용자",
         selectedModels: [{ provider: primaryProvider, model }],
         parallel: false,
-        explanation:
-          config.strategy === "cost-efficient"
-            ? `${providerName} 구독 → 가성비 모델 ${model} 적용 (추가 비용 없음)`
-            : `${providerName} 구독 → 최고 성능 모델 ${model} 적용 (추가 비용 없음)`,
+        explanation: `${providerName} 구독 → ${roleLabel}: ${modelTier} 모델 ${model} 적용 (추가 비용 없음)`,
       };
     }
   }
 
-  // 3. API 키 없음 → MoA 크레딧 기본 모델 (크레딧 차감)
-  const creditModel = MOA_CREDIT_MODELS[config.strategy];
+  // 3. API 키 없음 → MoA 크레딧 차감 (원가의 2배)
+  if (role === "sub") {
+    // 서브 에이전트는 항상 Gemini 3.0 Flash
+    return {
+      strategy: config.strategy,
+      tierLabel: "MoA 크레딧 (서브 에이전트)",
+      selectedModels: [{ provider: MOA_CREDIT_SUB_MODEL.provider, model: MOA_CREDIT_SUB_MODEL.model }],
+      parallel: false,
+      explanation: `MoA 크레딧 → 서브 에이전트: ${MOA_CREDIT_SUB_MODEL.displayName} 적용 (원가의 2배 크레딧 차감)`,
+    };
+  }
+
+  // 메인 에이전트 → 전략에 따라 모델 결정
+  const creditModel = MOA_CREDIT_MAIN_MODELS[config.strategy];
 
   return {
     strategy: config.strategy,
-    tierLabel: "MoA 크레딧 (기본)",
+    tierLabel: "MoA 크레딧 (메인 에이전트)",
     selectedModels: [{ provider: creditModel.provider, model: creditModel.model }],
     parallel: false,
     explanation:
       config.strategy === "cost-efficient"
-        ? `MoA 크레딧 → ${creditModel.displayName} 적용 (원가의 2배 크레딧 차감)`
-        : `MoA 크레딧 → ${creditModel.displayName} 적용 (원가의 2배 크레딧 차감)`,
+        ? `MoA 크레딧 → 메인 에이전트: ${creditModel.displayName} 적용 (원가의 2배 크레딧 차감)`
+        : `MoA 크레딧 → 메인 에이전트: ${creditModel.displayName} 적용 (원가의 2배 크레딧 차감)`,
     modelConfig:
       creditModel.thinkingBudget !== undefined
         ? { thinkingBudget: creditModel.thinkingBudget }
@@ -287,20 +363,26 @@ export function explainModelStrategy(config: UserModelStrategyConfig): string {
       const providerName =
         models?.displayName ?? LLM_PROVIDERS.find((p) => p.id === id)?.name ?? id;
       if (!models) return `  • ${providerName} (모델 매핑 없음)`;
-      const selectedModel =
-        config.strategy === "cost-efficient" ? models.costEfficient : models.maxPerformance;
-      return `  • ${providerName} → ${selectedModel}`;
+      return [
+        `  • ${providerName}`,
+        `    메인: ${models.maxPerformance}`,
+        `    서브: ${models.costEfficient}`,
+      ].join("\n");
     });
 
     lines.push("🔑 등록된 API 키:");
     lines.push(...providerDetails);
+    lines.push(`  💓 Heartbeat: ${LOCAL_HEARTBEAT_MODEL.displayName} (로컬)`);
     lines.push("   → 이미 구독 중인 LLM을 사용하므로 추가 비용 없음");
   } else {
     // MoA 크레딧 사용자
-    const creditModel = MOA_CREDIT_MODELS[config.strategy];
+    const mainModel = MOA_CREDIT_MAIN_MODELS[config.strategy];
     lines.push("💳 MoA 크레딧 사용 (API 키 미등록)");
-    lines.push(`   → ${creditModel.displayName}`);
+    lines.push(`   메인 에이전트: ${mainModel.displayName}`);
+    lines.push(`   서브 에이전트: ${MOA_CREDIT_SUB_MODEL.displayName}`);
+    lines.push(`   💓 Heartbeat: ${LOCAL_HEARTBEAT_MODEL.displayName} (로컬, 비용 $0)`);
     lines.push("   → 크레딧 차감: 원가의 2배 (최초 가입 시 무료 크레딧 제공)");
+    lines.push("   → 200K 토큰 초과 시 프리미엄 요금 구간 자동 적용");
   }
 
   return lines.join("\n");

@@ -228,6 +228,21 @@ async function installDownloadSpec(params: {
   spec: SkillInstallSpec;
   timeoutMs: number;
 }): Promise<SkillInstallResult> {
+  // MoA Security: Block automatic skill downloads from remote URLs.
+  // Skills must be installed manually by an administrator.
+  if (process.env.MOA_ADMIN_SKILL_INSTALL !== "1") {
+    return {
+      ok: false,
+      message:
+        "[MoA 보안 정책] 외부 URL에서 스킬을 자동 다운로드하는 것이 차단되었습니다. " +
+        "스킬 추가는 관리자만 수행할 수 있습니다. " +
+        "관리자는 MOA_ADMIN_SKILL_INSTALL=1 환경변수를 설정하여 설치할 수 있습니다.",
+      stdout: "",
+      stderr: "",
+      code: null,
+    };
+  }
+
   const { entry, spec, timeoutMs } = params;
   const url = spec.url?.trim();
   if (!url) {
