@@ -2236,4 +2236,215 @@ Phase 9 - 음성:
 
 *이 문서는 MoA 저장소의 OpenClaw 대비 모든 개선사항을 기반으로 작성되었습니다.*
 *ZeroClaw(Rust) 마이그레이션 시 이 명세서의 각 섹션을 순서대로 구현하면 됩니다.*
-*총 37개 섹션, 9단계 마이그레이션 체크리스트를 포함합니다.*
+*총 37개 섹션 + 3개 부록, 9단계 마이그레이션 체크리스트를 포함합니다.*
+
+---
+
+## 부록 C: 메모리 엔진 아키텍처
+
+### C.1 Markdown-First 메모리 시스템
+
+데이터 원본은 항상 Markdown 파일이며, SQLite는 파생 인덱스:
+
+```
+원본 (Source of Truth):
+  ~/.openclaw/workspace/memory/YYYY-MM-DD.md   # 일별 로그 (append-only)
+  ~/.openclaw/workspace/MEMORY.md               # 장기 기억 (큐레이션)
+
+파생 인덱스 (Derived):
+  ~/.openclaw/memory/{agentId}.sqlite           # 벡터 + FTS 인덱스
+```
+
+### C.2 SQLite 인덱스 스키마
+
+```sql
+-- 인덱싱된 파일 메타데이터
+CREATE TABLE files (
+    path TEXT PRIMARY KEY,
+    hash TEXT,
+    mtime INTEGER,
+    size INTEGER
+);
+
+-- 벡터화된 텍스트 청크 (~400 토큰, 80 토큰 오버랩)
+CREATE TABLE chunks (
+    id TEXT PRIMARY KEY,
+    path TEXT,
+    source TEXT,
+    start_line INTEGER,
+    end_line INTEGER,
+    text TEXT,
+    embedding JSON,         -- 벡터 임베딩
+    hash TEXT,
+    model TEXT,
+    updated_at TEXT
+);
+
+-- FTS5 전문 검색 (BM25 랭킹)
+CREATE VIRTUAL TABLE chunks_fts USING fts5(text, content='chunks', content_rowid='rowid');
+
+-- sqlite-vec 벡터 검색 (코사인 유사도)
+CREATE VIRTUAL TABLE chunks_vec USING vec0(embedding float[N]);
+
+-- 임베딩 캐시 (재인덱싱 방지)
+CREATE TABLE embedding_cache (
+    hash TEXT PRIMARY KEY,
+    embedding BLOB,
+    model TEXT,
+    provider TEXT,
+    created_at TEXT
+);
+```
+
+### C.3 하이브리드 검색 (BM25 + 벡터)
+
+두 가지 검색 신호를 결합하여 최적의 결과:
+
+```rust
+struct HybridSearchConfig {
+    vector_weight: f64,      // 기본 0.7 (70%)
+    text_weight: f64,        // 기본 0.3 (30%)
+    candidate_multiplier: f64, // 후보 풀 배수
+    max_results: usize,
+}
+
+fn hybrid_search(query: &str, config: &HybridSearchConfig) -> Vec<SearchResult> {
+    // 1. 벡터 검색 (시맨틱 유사도) - 패러프레이즈에 강함
+    let vector_results = vector_search(query, config.max_results * config.candidate_multiplier);
+
+    // 2. BM25 검색 (키워드 매칭) - 정확한 토큰에 강함
+    let bm25_results = fts_search(query, config.max_results * config.candidate_multiplier);
+
+    // 3. 점수 변환: BM25 rank → score = 1 / (1 + max(0, rank))
+    // 4. 가중 결합: final = vector_weight * vector_score + text_weight * text_score
+    // 5. 상위 max_results개 반환
+}
+```
+
+| 검색 방식 | 강점 | 약점 |
+|----------|------|------|
+| 벡터 검색 | 의미적 유사 표현 ("게이트웨이 호스트" = "서버 실행 머신") | 정확한 ID/코드 |
+| BM25 | 정확한 토큰 (SHA, 에러 문자열, 설정 키) | 패러프레이즈 |
+| **하이브리드** | **양쪽 장점 결합** | - |
+
+### C.4 임베딩 프로바이더
+
+| 프로바이더 | 모델 | 크기 | 설명 |
+|-----------|------|------|------|
+| OpenAI | `text-embedding-3-small` | 원격 | 기본 원격 프로바이더 |
+| Gemini | `gemini-embedding-001` | 원격 | Google 네이티브 API |
+| 로컬 | `hf:ggml-org/embeddinggemma-300M-GGUF` | ~600MB | 오프라인 (자동 다운로드) |
+
+**배치 처리:**
+- OpenAI Batch API: 비동기, 할인 가격, ~8000 토큰/배치
+- Gemini Batch API: 유사한 비동기 모델
+- 동시 작업: 기본 2개
+- 실패 시 폴백: 동기 임베딩 또는 다른 프로바이더
+
+### C.5 자동 메모리 플러시 (Pre-Compaction)
+
+세션이 토큰 한계에 가까워지면 자동으로 메모리 저장:
+
+```rust
+struct MemoryFlushConfig {
+    enabled: bool,
+    soft_threshold_tokens: u32,   // 기본 4,000
+    reserve_tokens_floor: u32,    // 기본 20,000
+}
+
+// 트리거 조건:
+// context_window - reserve_tokens_floor - soft_threshold_tokens 도달 시
+// → 모델에게 "지속 메모리를 memory/YYYY-MM-DD.md에 저장하라" 지시
+// → 모델 응답: NO_REPLY (사용자에게 보이지 않음)
+// → 그 후 컨텍스트 컴팩션 실행
+```
+
+---
+
+## 부록 D: 디바이스 아이덴티티 및 페어링
+
+### D.1 디바이스 아이덴티티 (Ed25519)
+
+```rust
+// 파일: ~/.openclaw/identity/device.json
+struct DeviceIdentity {
+    public_key: Ed25519PublicKey,
+    private_key: Ed25519PrivateKey,  // 로컬에만 저장
+    device_id: String,                // SHA-256(public_key)
+    role: String,                     // "node"
+    scopes: Vec<String>,
+}
+```
+
+### D.2 디바이스 페어링 프로토콜
+
+```
+1. 새 기기가 페어링 요청 (TTL: 5분)
+2. 기존 기기에서 승인
+3. 승인 시 공개 키 교환 + 디바이스 토큰 발급
+4. 비로컬 기기: nonce 챌린지/응답 서명 필요
+5. 승인된 기기 목록: 영구 저장 (public_key + metadata)
+6. 디바이스 토큰: 역할 + 범위 + 회전 타임스탬프
+```
+
+### D.3 게이트웨이 연결 프로토콜
+
+```
+클라이언트                         게이트웨이
+  │                                   │
+  │── req:connect (device_id + token) ──►│
+  │◄── res:hello-ok (presence, health) ──│
+  │                                   │
+  │◄── event:presence (실시간) ──────────│
+  │◄── event:tick (heartbeat) ───────────│
+  │                                   │
+  │── req:agent (메시지 전송) ──────────►│
+  │◄── res:agent (ack + runId) ─────────│
+  │◄── event:agent (스트리밍 출력) ──────│
+  │◄── res:agent (최종 상태) ───────────│
+```
+
+- 첫 프레임: 반드시 `connect` + device identity
+- WebSocket: Text frame + JSON payload
+- 멱등성: 부작용 있는 메서드에 idempotency key 필요
+
+### D.4 세션 트랜스크립트 형식
+
+```
+파일: ~/.openclaw/agents/{agentId}/sessions/*.jsonl
+
+형식 (줄 구분 JSON):
+{"type":"session","version":1,"id":"...","timestamp":"...","cwd":"..."}
+{"type":"message","message":{"role":"user","content":[...],"timestamp":...}}
+{"type":"message","message":{"role":"assistant","content":[...],"timestamp":...}}
+```
+
+### D.5 ZeroClaw 구현용 Rust crate
+
+| 기능 | Rust crate |
+|------|-----------|
+| Ed25519 키 페어 | `ed25519-dalek` |
+| 디바이스 아이덴티티 파일 | `serde_json` + `dirs` |
+| WebSocket | `tokio-tungstenite` |
+| JSONL 파싱 | `serde_json` (라인별) |
+| SQLite | `rusqlite` (벡터 확장: `sqlite-vec`) |
+| FTS5 | `rusqlite` 내장 |
+| 임베딩 배치 | `reqwest` + `tokio::sync::Semaphore` |
+
+---
+
+## 부록 E: 특허 출원 정보
+
+### E.1 특허명
+
+> **"서버 비저장 방식의 다중 기기 간 종단간 암호화 메모리 동기화 시스템 및 방법"**
+>
+> (System and Method for End-to-End Encrypted Memory Synchronization Between Multiple Devices Without Persistent Server Storage)
+
+### E.2 핵심 청구항
+
+1. **서버 비저장**: 데이터가 서버에 영구 저장되지 않음 (Ephemeral TTL)
+2. **비동기 동기화**: 기기가 동시에 온라인일 필요 없음 (Delta Journal)
+3. **순서 보장**: 시퀀스 넘버 + 순서 버퍼로 올바른 델타 적용 순서 보장
+4. **데이터 손실 방지**: 30일 저널 보관 + Tier 3 전체 동기화
+5. **완전 E2E**: 모든 암호화는 클라이언트 측에서 수행; 서버는 암호문만 확인
