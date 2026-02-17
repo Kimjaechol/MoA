@@ -43,10 +43,12 @@ export {
   type SyncStatus,
 } from "./memory-sync.js";
 
-// Sync reconciler (누락 방지 + 순서 보장)
+// Sync reconciler (누락 방지 + 순서 보장 + 수동 전체 동기화)
 export {
   SyncReconciler,
   type BroadcastMessage,
+  type FullSyncManifest,
+  type FullSyncResult,
   type ReconcilerConfig,
   type ReconcilerState,
   type ReconcilerStatus,
@@ -62,14 +64,6 @@ export {
   type SyncCommandContext,
   type SyncCommandResult,
 } from "./sync-commands.js";
-
-// Auto delta sync
-export {
-  AutoSyncManager,
-  formatAutoSyncStatus,
-  type DeltaBatch,
-  type MemoryDelta,
-} from "./auto-sync.js";
 
 // Re-export Moltbot adapters for convenience
 export {

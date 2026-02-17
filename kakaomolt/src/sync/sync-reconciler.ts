@@ -14,9 +14,10 @@
  * 핵심 개념:
  *
  * - Version Vector: {deviceId → lastSeq} 각 기기가 다른 기기의 마지막 시퀀스를 추적
- * - Delta Journal: 로컬에 최근 델타를 보관 (기본 7일, 재전송용)
+ * - Delta Journal: 로컬에 최근 델타를 보관 (기본 30일, 재전송용)
  * - Reconnection Protocol: Supabase Realtime broadcast로 "나 버전 X인데, 빠진거 보내줘"
  * - Ordered Application: 시퀀스 순서대로 적용, 갭이 있으면 버퍼링 후 요청
+ * - Manual Full Sync: 30일 이상 오프라인이던 기기가 수동으로 전체 동기화 요청
  *
  * 서버에는 여전히 아무것도 영구 보관하지 않음 (프라이버시 유지).
  * 데이터는 항상 기기에만 존재하고, 서버는 릴레이 + 시그널링만.
@@ -53,11 +54,37 @@ export interface SyncDelta {
   createdAt: string;
 }
 
+/** 수동 전체 동기화용 — 기기가 보유한 엔티티 ID 목록 (스냅샷 비교용) */
+export interface FullSyncManifest {
+  /** 장기기억 청크 ID 목록 */
+  memoryChunkIds: string[];
+  /** 대화 세션 ID 목록 */
+  conversationIds: string[];
+  /** 설정 키 목록 */
+  settingKeys: string[];
+  /** 이 매니페스트를 생성한 시각 */
+  generatedAt: string;
+}
+
+/** 수동 전체 동기화 결과 */
+export interface FullSyncResult {
+  success: boolean;
+  /** 내가 상대로부터 받아야 할 ID 목록 */
+  missingFromMe: { memoryChunkIds: string[]; conversationIds: string[]; settingKeys: string[] };
+  /** 상대가 나로부터 받아야 할 ID 목록 */
+  missingFromThem: { memoryChunkIds: string[]; conversationIds: string[]; settingKeys: string[] };
+  error?: string;
+}
+
 /** Realtime broadcast 메시지 타입 */
 export type BroadcastMessage =
   | { type: "sync_request"; fromDeviceId: string; versionVector: VersionVector }
   | { type: "sync_response"; fromDeviceId: string; deltas: SyncDelta[] }
-  | { type: "delta_ack"; fromDeviceId: string; sourceDeviceId: string; lastSeq: number };
+  | { type: "delta_ack"; fromDeviceId: string; sourceDeviceId: string; lastSeq: number }
+  | { type: "full_sync_request"; fromDeviceId: string; manifest: FullSyncManifest }
+  | { type: "full_sync_manifest_response"; fromDeviceId: string; manifest: FullSyncManifest }
+  | { type: "full_sync_data"; fromDeviceId: string; entityType: string; entityId: string; encryptedPayload: string; iv: string; authTag: string }
+  | { type: "full_sync_complete"; fromDeviceId: string; sentCount: number };
 
 /** 재조정기 설정 */
 export interface ReconcilerConfig {
@@ -70,6 +97,21 @@ export interface ReconcilerConfig {
   onApplyDelta?: (delta: SyncDelta) => Promise<void>;
   /** 갭 감지 시 콜백 (디버깅용) */
   onGapDetected?: (fromDevice: string, expected: number, received: number) => void;
+
+  // --- 수동 전체 동기화 콜백 ---
+
+  /** 내 기기의 매니페스트(엔티티 ID 목록) 생성 */
+  onBuildManifest?: () => Promise<FullSyncManifest>;
+  /** 상대 기기가 요청한 특정 엔티티를 암호화하여 반환 */
+  onExportEntity?: (entityType: string, entityId: string) => Promise<{
+    encryptedPayload: string;
+    iv: string;
+    authTag: string;
+  } | null>;
+  /** 상대 기기가 보내준 엔티티를 수신하여 로컬에 저장 */
+  onImportEntity?: (entityType: string, entityId: string, encryptedPayload: string, iv: string, authTag: string) => Promise<void>;
+  /** 수동 동기화 진행 상황 콜백 */
+  onFullSyncProgress?: (phase: "comparing" | "receiving" | "sending" | "complete", current: number, total: number) => void;
 }
 
 // ============================================
@@ -101,6 +143,19 @@ export class SyncReconciler {
 
   /** 저널 보관 기간 */
   private readonly journalRetentionMs: number;
+
+  /** 수동 전체 동기화 진행 중 여부 */
+  private fullSyncInProgress = false;
+
+  /** 수동 전체 동기화 Promise resolver (요청 측에서 응답 대기용) */
+  private fullSyncResolver: {
+    resolve: (result: FullSyncResult) => void;
+    timeout: ReturnType<typeof setTimeout>;
+  } | null = null;
+
+  /** 수동 전체 동기화 수신 카운터 */
+  private fullSyncReceivedCount = 0;
+  private fullSyncExpectedCount = 0;
 
   constructor(config: ReconcilerConfig) {
     this.config = config;
@@ -355,11 +410,21 @@ export class SyncReconciler {
         await this.handleSyncResponse(msg);
         break;
       case "delta_ack":
-        // ACK 수신 — 상대가 특정 시퀀스까지 받았음을 확인
-        // 현재는 로깅만 (저널 정리에 활용 가능)
         console.log(
           `[Reconciler] ACK from ${msg.fromDeviceId}: received up to seq ${msg.lastSeq} from ${msg.sourceDeviceId}`,
         );
+        break;
+      case "full_sync_request":
+        await this.handleFullSyncRequest(msg);
+        break;
+      case "full_sync_manifest_response":
+        await this.handleFullSyncManifestResponse(msg);
+        break;
+      case "full_sync_data":
+        await this.handleFullSyncData(msg);
+        break;
+      case "full_sync_complete":
+        this.handleFullSyncComplete(msg);
         break;
     }
   }
@@ -441,6 +506,370 @@ export class SyncReconciler {
   }
 
   // ============================================
+  // Manual Full Sync (수동 전체 동기화)
+  // ============================================
+
+  /**
+   * 수동 전체 동기화 요청 (이용자가 "동기화" 버튼을 눌렀을 때).
+   *
+   * 30일 이상 오프라인이었던 기기가 다른 온라인 기기에게
+   * "내 데이터 목록은 이건데, 없는 거 보내줘" 라고 요청.
+   *
+   * 흐름:
+   * 1. 내 매니페스트(엔티티 ID 목록) 생성 → broadcast
+   * 2. 상대 기기가 자기 매니페스트를 응답
+   * 3. 양쪽이 서로 비교 → 빠진 엔티티를 broadcast로 전송
+   * 4. 수신 측이 로컬에 저장
+   *
+   * @param timeoutMs 응답 대기 시간 (기본 60초). 상대 기기가 없으면 타임아웃.
+   */
+  async requestFullSync(timeoutMs = 60_000): Promise<FullSyncResult> {
+    if (!this.broadcastChannel) {
+      return {
+        success: false,
+        missingFromMe: { memoryChunkIds: [], conversationIds: [], settingKeys: [] },
+        missingFromThem: { memoryChunkIds: [], conversationIds: [], settingKeys: [] },
+        error: "Broadcast channel not connected",
+      };
+    }
+
+    if (this.fullSyncInProgress) {
+      return {
+        success: false,
+        missingFromMe: { memoryChunkIds: [], conversationIds: [], settingKeys: [] },
+        missingFromThem: { memoryChunkIds: [], conversationIds: [], settingKeys: [] },
+        error: "Full sync already in progress",
+      };
+    }
+
+    if (!this.config.onBuildManifest) {
+      return {
+        success: false,
+        missingFromMe: { memoryChunkIds: [], conversationIds: [], settingKeys: [] },
+        missingFromThem: { memoryChunkIds: [], conversationIds: [], settingKeys: [] },
+        error: "onBuildManifest callback not configured",
+      };
+    }
+
+    this.fullSyncInProgress = true;
+    this.fullSyncReceivedCount = 0;
+    this.fullSyncExpectedCount = 0;
+    this.config.onFullSyncProgress?.("comparing", 0, 0);
+
+    console.log("[Reconciler] Starting manual full sync...");
+
+    // 내 매니페스트 생성
+    const myManifest = await this.config.onBuildManifest();
+
+    // 상대에게 전체 동기화 요청 + 내 매니페스트 전송
+    const msg: BroadcastMessage = {
+      type: "full_sync_request",
+      fromDeviceId: this.config.deviceId,
+      manifest: myManifest,
+    };
+
+    this.broadcastChannel.send({
+      type: "broadcast",
+      event: "sync_msg",
+      payload: msg,
+    });
+
+    // 응답 대기 (Promise로 감싸서 타임아웃 처리)
+    return new Promise<FullSyncResult>((resolve) => {
+      const timeout = setTimeout(() => {
+        this.fullSyncInProgress = false;
+        this.fullSyncResolver = null;
+        resolve({
+          success: false,
+          missingFromMe: { memoryChunkIds: [], conversationIds: [], settingKeys: [] },
+          missingFromThem: { memoryChunkIds: [], conversationIds: [], settingKeys: [] },
+          error: "Timeout: no response from other devices. Are they online?",
+        });
+      }, timeoutMs);
+
+      this.fullSyncResolver = { resolve, timeout };
+    });
+  }
+
+  /**
+   * 수동 전체 동기화 진행 중 여부
+   */
+  isFullSyncInProgress(): boolean {
+    return this.fullSyncInProgress;
+  }
+
+  /**
+   * 상대 기기의 full_sync_request 처리 (응답 측).
+   *
+   * 1. 상대 매니페스트와 내 매니페스트 비교
+   * 2. 내 매니페스트를 응답으로 전송
+   * 3. 상대에게 없는 엔티티를 전송
+   */
+  private async handleFullSyncRequest(
+    msg: Extract<BroadcastMessage, { type: "full_sync_request" }>,
+  ): Promise<void> {
+    if (!this.config.onBuildManifest || !this.config.onExportEntity) {
+      console.log("[Reconciler] Full sync request received but callbacks not configured, ignoring");
+      return;
+    }
+
+    console.log(`[Reconciler] Full sync request from ${msg.fromDeviceId}`);
+
+    // 내 매니페스트 생성
+    const myManifest = await this.config.onBuildManifest();
+
+    // 내 매니페스트를 응답으로 전송 (상대가 나한테 없는 것도 보내줄 수 있게)
+    this.broadcastChannel?.send({
+      type: "broadcast",
+      event: "sync_msg",
+      payload: {
+        type: "full_sync_manifest_response",
+        fromDeviceId: this.config.deviceId,
+        manifest: myManifest,
+      } satisfies BroadcastMessage,
+    });
+
+    // 상대에게 없는 엔티티 찾기
+    const theirManifest = msg.manifest;
+    const missingEntities = this.diffManifests(myManifest, theirManifest);
+    const totalToSend = missingEntities.length;
+
+    console.log(`[Reconciler] Sending ${totalToSend} missing entities to ${msg.fromDeviceId}`);
+
+    // 빠진 엔티티를 하나씩 전송
+    let sentCount = 0;
+    for (const { entityType, entityId } of missingEntities) {
+      const exported = await this.config.onExportEntity(entityType, entityId);
+      if (!exported) continue;
+
+      this.broadcastChannel?.send({
+        type: "broadcast",
+        event: "sync_msg",
+        payload: {
+          type: "full_sync_data",
+          fromDeviceId: this.config.deviceId,
+          entityType,
+          entityId,
+          encryptedPayload: exported.encryptedPayload,
+          iv: exported.iv,
+          authTag: exported.authTag,
+        } satisfies BroadcastMessage,
+      });
+
+      sentCount++;
+    }
+
+    // 전송 완료 알림
+    this.broadcastChannel?.send({
+      type: "broadcast",
+      event: "sync_msg",
+      payload: {
+        type: "full_sync_complete",
+        fromDeviceId: this.config.deviceId,
+        sentCount,
+      } satisfies BroadcastMessage,
+    });
+  }
+
+  /**
+   * 상대 기기의 매니페스트 응답 처리 (요청 측).
+   *
+   * 상대 매니페스트를 받아서 내가 가지고 있고 상대에게 없는 것도 전송.
+   */
+  private async handleFullSyncManifestResponse(
+    msg: Extract<BroadcastMessage, { type: "full_sync_manifest_response" }>,
+  ): Promise<void> {
+    if (!this.fullSyncInProgress || !this.config.onBuildManifest || !this.config.onExportEntity) {
+      return;
+    }
+
+    console.log(`[Reconciler] Received manifest from ${msg.fromDeviceId}`);
+
+    const myManifest = await this.config.onBuildManifest();
+    const theirManifest = msg.manifest;
+
+    // 내가 가지고 있고 상대에게 없는 것 → 내가 보내줌
+    const missingFromThem = this.diffManifests(myManifest, theirManifest);
+
+    // 상대가 가지고 있고 나한테 없는 것 → 상대가 보내줄 예정
+    const missingFromMe = this.diffManifests(theirManifest, myManifest);
+
+    this.fullSyncExpectedCount = missingFromMe.length;
+
+    console.log(
+      `[Reconciler] Diff: I'm missing ${missingFromMe.length}, they're missing ${missingFromThem.length}`,
+    );
+
+    // 내가 가진 것 중 상대에게 없는 것 전송
+    let sentCount = 0;
+    for (const { entityType, entityId } of missingFromThem) {
+      const exported = await this.config.onExportEntity(entityType, entityId);
+      if (!exported) continue;
+
+      this.broadcastChannel?.send({
+        type: "broadcast",
+        event: "sync_msg",
+        payload: {
+          type: "full_sync_data",
+          fromDeviceId: this.config.deviceId,
+          entityType,
+          entityId,
+          encryptedPayload: exported.encryptedPayload,
+          iv: exported.iv,
+          authTag: exported.authTag,
+        } satisfies BroadcastMessage,
+      });
+
+      sentCount++;
+    }
+
+    // 전송 완료 알림
+    this.broadcastChannel?.send({
+      type: "broadcast",
+      event: "sync_msg",
+      payload: {
+        type: "full_sync_complete",
+        fromDeviceId: this.config.deviceId,
+        sentCount,
+      } satisfies BroadcastMessage,
+    });
+
+    // 상대에서 받을 것이 없으면 바로 완료
+    if (missingFromMe.length === 0) {
+      this.resolveFullSync({
+        success: true,
+        missingFromMe: { memoryChunkIds: [], conversationIds: [], settingKeys: [] },
+        missingFromThem: this.groupEntities(missingFromThem),
+      });
+    }
+  }
+
+  /**
+   * 수동 전체 동기화 데이터 수신.
+   */
+  private async handleFullSyncData(
+    msg: Extract<BroadcastMessage, { type: "full_sync_data" }>,
+  ): Promise<void> {
+    if (!this.config.onImportEntity) return;
+
+    await this.config.onImportEntity(
+      msg.entityType,
+      msg.entityId,
+      msg.encryptedPayload,
+      msg.iv,
+      msg.authTag,
+    );
+
+    this.fullSyncReceivedCount++;
+    this.config.onFullSyncProgress?.(
+      "receiving",
+      this.fullSyncReceivedCount,
+      this.fullSyncExpectedCount || this.fullSyncReceivedCount,
+    );
+  }
+
+  /**
+   * 상대 기기의 전송 완료 알림 처리.
+   */
+  private handleFullSyncComplete(
+    msg: Extract<BroadcastMessage, { type: "full_sync_complete" }>,
+  ): void {
+    console.log(
+      `[Reconciler] Full sync complete from ${msg.fromDeviceId}: sent ${msg.sentCount} entities`,
+    );
+
+    if (this.fullSyncInProgress) {
+      this.config.onFullSyncProgress?.("complete", this.fullSyncReceivedCount, this.fullSyncReceivedCount);
+
+      this.resolveFullSync({
+        success: true,
+        missingFromMe: {
+          memoryChunkIds: [],
+          conversationIds: [],
+          settingKeys: [],
+        },
+        missingFromThem: {
+          memoryChunkIds: [],
+          conversationIds: [],
+          settingKeys: [],
+        },
+      });
+    }
+  }
+
+  /**
+   * Full sync Promise resolve + 정리
+   */
+  private resolveFullSync(result: FullSyncResult): void {
+    if (this.fullSyncResolver) {
+      clearTimeout(this.fullSyncResolver.timeout);
+      this.fullSyncResolver.resolve(result);
+      this.fullSyncResolver = null;
+    }
+    this.fullSyncInProgress = false;
+    this.fullSyncReceivedCount = 0;
+    this.fullSyncExpectedCount = 0;
+  }
+
+  // ============================================
+  // Manifest Helpers
+  // ============================================
+
+  /**
+   * 두 매니페스트 비교: source에 있고 target에 없는 엔티티 목록 반환.
+   */
+  private diffManifests(
+    source: FullSyncManifest,
+    target: FullSyncManifest,
+  ): Array<{ entityType: string; entityId: string }> {
+    const result: Array<{ entityType: string; entityId: string }> = [];
+
+    const targetMemorySet = new Set(target.memoryChunkIds);
+    for (const id of source.memoryChunkIds) {
+      if (!targetMemorySet.has(id)) {
+        result.push({ entityType: "memory_chunk", entityId: id });
+      }
+    }
+
+    const targetConvSet = new Set(target.conversationIds);
+    for (const id of source.conversationIds) {
+      if (!targetConvSet.has(id)) {
+        result.push({ entityType: "conversation", entityId: id });
+      }
+    }
+
+    const targetSettingSet = new Set(target.settingKeys);
+    for (const key of source.settingKeys) {
+      if (!targetSettingSet.has(key)) {
+        result.push({ entityType: "setting", entityId: key });
+      }
+    }
+
+    return result;
+  }
+
+  /**
+   * 엔티티 목록을 타입별로 그룹화
+   */
+  private groupEntities(
+    entities: Array<{ entityType: string; entityId: string }>,
+  ): { memoryChunkIds: string[]; conversationIds: string[]; settingKeys: string[] } {
+    const memoryChunkIds: string[] = [];
+    const conversationIds: string[] = [];
+    const settingKeys: string[] = [];
+
+    for (const { entityType, entityId } of entities) {
+      switch (entityType) {
+        case "memory_chunk": memoryChunkIds.push(entityId); break;
+        case "conversation": conversationIds.push(entityId); break;
+        case "setting": settingKeys.push(entityId); break;
+      }
+    }
+
+    return { memoryChunkIds, conversationIds, settingKeys };
+  }
+
+  // ============================================
   // Journal Management
   // ============================================
 
@@ -510,6 +939,7 @@ export class SyncReconciler {
       journalSize: this.journal.length,
       bufferedDeltas: bufferedCount,
       broadcastConnected: this.broadcastChannel !== null,
+      fullSyncInProgress: this.fullSyncInProgress,
     };
   }
 }
@@ -531,4 +961,5 @@ export interface ReconcilerStatus {
   journalSize: number;
   bufferedDeltas: number;
   broadcastConnected: boolean;
+  fullSyncInProgress: boolean;
 }

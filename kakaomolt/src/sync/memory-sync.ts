@@ -47,6 +47,8 @@ import {
 } from "../moltbot/index.js";
 import {
   SyncReconciler,
+  type FullSyncManifest,
+  type FullSyncResult,
   type ReconcilerState,
   type ReconcilerStatus,
   type SyncDelta,
@@ -82,6 +84,16 @@ export interface SyncConfig {
   onApplyReconciledDelta?: (delta: SyncDelta) => Promise<void>;
   /** Saved reconciler state from previous session (for journal restore) */
   savedReconcilerState?: ReconcilerState;
+  /** 수동 전체 동기화: 내 엔티티 ID 목록 생성 */
+  onBuildManifest?: () => Promise<FullSyncManifest>;
+  /** 수동 전체 동기화: 특정 엔티티를 암호화해서 내보내기 */
+  onExportEntity?: (entityType: string, entityId: string) => Promise<{
+    encryptedPayload: string; iv: string; authTag: string;
+  } | null>;
+  /** 수동 전체 동기화: 수신한 엔티티를 로컬에 저장 */
+  onImportEntity?: (entityType: string, entityId: string, encryptedPayload: string, iv: string, authTag: string) => Promise<void>;
+  /** 수동 전체 동기화: 진행 상황 콜백 */
+  onFullSyncProgress?: (phase: "comparing" | "receiving" | "sending" | "complete", current: number, total: number) => void;
 }
 
 export interface MemoryData {
@@ -369,6 +381,11 @@ export class MemorySyncManager {
           `[MemorySync] Seq gap from ${fromDevice}: expected ${expected}, got ${received}`,
         );
       },
+      // 수동 전체 동기화 콜백
+      onBuildManifest: this.config.onBuildManifest,
+      onExportEntity: this.config.onExportEntity,
+      onImportEntity: this.config.onImportEntity,
+      onFullSyncProgress: this.config.onFullSyncProgress,
     });
 
     // 이전 세션 상태 복원 (앱 재시작 후에도 저널 유지)
@@ -405,6 +422,38 @@ export class MemorySyncManager {
    */
   getReconcilerStatus(): ReconcilerStatus | null {
     return this.reconciler?.getStatus() ?? null;
+  }
+
+  /**
+   * 수동 전체 동기화 요청.
+   *
+   * 30일 이상 오프라인이었던 기기가 이용자의 "동기화" 버튼을 통해 호출.
+   * 상대 온라인 기기와 엔티티 ID 목록을 비교하여
+   * 서로에게 없는 데이터만 교환.
+   *
+   * 전제조건:
+   * - 상대 기기가 온라인이어야 함
+   * - SyncConfig에 onBuildManifest, onExportEntity, onImportEntity 콜백이 설정되어야 함
+   *
+   * @param timeoutMs 상대 기기 응답 대기 시간 (기본 60초)
+   */
+  async requestManualFullSync(timeoutMs?: number): Promise<FullSyncResult> {
+    if (!this.reconciler) {
+      return {
+        success: false,
+        missingFromMe: { memoryChunkIds: [], conversationIds: [], settingKeys: [] },
+        missingFromThem: { memoryChunkIds: [], conversationIds: [], settingKeys: [] },
+        error: "Reconciler not started. Initialize sync first.",
+      };
+    }
+    return this.reconciler.requestFullSync(timeoutMs);
+  }
+
+  /**
+   * 수동 전체 동기화 진행 중 여부
+   */
+  isManualFullSyncInProgress(): boolean {
+    return this.reconciler?.isFullSyncInProgress() ?? false;
   }
 
   /**
