@@ -64,7 +64,7 @@ export interface ReconcilerConfig {
   supabase: SupabaseClient;
   userId: string;
   deviceId: string;
-  /** 로컬 저널 보관 기간 (ms). 기본 7일 */
+  /** 로컬 저널 보관 기간 (ms). 기본 30일 */
   journalRetentionMs?: number;
   /** 델타 적용 콜백 */
   onApplyDelta?: (delta: SyncDelta) => Promise<void>;
@@ -76,7 +76,7 @@ export interface ReconcilerConfig {
 // Constants
 // ============================================
 
-const DEFAULT_JOURNAL_RETENTION_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
+const DEFAULT_JOURNAL_RETENTION_MS = 30 * 24 * 60 * 60 * 1000; // 30 days
 const MAX_BUFFER_SIZE = 500; // max out-of-order deltas to buffer per device
 
 // ============================================
@@ -446,7 +446,7 @@ export class SyncReconciler {
 
   /**
    * 저널에서 보관 기간이 지난 항목 삭제.
-   * 기본 7일 — 이 기간 내에 재연결하면 재전송 가능.
+   * 기본 30일 — 이 기간 내에 재연결하면 재전송 가능.
    */
   private pruneJournal(): void {
     const cutoff = Date.now() - this.journalRetentionMs;
