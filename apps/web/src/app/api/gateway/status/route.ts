@@ -30,9 +30,9 @@ export async function GET(request: NextRequest) {
   const gatewayUrl = process.env.MOA_GATEWAY_URL;
   if (!gatewayUrl) {
     // Gateway not configured, but OpenClaw agent might still be available
-    const openclawStatus = isOpenClawConfigured()
+    const openclawStatus: OpenClawStatus = isOpenClawConfigured()
       ? await getOpenClawStatus()
-      : ({ available: false, url: "" } as OpenClawStatus);
+      : { available: false, url: "" };
 
     return NextResponse.json({
       online: false,
@@ -66,9 +66,9 @@ export async function GET(request: NextRequest) {
     const data = await response.json() as Record<string, unknown>;
 
     // Check OpenClaw agent status in parallel
-    const openclawStatus = isOpenClawConfigured()
+    const openclawStatus: OpenClawStatus = isOpenClawConfigured()
       ? await getOpenClawStatus()
-      : ({ available: false, url: "" } as OpenClawStatus);
+      : { available: false, url: "" };
 
     return NextResponse.json({
       online: true,
