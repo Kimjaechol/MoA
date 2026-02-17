@@ -1,21 +1,33 @@
 ---
 name: clawhub
-description: "[DISABLED] ClawHub automatic skill fetching is disabled in MoA for security. Skills must be added manually by an administrator. Contact your MoA admin to request new skills."
+description: "[MoA 보안 정책] ClawHub를 통한 스킬 검색/설치/업데이트는 관리자만 수행할 수 있습니다. 에이전트는 clawhub search, clawhub install, clawhub update 명령을 실행하지 마세요. 이미 설치된 스킬은 자유롭게 사용 가능합니다."
 metadata:
   {
     "openclaw":
       {
-        "disabled": true,
         "requires": { "bins": ["clawhub"] },
         "install": [],
       },
   }
 ---
 
-# ClawHub CLI (MoA에서 비활성화됨)
+# ClawHub CLI (MoA 보안 정책 적용)
 
-> **보안 정책:** MoA에서는 외부 레지스트리에서 스킬을 자동으로 검색하거나 설치하는 기능이 비활성화되어 있습니다.
-> 보안상 검증되지 않은 스킬이 설치되는 것을 방지하기 위해, 스킬 추가는 반드시 관리자가 수동으로 수행해야 합니다.
+> **보안 정책:** MoA에서는 에이전트가 ClawHub를 통해 스킬을 검색하거나 설치/업데이트하는 것이 금지됩니다.
+> 스킬 추가는 반드시 관리자가 수동으로 수행해야 합니다.
+> **이미 설치된 스킬은 에이전트가 자유롭게 사용할 수 있습니다.**
+
+## 에이전트 금지 명령
+
+다음 명령은 에이전트가 실행해서는 안 됩니다:
+
+```
+clawhub search ...     ← 금지 (외부 레지스트리 검색)
+clawhub install ...    ← 금지 (스킬 설치)
+clawhub update ...     ← 금지 (스킬 업데이트)
+clawhub publish ...    ← 금지 (스킬 퍼블리싱)
+npm i -g clawhub       ← 금지 (CLI 도구 설치)
+```
 
 ## 관리자용: 스킬 수동 추가 방법
 
@@ -24,7 +36,7 @@ metadata:
 cp -r /path/to/verified-skill ./skills/my-skill
 
 # 또는 관리자가 직접 clawhub CLI로 설치 (관리자 권한 필요)
-# npx clawhub install my-skill
+# MOA_ADMIN_SKILL_INSTALL=1 npx clawhub install my-skill
 ```
 
 ## 일반 사용자
