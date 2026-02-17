@@ -35,14 +35,19 @@
 22. [결제 시스템 (Kakao Pay)](#22-결제-시스템)
 23. [Supabase 통합](#23-supabase-통합)
 24. [데이터베이스 스키마](#24-데이터베이스-스키마)
-25. [디바이스 보안 시스템](#25-디바이스-보안-시스템)
-26. [원격 잠금/삭제 (Remote Wipe)](#26-원격-잠금삭제-remote-wipe)
-27. [분실 기기 위치 추적](#27-분실-기기-위치-추적)
-28. [대화 기록 보호 (Chat History Guard)](#28-대화-기록-보호-chat-history-guard)
-29. [암호화 백업 볼트 (Encrypted Vault)](#29-암호화-백업-볼트-encrypted-vault)
-30. [명령 안전 가드 (Command Safety Guard)](#30-명령-안전-가드-command-safety-guard)
-31. [속도 제한 (3-Strike 시스템)](#31-속도-제한-3-strike-시스템)
-32. [보안 감사 시스템](#32-보안-감사-시스템)
+25. [2-Tier 로컬 SLM (모바일 확장)](#25-2-tier-로컬-slm-모바일-확장)
+26. [모델 자동 선택 (퍼지 매칭)](#26-모델-자동-선택-퍼지-매칭)
+27. [모델 폴백 체인](#27-모델-폴백-체인)
+28. [웹 앱 크레딧 시스템](#28-웹-앱-크레딧-시스템)
+29. [SLM Thinking 모드 제어](#29-slm-thinking-모드-제어)
+30. [디바이스 바인딩 암호화](#30-디바이스-바인딩-암호화)
+31. [원격 잠금/삭제 (Remote Wipe)](#31-원격-잠금삭제-remote-wipe)
+32. [분실 기기 위치 추적](#32-분실-기기-위치-추적)
+33. [대화 기록 보호 (Chat History Guard)](#33-대화-기록-보호-chat-history-guard)
+34. [암호화 백업 볼트 (Encrypted Vault)](#34-암호화-백업-볼트-encrypted-vault)
+35. [명령 안전 가드 (Command Safety Guard)](#35-명령-안전-가드-command-safety-guard)
+36. [속도 제한 (3-Strike 시스템)](#36-속도-제한-3-strike-시스템)
+37. [보안 감사 시스템](#37-보안-감사-시스템)
 
 ---
 
@@ -1595,7 +1600,182 @@ LAWCALL_DEFAULT_URL=       # 법률 상담 서비스 URL
 
 ---
 
-## 25. 디바이스 보안 시스템
+## 25. 2-Tier 로컬 SLM (모바일 확장)
+
+**파일:** `extensions/kakao/src/slm/`
+**목적:** 모바일 환경에서 오프라인 성능 향상을 위한 2단계 로컬 모델
+
+### 25.1 아키텍처
+
+Kakao 확장에서는 기본 SLM(0.6B) 외에 더 큰 로컬 모델(4B)을 추가하여 2-Tier 로컬 처리:
+
+```
+Tier 1: Qwen3-0.6B (항상 실행)
+  → 빠른 의도 분류, 간단 응답, Heartbeat
+  → ~400MB, 응답 < 100ms
+
+Tier 2: Qwen3-4B (온디맨드 로드)
+  → 오프라인에서 심층 추론, 복잡한 질문 처리
+  → ~2.5GB, 응답 < 2s
+
+Tier 3: Cloud (온라인 시)
+  → 최고 품질 응답
+```
+
+### 25.2 차이점 (기본 vs 모바일)
+
+| 항목 | 기본 (src/slm) | 모바일 (extensions/kakao/src/slm) |
+|------|--------------|--------------------------------|
+| Tier 1 | Qwen3-0.6B | Qwen3-0.6B |
+| Tier 2 | **없음** (바로 클라우드) | Qwen3-4B (오프라인 추론) |
+| Tier 3 | 클라우드 | 클라우드 |
+| 오프라인 능력 | 의도분류만 | 의도분류 + 심층 추론 |
+
+---
+
+## 26. 모델 자동 선택 (퍼지 매칭)
+
+**파일:** `src/auto-reply/reply/model-selection.ts`
+**목적:** 사용자가 모델명을 부정확하게 입력해도 가장 적합한 모델 자동 매칭
+
+### 26.1 매칭 알고리즘
+
+레벤슈타인 거리 기반 퍼지 매칭 (최대 거리 3):
+
+```rust
+struct ModelMatchScore {
+    model_id: String,
+    score: u32,
+}
+
+// 점수 체계:
+// 정확한 매칭: 220점
+// 프래그먼트로 시작: 140점
+// 프래그먼트 포함: 110점
+// 별칭 정확 매칭: 140점 (예: "claude" → "anthropic/claude-opus-4-6")
+// 시스템 기본 모델 보너스: +20점
+// 변형 토큰 패널티: -점수 (mini, flash 등 불일치 접미사)
+```
+
+### 26.2 모델 허용 목록
+
+에이전트별 허용 목록 설정 가능:
+
+```rust
+// agents.defaults.models에서 허용된 모델만 선택 가능
+// 허용 목록에 없는 모델은 매칭 불가
+// 스레드 내에서는 부모 세션의 모델 상속
+```
+
+---
+
+## 27. 모델 폴백 체인
+
+**파일:** `src/agents/model-fallback.ts`
+**목적:** 프라이머리 모델 실패 시 자동으로 폴백 모델 시도
+
+### 27.1 폴백 순서
+
+```
+1. 프라이머리 모델 (사용자 선택)
+   ↓ (실패 시)
+2. 설정된 폴백 목록 (agents.defaults.model.fallbacks)
+   ↓ (모두 실패 시)
+3. 시스템 기본 모델 (Claude Opus 4.5)
+   ↓ (실패 시)
+4. 에러 반환 (시도 로그 포함)
+```
+
+### 27.2 쿨다운 관리
+
+프로바이더별 속도 제한 감지 시 쿨다운:
+
+```rust
+struct AuthProfile {
+    provider: String,
+    api_key: String,
+    cooldown_until: Option<DateTime>,
+    failure_count: u32,
+}
+
+// 라운드 로빈 프로필 회전: 하나가 쿨다운이면 다음 프로필 시도
+```
+
+---
+
+## 28. 웹 앱 크레딧 시스템
+
+**파일:** `apps/web/src/lib/credits.ts`
+**목적:** 웹 앱에서의 모델별 크레딧 비용 및 플랜 관리
+
+### 28.1 모델별 크레딧 비용 (1회 요청)
+
+| 티어 | 모델 | 크레딧 |
+|------|------|--------|
+| **무료** | Groq Kimi K2, Groq Llama 3.3 | 0 |
+| **저가** | Gemini Flash, GPT-4o Mini, DeepSeek Chat | 1~2 |
+| **중가** | Claude Haiku 4.5, Grok-3 Mini, Gemini Pro | 4~8 |
+| **고가** | GPT-4o, Grok-3, Claude Sonnet | 8~22 |
+| **프리미엄** | GPT-5, Claude Opus 4.6 | 25~100 |
+
+### 28.2 구독 플랜
+
+| 플랜 | 월 크레딧 | 가격 |
+|------|----------|------|
+| Free | 100 | 무료 |
+| Basic | 3,000 | - |
+| Pro | 15,000 | - |
+
+### 28.3 크레딧 충전 패키지 (KRW)
+
+| 패키지 | 크레딧 | 보너스 | 가격 |
+|--------|--------|--------|------|
+| Basic | 5,000 | 0 | 5,000원 |
+| Standard | 10,000 | +2,000 | 10,000원 |
+| Premium | 20,000 | +10,000 | 20,000원 |
+| Pro | 50,000 | +10,000 | 50,000원 |
+
+---
+
+## 29. SLM Thinking 모드 제어
+
+**파일:** `src/slm/slm-router.ts`
+**목적:** 모델별 추론(thinking) 깊이 제어
+
+### 29.1 Thinking 레벨
+
+```rust
+enum ThinkingLevel {
+    Off,      // 추론 없음
+    Minimal,  // 최소 추론
+    Low,      // 낮은 추론
+    Medium,   // 보통 추론
+    High,     // 깊은 추론
+    XHigh,    // 최대 추론
+}
+```
+
+### 29.2 모델별 Thinking 지원
+
+| 모델 | Thinking 지원 |
+|------|-------------|
+| Claude (Anthropic) | 전체 지원 (budget 토큰 설정 가능) |
+| Gemini (Google) | Extended thinking 지원 |
+| Qwen3 (로컬 SLM) | `/no_think` 플래그로 비활성화 |
+| Legacy 모델 | 미지원 |
+
+### 29.3 SLM 프롬프트별 Temperature
+
+| 프롬프트 | Temperature | 비고 |
+|---------|------------|------|
+| 라우팅 (의도분류) | **0.1** | 결정적 |
+| 간단 응답 | **0.7** | 균형 |
+| Heartbeat | **0.1** | 결정적 |
+| 위임 준비 | **0.1** | 결정적 |
+
+---
+
+## 30. 디바이스 바인딩 암호화
 
 **파일:** `extensions/kakao/src/security/device-security.ts`
 **목적:** 기기별 데이터베이스 암호화 및 기기 바인딩
@@ -1651,7 +1831,7 @@ fn secure_delete(path: &Path) -> Result<()> {
 
 ---
 
-## 26. 원격 잠금/삭제 (Remote Wipe)
+## 31. 원격 잠금/삭제 (Remote Wipe)
 
 **파일:** `extensions/kakao/src/security/remote-wipe.ts`
 **목적:** 기기 분실/도난 시 원격으로 데이터 삭제
@@ -1700,7 +1880,7 @@ enum WipeScope {
 
 ---
 
-## 27. 분실 기기 위치 추적
+## 32. 분실 기기 위치 추적
 
 **파일:** `extensions/kakao/src/security/device-location-tracker.ts`
 **목적:** 분실/도난 기기의 GPS 위치를 추적
@@ -1752,7 +1932,7 @@ fn haversine_distance(lat1: f64, lon1: f64, lat2: f64, lon2: f64) -> f64 {
 
 ---
 
-## 28. 대화 기록 보호 (Chat History Guard)
+## 33. 대화 기록 보호 (Chat History Guard)
 
 **파일:** `extensions/kakao/src/security/chat-history-guard.ts`
 **목적:** 대화 기록의 자동 삭제, 데이터 마스킹, 분실 잠금
@@ -1794,7 +1974,7 @@ struct MaskingResult {
 
 ---
 
-## 29. 암호화 백업 볼트 (Encrypted Vault)
+## 34. 암호화 백업 볼트 (Encrypted Vault)
 
 **파일:** `extensions/kakao/src/safety/encrypted-vault.ts`
 **목적:** Time Machine 방식의 자동 회전 암호화 백업
@@ -1838,7 +2018,7 @@ fn generate_recovery_key() -> Vec<String> {
 
 ---
 
-## 30. 명령 안전 가드 (Command Safety Guard)
+## 35. 명령 안전 가드 (Command Safety Guard)
 
 **파일:** `extensions/kakao/src/relay/safety-guard.ts`
 **목적:** 쉘 명령 실행 전 위험도 분석 및 차단
@@ -1874,7 +2054,7 @@ fn sanitize_input(input: &str) -> String {
 
 ---
 
-## 31. 속도 제한 (3-Strike 시스템)
+## 36. 속도 제한 (3-Strike 시스템)
 
 **파일:** `apps/gateway/src/security/rate-limiter.ts`
 **목적:** 무차별 대입 공격 방지를 위한 에스컬레이션 속도 제한
@@ -1903,7 +2083,7 @@ struct RateLimiter {
 
 ---
 
-## 32. 보안 감사 시스템
+## 37. 보안 감사 시스템
 
 **파일:** `src/security/audit.ts`, `apps/web/src/lib/security.ts`
 **목적:** 시스템 전반의 보안 상태 점검 및 이벤트 로깅
@@ -2056,4 +2236,4 @@ Phase 9 - 음성:
 
 *이 문서는 MoA 저장소의 OpenClaw 대비 모든 개선사항을 기반으로 작성되었습니다.*
 *ZeroClaw(Rust) 마이그레이션 시 이 명세서의 각 섹션을 순서대로 구현하면 됩니다.*
-*총 32개 섹션, 9단계 마이그레이션 체크리스트를 포함합니다.*
+*총 37개 섹션, 9단계 마이그레이션 체크리스트를 포함합니다.*
