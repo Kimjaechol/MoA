@@ -327,11 +327,14 @@ CREATE TABLE IF NOT EXISTS conversation_sync (
   source_device_id TEXT NOT NULL,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  -- Ephemeral mode: auto-expire after TTL (NULL = persistent/no expiry)
+  expires_at TIMESTAMPTZ DEFAULT NULL,
 
   UNIQUE(user_id, session_id)
 );
 
 CREATE INDEX IF NOT EXISTS idx_conversation_sync_user_id ON conversation_sync(user_id);
+CREATE INDEX IF NOT EXISTS idx_conversation_sync_expires ON conversation_sync(expires_at) WHERE expires_at IS NOT NULL;
 
 -- Key derivation salts (per user, for PBKDF2)
 CREATE TABLE IF NOT EXISTS user_key_salts (
@@ -357,15 +360,20 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
--- Clean up expired sync data
+-- Clean up expired sync data (memory_sync + conversation_sync)
 CREATE OR REPLACE FUNCTION cleanup_expired_sync()
 RETURNS INTEGER AS $$
 DECLARE
-  deleted_count INTEGER;
+  mem_deleted INTEGER;
+  conv_deleted INTEGER;
 BEGIN
-  DELETE FROM memory_sync WHERE expires_at < NOW();
-  GET DIAGNOSTICS deleted_count = ROW_COUNT;
-  RETURN deleted_count;
+  DELETE FROM memory_sync WHERE expires_at IS NOT NULL AND expires_at < NOW();
+  GET DIAGNOSTICS mem_deleted = ROW_COUNT;
+
+  DELETE FROM conversation_sync WHERE expires_at IS NOT NULL AND expires_at < NOW();
+  GET DIAGNOSTICS conv_deleted = ROW_COUNT;
+
+  RETURN mem_deleted + conv_deleted;
 END;
 $$ LANGUAGE plpgsql;
 
@@ -476,9 +484,25 @@ CREATE POLICY "Service role full access on user_key_salts"
   ON user_key_salts FOR ALL USING (auth.role() = 'service_role');
 
 -- ============================================
--- Scheduled cleanup (run via pg_cron or external cron)
+-- Scheduled cleanup for ephemeral sync data
 -- ============================================
--- SELECT cron.schedule('cleanup-expired-sync', '*/30 * * * *', 'SELECT cleanup_expired_sync()');
+-- Enable pg_cron if available:
+-- SELECT cron.schedule('cleanup-expired-sync', '*/5 * * * *', 'SELECT cleanup_expired_sync()');
+--
+-- Ephemeral mode (syncMode="ephemeral"):
+-- uploads set expires_at = now + 5min; cleanup runs every 5 minutes.
+-- This ensures server retains ZERO user data after TTL.
+--
+-- Persistent mode (syncMode="persistent"):
+-- uploads set expires_at = NULL; cleanup has no effect on these rows.
+
+-- ============================================
+-- Enable Realtime for device-to-device push
+-- ============================================
+-- Supabase Realtime listens for INSERT on memory_sync and memory_deltas.
+-- Ephemeral mode relies on this for instant delivery before TTL expires.
+ALTER PUBLICATION supabase_realtime ADD TABLE memory_sync;
+ALTER PUBLICATION supabase_realtime ADD TABLE memory_deltas;
 
 -- ============================================
 -- Sample Data (Optional - for testing)

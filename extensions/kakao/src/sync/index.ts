@@ -27,6 +27,8 @@ export {
 // Memory sync manager
 export {
   createMemorySyncManager,
+  createEphemeralSyncManager,
+  createPersistentSyncManager,
   MemorySyncManager,
   type ConversationData,
   type ConversationMessage,
@@ -34,7 +36,9 @@ export {
   type MemoryChunk,
   type MemoryData,
   type MemoryMetadata,
+  type RealtimeDeltaPayload,
   type SyncConfig,
+  type SyncMode,
   type SyncResult,
   type SyncStatus,
 } from "./memory-sync.js";

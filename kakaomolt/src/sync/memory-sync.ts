@@ -4,15 +4,28 @@
  * Handles E2E encrypted memory synchronization between devices.
  * All data is encrypted client-side before upload - server stores only ciphertext.
  *
- * Sync flow:
- * 1. User generates encryption key (from passphrase or random)
- * 2. Client encrypts local memory data
- * 3. Encrypted data uploaded to Supabase
- * 4. Other devices download and decrypt with same key
- * 5. Incremental sync for efficiency (delta changes)
+ * Two sync modes:
+ *
+ * 1. "persistent" (백업 모드) — opt-in, 희망하는 이용자만
+ *    - Encrypted data stays on Supabase permanently
+ *    - Works as both sync AND backup
+ *    - Other devices can download at any time (even days later)
+ *
+ * 2. "ephemeral" (동기화 전용) — 기본값
+ *    - Server acts as temporary relay only
+ *    - Data auto-expires after short TTL (default: 5 minutes)
+ *    - Supabase Realtime pushes deltas to online devices immediately
+ *    - After TTL, server has zero user data
+ *    - If the other device is offline, data expires and must be re-synced
+ *
+ * Sync flow (ephemeral):
+ * 1. Device A encrypts delta → upload with expires_at = now + 5min
+ * 2. Supabase Realtime notifies Device B instantly
+ * 3. Device B downloads + decrypts → applies delta
+ * 4. Server auto-deletes after TTL (even if Device B missed it)
  */
 
-import type { SupabaseClient } from "@supabase/supabase-js";
+import type { SupabaseClient, RealtimeChannel } from "@supabase/supabase-js";
 import type { Database } from "../supabase.js";
 import {
   compressAndEncrypt,
@@ -36,6 +49,16 @@ import {
 // Max chunk size for large data (4MB base64 ≈ 3MB binary)
 const MAX_CHUNK_SIZE = 4 * 1024 * 1024;
 
+// Ephemeral mode default TTL (5 minutes)
+const EPHEMERAL_TTL_MS = 5 * 60 * 1000;
+
+/**
+ * Sync mode:
+ * - "ephemeral": server is relay only, data auto-expires (기본값, 프라이버시 우선)
+ * - "persistent": data stays on server as backup (opt-in)
+ */
+export type SyncMode = "ephemeral" | "persistent";
+
 export interface SyncConfig {
   supabase: SupabaseClient<Database>;
   userId: string; // Supabase user UUID
@@ -43,6 +66,12 @@ export interface SyncConfig {
   deviceId: string;
   deviceName?: string;
   deviceType?: "mobile" | "desktop" | "tablet" | "unknown";
+  /** Default: "ephemeral" (동기화 전용, 서버에 데이터 미보관) */
+  syncMode?: SyncMode;
+  /** Ephemeral TTL in milliseconds (default: 5 minutes) */
+  ephemeralTtlMs?: number;
+  /** Callback: when another device pushes a delta via Realtime */
+  onRealtimeDelta?: (delta: RealtimeDeltaPayload) => Promise<void>;
 }
 
 export interface MemoryData {
@@ -82,12 +111,22 @@ export interface ConversationMessage {
   toolCalls?: unknown[];
 }
 
+export interface RealtimeDeltaPayload {
+  sourceDeviceId: string;
+  deltaType: "add" | "update" | "delete";
+  entityType: "memory_chunk" | "conversation" | "setting";
+  version: number;
+  timestamp: string;
+}
+
 export interface SyncStatus {
   lastSyncAt: string | null;
   localVersion: number;
   remoteVersion: number;
   pendingChanges: number;
   devices: DeviceInfo[];
+  syncMode: SyncMode;
+  realtimeConnected: boolean;
 }
 
 export interface DeviceInfo {
@@ -108,14 +147,31 @@ export interface SyncResult {
  * Memory Sync Manager
  *
  * Manages E2E encrypted memory synchronization.
+ *
+ * In ephemeral mode (default):
+ * - All uploads set expires_at = now + TTL
+ * - Supabase Realtime subscription pushes deltas to other devices
+ * - Server data self-destructs after TTL
+ * - No persistent backup on server
+ *
+ * In persistent mode (opt-in):
+ * - Data stays on server indefinitely (encrypted)
+ * - Acts as both sync and backup
  */
 export class MemorySyncManager {
   private config: SyncConfig;
   private encryptionKey: Buffer | null = null;
   private keySalt: string | null = null;
+  private realtimeChannel: RealtimeChannel | null = null;
+  private realtimeConnected = false;
+
+  readonly syncMode: SyncMode;
+  readonly ephemeralTtlMs: number;
 
   constructor(config: SyncConfig) {
     this.config = config;
+    this.syncMode = config.syncMode ?? "ephemeral";
+    this.ephemeralTtlMs = config.ephemeralTtlMs ?? EPHEMERAL_TTL_MS;
   }
 
   /**
@@ -151,6 +207,12 @@ export class MemorySyncManager {
     // Register device
     await this.registerDevice();
 
+    // In ephemeral mode, start Realtime subscription for instant push
+    if (this.syncMode === "ephemeral") {
+      await this.subscribeToRealtime();
+      console.log("[MemorySync] Ephemeral mode: Realtime subscription started");
+    }
+
     return {
       success: true,
       isNewUser,
@@ -176,8 +238,141 @@ export class MemorySyncManager {
     );
   }
 
+  // ============================================
+  // Realtime Subscription (ephemeral mode)
+  // ============================================
+
+  /**
+   * Subscribe to Supabase Realtime for instant device-to-device sync.
+   *
+   * When another device uploads a delta, this device receives a push
+   * notification via WebSocket — no polling needed.
+   */
+  async subscribeToRealtime(): Promise<void> {
+    if (this.realtimeChannel) return; // already subscribed
+
+    const { supabase, userId, deviceId } = this.config;
+
+    this.realtimeChannel = supabase
+      .channel(`memory-sync:${userId}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "INSERT",
+          schema: "public",
+          table: "memory_deltas",
+          filter: `user_id=eq.${userId}`,
+        },
+        async (payload) => {
+          const row = payload.new as {
+            source_device_id: string;
+            delta_type: string;
+            entity_type: string;
+            base_version: number;
+            created_at: string;
+          };
+
+          // Ignore our own changes
+          if (row.source_device_id === deviceId) return;
+
+          console.log(
+            `[MemorySync] Realtime delta from ${row.source_device_id}: ${row.delta_type} ${row.entity_type}`,
+          );
+
+          this.config.onRealtimeDelta?.({
+            sourceDeviceId: row.source_device_id,
+            deltaType: row.delta_type as "add" | "update" | "delete",
+            entityType: row.entity_type as "memory_chunk" | "conversation" | "setting",
+            version: row.base_version,
+            timestamp: row.created_at,
+          });
+        },
+      )
+      .on(
+        "postgres_changes",
+        {
+          event: "INSERT",
+          schema: "public",
+          table: "memory_sync",
+          filter: `user_id=eq.${userId}`,
+        },
+        async (payload) => {
+          const row = payload.new as { source_device_id: string };
+          if (row.source_device_id === deviceId) return;
+
+          console.log(`[MemorySync] Realtime full sync push from ${row.source_device_id}`);
+
+          this.config.onRealtimeDelta?.({
+            sourceDeviceId: row.source_device_id,
+            deltaType: "update",
+            entityType: "memory_chunk",
+            version: 0,
+            timestamp: new Date().toISOString(),
+          });
+        },
+      )
+      .subscribe((status) => {
+        this.realtimeConnected = status === "SUBSCRIBED";
+        console.log(`[MemorySync] Realtime status: ${status}`);
+      });
+  }
+
+  /**
+   * Unsubscribe from Realtime
+   */
+  async unsubscribeFromRealtime(): Promise<void> {
+    if (this.realtimeChannel) {
+      await this.config.supabase.removeChannel(this.realtimeChannel);
+      this.realtimeChannel = null;
+      this.realtimeConnected = false;
+    }
+  }
+
+  // ============================================
+  // Ephemeral TTL Helpers
+  // ============================================
+
+  /**
+   * Calculate expires_at for ephemeral mode.
+   * Returns null for persistent mode (no expiry).
+   */
+  private getExpiresAt(): string | null {
+    if (this.syncMode === "persistent") return null;
+    return new Date(Date.now() + this.ephemeralTtlMs).toISOString();
+  }
+
+  /**
+   * Clean up expired ephemeral data (server-side cron is preferred,
+   * but this is a client-side fallback for safety).
+   */
+  async cleanupExpiredData(): Promise<number> {
+    if (this.syncMode === "persistent") return 0;
+
+    const { supabase, userId } = this.config;
+    const now = new Date().toISOString();
+
+    const { count } = await supabase
+      .from("memory_sync")
+      .delete({ count: "exact" })
+      .eq("user_id", userId)
+      .lt("expires_at", now);
+
+    if (count && count > 0) {
+      console.log(`[MemorySync] Cleaned up ${count} expired ephemeral entries`);
+    }
+
+    return count ?? 0;
+  }
+
+  // ============================================
+  // Upload / Download
+  // ============================================
+
   /**
    * Upload memory data to cloud (E2E encrypted)
+   *
+   * In ephemeral mode: sets expires_at so server auto-deletes after TTL.
+   * In persistent mode: no expiry, data stays as backup.
    */
   async uploadMemory(memoryData: MemoryData): Promise<SyncResult> {
     if (!this.encryptionKey) {
@@ -206,6 +401,7 @@ export class MemorySyncManager {
           p_source_device_id: deviceId,
           p_chunk_index: 0,
           p_total_chunks: 1,
+          p_expires_at: this.getExpiresAt(),
         });
 
         if (error) {
@@ -239,6 +435,7 @@ export class MemorySyncManager {
             p_source_device_id: deviceId,
             p_chunk_index: i,
             p_total_chunks: totalChunks,
+            p_expires_at: this.getExpiresAt(),
           });
 
           if (error) {
@@ -271,6 +468,11 @@ export class MemorySyncManager {
     }
 
     const { supabase, userId } = this.config;
+
+    // In ephemeral mode, clean up expired entries first
+    if (this.syncMode === "ephemeral") {
+      await this.cleanupExpiredData();
+    }
 
     try {
       const { data, error } = await supabase.rpc("download_sync_data", {
@@ -338,6 +540,7 @@ export class MemorySyncManager {
 
       const newVersion = (existing?.version ?? 0) + 1;
 
+      const expiresAt = this.getExpiresAt();
       const { error } = await supabase.from("conversation_sync").upsert(
         {
           user_id: userId,
@@ -349,6 +552,7 @@ export class MemorySyncManager {
           version: newVersion,
           source_device_id: deviceId,
           updated_at: new Date().toISOString(),
+          ...(expiresAt ? { expires_at: expiresAt } : {}),
         },
         { onConflict: "user_id,session_id" },
       );
@@ -456,6 +660,8 @@ export class MemorySyncManager {
           deviceType: d.device_type,
           lastSyncAt: d.last_sync_at,
         })) ?? [],
+      syncMode: this.syncMode,
+      realtimeConnected: this.realtimeConnected,
     };
   }
 
@@ -466,6 +672,9 @@ export class MemorySyncManager {
     const { supabase, userId } = this.config;
 
     try {
+      // Unsubscribe from Realtime first
+      await this.unsubscribeFromRealtime();
+
       await Promise.all([
         supabase.from("memory_sync").delete().eq("user_id", userId),
         supabase.from("memory_deltas").delete().eq("user_id", userId),
@@ -477,6 +686,22 @@ export class MemorySyncManager {
       return { success: true };
     } catch (err) {
       return { success: false, error: err instanceof Error ? err.message : "Unknown error" };
+    }
+  }
+
+  /**
+   * Switch sync mode at runtime.
+   *
+   * ephemeral → persistent: keep existing data, remove expiry on future uploads
+   * persistent → ephemeral: existing data stays, new uploads get TTL
+   */
+  async switchSyncMode(newMode: SyncMode): Promise<void> {
+    (this as { syncMode: SyncMode }).syncMode = newMode;
+    console.log(`[MemorySync] Switched to ${newMode} mode`);
+
+    if (newMode === "ephemeral") {
+      // Start Realtime for instant delivery (ephemeral needs it)
+      await this.subscribeToRealtime();
     }
   }
 
@@ -731,6 +956,26 @@ export class MemorySyncManager {
 // Factory function
 export function createMemorySyncManager(config: SyncConfig): MemorySyncManager {
   return new MemorySyncManager(config);
+}
+
+/**
+ * Create with ephemeral mode (default, privacy-first).
+ * Server is relay only — data auto-expires after TTL.
+ */
+export function createEphemeralSyncManager(
+  config: Omit<SyncConfig, "syncMode">,
+): MemorySyncManager {
+  return new MemorySyncManager({ ...config, syncMode: "ephemeral" });
+}
+
+/**
+ * Create with persistent mode (opt-in backup).
+ * Data stays on server as encrypted backup.
+ */
+export function createPersistentSyncManager(
+  config: Omit<SyncConfig, "syncMode">,
+): MemorySyncManager {
+  return new MemorySyncManager({ ...config, syncMode: "persistent" });
 }
 
 // Re-export Moltbot types
