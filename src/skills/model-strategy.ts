@@ -100,8 +100,8 @@ export const PROVIDER_MODELS: Record<
  * 역할별 배정 (API 키 미입력 시):
  *
  * [메인 에이전트]
- * - 최고성능 전략: Claude Opus 4.6 — $15/$75 per 1M tokens (200K+ 시 $10/$37.5)
- * - 가성비 전략: Gemini 3.0 Pro — $2.5/$12 per 1M tokens (200K+ 시 $4/$18)
+ * - 최고성능 전략: Claude Opus 4.6 — $5/$25 per 1M tokens (200K+ 시 $10/$37.5)
+ * - 가성비 전략: Gemini 3.0 Pro — ~$2~2.5/$12 per 1M tokens (200K+ 시 $4/$18)
  *
  * [서브 에이전트 / 요약 / 압축]
  * - 항상: Gemini 3.0 Flash — $0.15/$0.60 per 1M tokens

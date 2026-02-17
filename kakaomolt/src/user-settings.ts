@@ -78,7 +78,7 @@ export const PROVIDERS: Record<LLMProvider, ProviderInfo> = {
     models: [
       { id: "claude-haiku-4-5", name: "Claude Haiku 4.5", provider: "anthropic", inputPrice: 800, outputPrice: 4000, contextWindow: 200000, recommended: true },
       { id: "claude-sonnet-4-20250514", name: "Claude Sonnet 4", provider: "anthropic", inputPrice: 3000, outputPrice: 15000, contextWindow: 200000 },
-      { id: "claude-opus-4-6", name: "Claude Opus 4.6", provider: "anthropic", inputPrice: 21750, outputPrice: 108750, contextWindow: 1000000 },
+      { id: "claude-opus-4-6", name: "Claude Opus 4.6", provider: "anthropic", inputPrice: 5000, outputPrice: 25000, contextWindow: 1000000 },
     ],
   },
   openai: {
@@ -106,7 +106,7 @@ export const PROVIDERS: Record<LLMProvider, ProviderInfo> = {
     freeTier: true,
     models: [
       { id: "gemini-3-flash", name: "Gemini 3.0 Flash", provider: "google", inputPrice: 218, outputPrice: 870, contextWindow: 1000000, recommended: true },
-      { id: "gemini-3-pro", name: "Gemini 3.0 Pro", provider: "google", inputPrice: 3625, outputPrice: 17400, contextWindow: 1000000 },
+      { id: "gemini-3-pro", name: "Gemini 3.0 Pro", provider: "google", inputPrice: 2500, outputPrice: 12000, contextWindow: 1000000 },
       { id: "gemini-2.0-flash", name: "Gemini 2.0 Flash", provider: "google", inputPrice: 0, outputPrice: 0, contextWindow: 1000000, free: true },
       { id: "gemini-1.5-pro", name: "Gemini 1.5 Pro", provider: "google", inputPrice: 1250, outputPrice: 5000, contextWindow: 2000000 },
     ],
@@ -184,12 +184,12 @@ export const FREE_FALLBACK_CHAIN: { provider: LLMProvider; model: string; tier: 
  *
  * 정렬 기준: 성능/가격 비율 (가성비)
  * - Gemini 3.0 Flash: 서브 에이전트/요약용 최적 (입력 218원/1M)
- * - Gemini 3.0 Pro: 메인 에이전트 가성비 최적 (입력 3,625원/1M)
+ * - Gemini 3.0 Pro: 메인 에이전트 가성비 최적 (입력 2,500원/1M)
  * - GPT-4o Mini: 괜찮은 성능, 매우 저렴 (입력 150원/1M)
  * - Claude Haiku 4.5: 빠르고 저렴 (입력 800원/1M)
  * - GPT-4o: 높은 성능, 중간 가격 (입력 2,500원/1M)
  * - Claude Sonnet 4: 높은 성능, 중간 가격 (입력 3,000원/1M)
- * - Claude Opus 4.6: 최고 성능, 고가 (입력 21,750원/1M)
+ * - Claude Opus 4.6: 최고 성능, 고가 (입력 5,000원/1M)
  */
 export const PAID_FALLBACK_CHAIN: { provider: LLMProvider; model: string; tier: string }[] = [
   { provider: "google", model: "gemini-3-flash", tier: "유료 가성비 (서브)" },

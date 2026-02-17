@@ -38,12 +38,11 @@ interface ModelPricingTier {
 
 const MODEL_PRICING: Record<string, ModelPricingTier> = {
   // ── Claude models (Anthropic) ──────────────────────────────────
-  // Claude Opus 4.6: $15/$75 base → $10/$37.5 per 1M (200K+ 시 인상 반영)
-  // 참고: 200K 초과 시 입력 $10, 출력 $37.5 → 실제로는 기본보다 *낮아지는* 게 아니라
-  //       Anthropic 장문은 입력 단가가 기본보다 약간 낮아지지만 출력은 동일 or 더 높을 수 있음.
-  //       Reddit 소스: 200K+ 시 입력 $10/1M, 출력 $37.5/1M
-  "claude-opus-4-6": { input: 21750, output: 108750, premiumInput: 14500, premiumOutput: 54375 },
-  "claude-opus-4-5-20251101": { input: 21750, output: 108750, premiumInput: 14500, premiumOutput: 54375 },
+  // Claude Opus 4.6 (2026-02 공식가):
+  //   기본 구간: 입력 $5/1M, 출력 $25/1M
+  //   200K+ 장문: 입력 $10/1M, 출력 $37.5/1M
+  "claude-opus-4-6": { input: 5000, output: 25000, premiumInput: 10000, premiumOutput: 37500 },
+  "claude-opus-4-5-20251101": { input: 5000, output: 25000, premiumInput: 10000, premiumOutput: 37500 },
   // Claude Sonnet 4
   "claude-sonnet-4-20250514": { input: 3000, output: 15000 },
   "claude-3-5-sonnet-20241022": { input: 3000, output: 15000 },
@@ -53,8 +52,12 @@ const MODEL_PRICING: Record<string, ModelPricingTier> = {
   "claude-3-haiku-20240307": { input: 250, output: 1250 },
 
   // ── Gemini models (Google) ─────────────────────────────────────
-  // Gemini 3.0 Pro: $2.5/$12 base → 200K+ 시 $4/$18
-  "gemini-3-pro": { input: 3625, output: 17400, premiumInput: 5800, premiumOutput: 26100 },
+  // Gemini 3.0 Pro (2026-02 공식가):
+  //   기본 구간: 입력 ~$2~2.5/1M, 출력 ~$12/1M (공식 페이지 기준 $12에 근접)
+  //   200K+ 장문: 입력 $4/1M, 출력 $18/1M
+  //   → Gemini Pro 입력이 Opus의 약 40~50%, 출력은 약 20~50% 수준
+  //   → 200K 초과 시 둘 다 인상되지만 Opus가 여전히 약 2배 비쌈
+  "gemini-3-pro": { input: 2500, output: 12000, premiumInput: 4000, premiumOutput: 18000 },
   // Gemini 3.0 Flash: $0.15/$0.60 (프리미엄 구간 없음, 1M context)
   "gemini-3-flash": { input: 218, output: 870 },
   // Legacy Gemini
@@ -518,8 +521,8 @@ export function getPricingMessage(): string {
 
 📌 플랫폼 API 사용 시: 원가의 2배 크레딧 차감
    [메인 에이전트]
-   - Claude Opus 4.6 (최고성능): 약 40-80 크레딧/대화
-   - Gemini 3.0 Pro (가성비): 약 8-20 크레딧/대화
+   - Claude Opus 4.6 (최고성능): 약 15-40 크레딧/대화
+   - Gemini 3.0 Pro (가성비): 약 5-15 크레딧/대화
    [서브 에이전트/요약]
    - Gemini 3.0 Flash: 약 1-3 크레딧/대화
    [Heartbeat]
