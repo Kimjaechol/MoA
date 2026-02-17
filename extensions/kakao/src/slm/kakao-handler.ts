@@ -361,7 +361,21 @@ export async function checkAndInstallOnStartup(
       return;
     }
 
-    // 백그라운드 설치 시작
+    // MoA Security: 자동 소프트웨어 다운로드/설치는 관리자 승인 필요
+    // MOA_AUTO_SLM_INSTALL=1 환경변수가 설정된 경우에만 자동 설치 실행
+    if (process.env.MOA_AUTO_SLM_INSTALL !== "1") {
+      onStatusChange?.(
+        "ℹ️ 로컬 SLM이 설치되지 않았습니다. 관리자가 수동으로 설치하거나 MOA_AUTO_SLM_INSTALL=1 환경변수를 설정하세요.",
+      );
+      console.info(
+        "[MoA 보안 정책] SLM 자동 설치가 비활성화되어 있습니다. " +
+        "활성화하려면 MOA_AUTO_SLM_INSTALL=1 환경변수를 설정하세요. " +
+        "클라우드 AI는 정상적으로 사용 가능합니다.",
+      );
+      return;
+    }
+
+    // 관리자 승인 하에 백그라운드 설치 시작
     onStatusChange?.("🔄 MoA 로컬 AI 설정 중...");
 
     const result = await autoInstallSLM({
