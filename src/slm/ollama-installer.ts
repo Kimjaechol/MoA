@@ -62,12 +62,21 @@ export interface OllamaStatus {
  * - Tool routing: which tool to invoke (calendar, search, file, etc.)
  * - Privacy detection: flag messages containing sensitive patterns
  *
- * Limitations (delegate to Gemini 2.0 Flash):
+ * Limitations (delegate to cloud):
  * - Substantive response generation (beyond simple greetings)
  * - Reasoning, analysis, problem-solving
  * - Code generation/review
  * - Translation, math, document analysis
  * - Deep conversation, creative writing
+ *
+ * Cloud delegation (online):
+ * - Context summary + task delegation JSON → cloud model handles response
+ * - Can attach problem description for cloud to generate user-facing question
+ *
+ * Offline behavior:
+ * - Queue tasks locally for cloud processing when back online
+ * - Notify user: "고급 AI가 필요합니다. 인터넷 연결 후 답변드리겠습니다"
+ * - Heartbeat detects online recovery → auto-dispatch queued tasks
  */
 export const SLM_CORE_MODEL: SLMModel = {
   name: "moa-core",
@@ -77,8 +86,20 @@ export const SLM_CORE_MODEL: SLMModel = {
   alwaysLoaded: true,
 };
 
-/** Cloud model for all tasks beyond Tier 1 capability */
-export const CLOUD_FALLBACK_MODEL = "gemini-2.0-flash";
+/**
+ * Cloud model strategy:
+ * - "cost_effective" (가성비): Gemini 3.0 Flash — fast, cheap, good enough
+ * - "max_performance" (최고성능): Claude Opus 4.6 — highest quality reasoning
+ */
+export type CloudStrategy = "cost_effective" | "max_performance";
+
+export const CLOUD_MODELS: Record<CloudStrategy, { model: string; provider: string }> = {
+  cost_effective: { model: "gemini-3.0-flash", provider: "google" },
+  max_performance: { model: "claude-opus-4-6", provider: "anthropic" },
+};
+
+/** Default cloud fallback (가성비 전략) */
+export const CLOUD_FALLBACK_MODEL = "gemini-3.0-flash";
 export const CLOUD_FALLBACK_PROVIDER = "google" as const;
 
 // Ollama API endpoint

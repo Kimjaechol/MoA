@@ -10,7 +10,7 @@ echo "================================"
 echo ""
 echo "Architecture:"
 echo "  - Core: Qwen3-0.6B (local, ~400MB) - intent classification, routing, heartbeat"
-echo "  - Cloud: Gemini 2.0 Flash - reasoning, generation, analysis"
+echo "  - Cloud: Gemini 3.0 Flash (가성비) / Claude Opus 4.6 (최고성능)"
 echo ""
 
 # Colors
@@ -121,9 +121,9 @@ download_core_model() {
     fi
 
     echo ""
-    echo -e "${BLUE}고급 작업은 Gemini 2.0 Flash (클라우드)가 처리합니다.${NC}"
+    echo -e "${BLUE}고급 작업은 클라우드 AI가 처리합니다.${NC}"
     echo "  - 로컬 Tier 2/3 모델은 설치하지 않습니다."
-    echo "  - 추론, 생성, 분석, 번역 등 모든 고급 작업은 Gemini Flash 사용"
+    echo "  - 가성비: Gemini 3.0 Flash / 최고성능: Claude Opus 4.6"
 }
 
 # ============================================
@@ -167,7 +167,7 @@ main() {
     echo ""
     echo "설치 구성:"
     echo "  - 코어 AI: qwen3:0.6b-q4_K_M (~400MB, 로컬) - 의도분류/라우팅/하트비트"
-    echo "  - 클라우드 AI: Gemini 2.0 Flash - 추론/생성/분석"
+    echo "  - 클라우드 AI: Gemini 3.0 Flash (가성비) / Claude Opus 4.6 (최고성능)"
     echo ""
     echo "수동 테스트:"
     echo "  ollama run qwen3:0.6b-q4_K_M '안녕하세요'"

@@ -174,13 +174,23 @@ export async function handleStatusCommand(_kakaoUserId: string): Promise<string>
   message += `  모델: ${info.cloudFallback.model} (${info.cloudFallback.provider})\n`;
   message += `  상태: ✅ 온라인\n`;
 
+  // 전략 정보
+  message += `\n🎯 클라우드 전략\n`;
+  message += `  가성비: ${info.cloudStrategies.cost_effective.model}\n`;
+  message += `  최고성능: ${info.cloudStrategies.max_performance.model}\n`;
+
+  // 오프라인 대기열
+  if (info.offlineQueueSize > 0) {
+    message += `\n📋 오프라인 대기 작업: ${info.offlineQueueSize}건\n`;
+  }
+
   message += `\n📱 디바이스\n`;
   message += `  타입: ${getDeviceTypeKorean(device.type)}\n`;
   message += `  메모리: ${device.availableMemoryGB}GB / ${device.totalMemoryGB}GB\n`;
 
   message += `\n💡 사용 팁\n`;
   message += `  • 개인정보가 포함된 질문은 자동으로 로컬 AI가 처리해요\n`;
-  message += `  • 복잡한 질문은 Gemini Flash가 빠르고 정확하게 답변해요`;
+  message += `  • 복잡한 질문은 클라우드 AI가 빠르고 정확하게 답변해요`;
 
   return message;
 }
@@ -310,7 +320,8 @@ function getSLMHelpMessage(): string {
     `📦 코어 AI (Qwen3-0.6B, 로컬)\n` +
     `  의도분류, 라우팅, 하트비트, 프라이버시 감지\n` +
     `  민감한 정보가 외부로 전송되지 않도록 보호\n\n` +
-    `☁️ 클라우드 AI (Gemini Flash)\n` +
+    `☁️ 클라우드 AI\n` +
+    `  가성비: Gemini 3.0 Flash / 최고성능: Claude Opus 4.6\n` +
     `  추론, 생성, 분석, 번역 등 모든 고급 작업\n\n` +
     `📋 사용 가능한 명령어\n` +
     `  • "AI 설치" - 로컬 AI 설치 (~400MB)\n` +

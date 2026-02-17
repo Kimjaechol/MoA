@@ -3,7 +3,9 @@
  *
  * Architecture:
  * - Qwen3-0.6B (local, always-on): lightweight gatekeeper
- * - Gemini 2.0 Flash (cloud): handles all substantive work
+ * - Cloud strategy:
+ *   - 가성비 (cost_effective): Gemini 3.0 Flash
+ *   - 최고성능 (max_performance): Claude Opus 4.6
  *
  * Qwen3-0.6B role (100% reliable at 0.6B parameter size):
  * 1. Intent classification → JSON { category, tool_needed, confidence }
@@ -11,18 +13,27 @@
  * 3. Heartbeat check → "are there pending tasks?" (yes/no)
  * 4. Privacy detection → flag sensitive data patterns
  * 5. Tool routing → which tool to call
+ * 6. Cloud delegation → summarize context + task for cloud model
  *
- * Everything else → Gemini 2.0 Flash (cloud, cost-effective)
+ * Offline behavior:
+ * - SLM still runs heartbeat, checks tasks, classifies intent
+ * - If cloud is needed but offline → queue task locally, notify user
+ * - On reconnect → auto-dispatch queued tasks to cloud
  */
 
+import * as fs from "fs";
+import * as os from "os";
+import * as path from "path";
 import {
   SLM_CORE_MODEL,
   CLOUD_FALLBACK_MODEL,
   CLOUD_FALLBACK_PROVIDER,
+  CLOUD_MODELS,
   OLLAMA_API,
   isOllamaRunning,
   checkCoreModelStatus,
   autoRecover,
+  type CloudStrategy,
 } from "./ollama-installer.js";
 
 // ============================================
@@ -60,22 +71,115 @@ export interface RoutingDecision {
   reason: string;
 }
 
+/** Delegation context SLM prepares for cloud model */
+export interface CloudDelegation {
+  contextSummary: string;
+  taskDescription: string;
+  suggestedUserQuestion: string;
+}
+
 export interface SLMRouterResult {
   success: boolean;
   response?: SLMResponse;
   routingDecision?: RoutingDecision;
+  delegation?: CloudDelegation;
   error?: string;
-  /** When true, caller should dispatch to Gemini 2.0 Flash */
+  /** When true, caller should dispatch to cloud */
   shouldRouteToCloud?: boolean;
   cloudModel?: string;
   cloudProvider?: string;
+  /** When true, task was queued for offline processing */
+  queuedOffline?: boolean;
+}
+
+/** Queued task for offline → online recovery */
+export interface QueuedCloudTask {
+  id: string;
+  userMessage: string;
+  contextSummary: string;
+  taskDescription: string;
+  queuedAt: string;
+  strategy: CloudStrategy;
+}
+
+// ============================================
+// Offline Task Queue
+// ============================================
+
+const MOA_DATA_DIR = path.join(os.homedir(), ".moa");
+const OFFLINE_QUEUE_PATH = path.join(MOA_DATA_DIR, "offline-queue.json");
+
+function loadOfflineQueue(): QueuedCloudTask[] {
+  try {
+    if (fs.existsSync(OFFLINE_QUEUE_PATH)) {
+      return JSON.parse(fs.readFileSync(OFFLINE_QUEUE_PATH, "utf-8")) as QueuedCloudTask[];
+    }
+  } catch {
+    // ignore
+  }
+  return [];
+}
+
+function saveOfflineQueue(queue: QueuedCloudTask[]): void {
+  try {
+    if (!fs.existsSync(MOA_DATA_DIR)) {
+      fs.mkdirSync(MOA_DATA_DIR, { recursive: true });
+    }
+    fs.writeFileSync(OFFLINE_QUEUE_PATH, JSON.stringify(queue, null, 2));
+  } catch (error) {
+    console.warn("[SLM] Failed to save offline queue:", error);
+  }
+}
+
+export function enqueueOfflineTask(task: Omit<QueuedCloudTask, "id" | "queuedAt">): string {
+  const queue = loadOfflineQueue();
+  const id = `task-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+  queue.push({
+    ...task,
+    id,
+    queuedAt: new Date().toISOString(),
+  });
+  saveOfflineQueue(queue);
+  return id;
+}
+
+export function getOfflineQueue(): QueuedCloudTask[] {
+  return loadOfflineQueue();
+}
+
+export function dequeueOfflineTask(id: string): QueuedCloudTask | null {
+  const queue = loadOfflineQueue();
+  const index = queue.findIndex((t) => t.id === id);
+  if (index === -1) return null;
+  const [task] = queue.splice(index, 1);
+  saveOfflineQueue(queue);
+  return task;
+}
+
+export function clearOfflineQueue(): void {
+  saveOfflineQueue([]);
+}
+
+// ============================================
+// Network Check
+// ============================================
+
+async function isOnline(): Promise<boolean> {
+  try {
+    const response = await fetch("https://www.google.com/generate_204", {
+      method: "HEAD",
+      signal: AbortSignal.timeout(3000),
+    });
+    return response.ok || response.status === 204;
+  } catch {
+    return false;
+  }
 }
 
 // ============================================
 // System Prompts (optimized for 0.6B model)
 // ============================================
 
-// Keep prompts short and structured for small model reliability
 const ROUTING_PROMPT = `You are a message router. Classify the user message and respond ONLY with JSON:
 
 {
@@ -107,6 +211,18 @@ const HEARTBEAT_CHECK_PROMPT = `You are checking task status. Given a task list,
   "task_count": 0,
   "needs_attention": true|false,
   "summary": "brief status"
+}
+
+/no_think`;
+
+// SLM summarizes context for cloud delegation
+const DELEGATION_PROMPT = `You are preparing a task delegation. Given the conversation, create a summary for a more capable AI.
+Respond ONLY with JSON:
+
+{
+  "context_summary": "1-2 sentence summary of what the user discussed",
+  "task_description": "what specific task needs to be done",
+  "suggested_question": "a question to ask the user in Korean, like: 위 작업에 대해서 어떤 일을 도와드릴까요?"
 }
 
 /no_think`;
@@ -210,7 +326,6 @@ export async function classifyIntent(userMessage: string): Promise<RoutingDecisi
       reason: decision.reason,
     };
   } catch (error) {
-    // On classification failure, default to cloud (safer)
     console.warn("[SLM] Intent classification failed, routing to cloud:", error);
     return {
       category: "medium",
@@ -218,6 +333,56 @@ export async function classifyIntent(userMessage: string): Promise<RoutingDecisi
       targetLLM: "cloud",
       confidence: 0.5,
       reason: "classification fallback",
+    };
+  }
+}
+
+/**
+ * Use Qwen3-0.6B to prepare delegation context for cloud model.
+ *
+ * SLM summarizes the conversation and task, so the cloud model
+ * can ask the user: "위 작업에 대해서 어떤 일을 도와드릴까요?"
+ */
+export async function prepareDelegation(
+  messages: SLMMessage[],
+): Promise<CloudDelegation> {
+  try {
+    const conversationText = messages
+      .map((m) => `${m.role}: ${m.content}`)
+      .join("\n");
+
+    const result = await callOllama(
+      SLM_CORE_MODEL.ollamaName,
+      [
+        { role: "system", content: DELEGATION_PROMPT },
+        { role: "user", content: conversationText },
+      ],
+      { maxTokens: 256, temperature: 0.1 },
+    );
+
+    const jsonMatch = result.content.match(/\{[\s\S]*\}/);
+    if (!jsonMatch) {
+      throw new Error("Failed to parse delegation");
+    }
+
+    const delegation = JSON.parse(jsonMatch[0]) as {
+      context_summary: string;
+      task_description: string;
+      suggested_question: string;
+    };
+
+    return {
+      contextSummary: delegation.context_summary,
+      taskDescription: delegation.task_description,
+      suggestedUserQuestion: delegation.suggested_question,
+    };
+  } catch {
+    // Fallback: pass raw last message as context
+    const lastUserMsg = messages.filter((m) => m.role === "user").pop();
+    return {
+      contextSummary: lastUserMsg?.content ?? "",
+      taskDescription: "사용자 요청 처리",
+      suggestedUserQuestion: "위 작업에 대해서 어떤 일을 도와드릴까요?",
     };
   }
 }
@@ -257,15 +422,17 @@ async function respondLocally(
 /**
  * Use Qwen3-0.6B to check heartbeat/task status
  *
- * Reads task list and makes a binary decision:
- * - Are there pending tasks? → call Gemini Flash for action
- * - No pending tasks? → return HEARTBEAT_OK
+ * Works both online and offline. Reads task list and decides:
+ * - No pending tasks → HEARTBEAT_OK
+ * - Has pending tasks + online → call cloud for action
+ * - Has pending tasks + offline → queue for later, notify user
  */
 export async function checkHeartbeatStatus(taskContent: string): Promise<{
   hasPendingTasks: boolean;
   needsAttention: boolean;
   summary: string;
   shouldCallCloud: boolean;
+  isOffline?: boolean;
 }> {
   try {
     const result = await callOllama(
@@ -294,12 +461,35 @@ export async function checkHeartbeatStatus(taskContent: string): Promise<{
       summary: string;
     };
 
+    const needsCloud = status.has_pending_tasks && status.needs_attention;
+
+    // If cloud is needed, check if we're online
+    if (needsCloud) {
+      const online = await isOnline();
+      if (!online) {
+        // Queue the task for when we're back online
+        enqueueOfflineTask({
+          userMessage: "",
+          contextSummary: status.summary,
+          taskDescription: `Heartbeat detected ${status.task_count} pending task(s)`,
+          strategy: "cost_effective",
+        });
+
+        return {
+          hasPendingTasks: status.has_pending_tasks,
+          needsAttention: status.needs_attention,
+          summary: status.summary,
+          shouldCallCloud: false,
+          isOffline: true,
+        };
+      }
+    }
+
     return {
       hasPendingTasks: status.has_pending_tasks,
       needsAttention: status.needs_attention,
       summary: status.summary,
-      // Call Gemini Flash only if there are tasks needing attention
-      shouldCallCloud: status.has_pending_tasks && status.needs_attention,
+      shouldCallCloud: needsCloud,
     };
   } catch (error) {
     console.warn("[SLM] Heartbeat check failed:", error);
@@ -314,8 +504,6 @@ export async function checkHeartbeatStatus(taskContent: string): Promise<{
 
 /**
  * Use Qwen3-0.6B to detect if user needs follow-up after interval
- *
- * After an interval of inactivity, checks if user might need prompting
  */
 export async function checkUserFollowUp(
   lastContext: string,
@@ -361,7 +549,6 @@ Rules:
     return {
       needsFollowUp: decision.needs_follow_up,
       reason: decision.reason,
-      // If follow-up needed, Gemini Flash generates the actual message
       shouldCallCloud: decision.needs_follow_up,
     };
   } catch {
@@ -369,9 +556,41 @@ Rules:
   }
 }
 
+/**
+ * Check if there are offline-queued tasks and we're back online.
+ * Called during heartbeat to auto-dispatch.
+ */
+export async function checkOfflineRecovery(): Promise<{
+  recovered: boolean;
+  pendingTasks: QueuedCloudTask[];
+}> {
+  const queue = getOfflineQueue();
+  if (queue.length === 0) {
+    return { recovered: false, pendingTasks: [] };
+  }
+
+  const online = await isOnline();
+  if (!online) {
+    return { recovered: false, pendingTasks: queue };
+  }
+
+  // We're back online with queued tasks
+  return { recovered: true, pendingTasks: queue };
+}
+
 // ============================================
 // Main SLM Router
 // ============================================
+
+/**
+ * Resolve cloud model based on user's strategy
+ */
+export function resolveCloudModel(strategy: CloudStrategy = "cost_effective"): {
+  model: string;
+  provider: string;
+} {
+  return CLOUD_MODELS[strategy];
+}
 
 /**
  * Smart routing: Qwen3-0.6B classifies, then dispatches
@@ -380,7 +599,8 @@ Rules:
  * 1. Ensure Ollama is running
  * 2. Qwen3-0.6B classifies intent
  * 3. Simple greetings → local response
- * 4. Everything else → signal to caller to use Gemini 2.0 Flash
+ * 4. Complex tasks → prepare delegation context → route to cloud
+ * 5. If offline → queue task, notify user
  */
 export async function routeSLM(
   userMessage: string,
@@ -388,8 +608,12 @@ export async function routeSLM(
   options?: {
     forceLocal?: boolean;
     skipRouting?: boolean;
+    strategy?: CloudStrategy;
   },
 ): Promise<SLMRouterResult> {
+  const strategy = options?.strategy ?? "cost_effective";
+  const cloud = resolveCloudModel(strategy);
+
   try {
     // Ensure Ollama is running
     if (!(await isOllamaRunning())) {
@@ -399,8 +623,8 @@ export async function routeSLM(
           success: false,
           error: "로컬 AI 서버를 시작할 수 없습니다",
           shouldRouteToCloud: true,
-          cloudModel: CLOUD_FALLBACK_MODEL,
-          cloudProvider: CLOUD_FALLBACK_PROVIDER,
+          cloudModel: cloud.model,
+          cloudProvider: cloud.provider,
         };
       }
     }
@@ -412,8 +636,8 @@ export async function routeSLM(
         success: false,
         error: "에이전트 코어 모델이 설치되지 않았습니다",
         shouldRouteToCloud: true,
-        cloudModel: CLOUD_FALLBACK_MODEL,
-        cloudProvider: CLOUD_FALLBACK_PROVIDER,
+        cloudModel: cloud.model,
+        cloudProvider: cloud.provider,
       };
     }
 
@@ -428,30 +652,65 @@ export async function routeSLM(
     // Step 1: Classify intent with Qwen3-0.6B
     const routingDecision = await classifyIntent(userMessage);
 
-    // Step 2: Route based on decision
+    // Step 2: Simple → local response
     if (routingDecision.targetLLM === "local" && routingDecision.category === "simple") {
-      // Only handle simple greetings locally
       const response = await respondLocally(request.messages, {
         maxTokens: request.maxTokens,
       });
       return { success: true, response, routingDecision };
     }
 
-    // Everything else → Gemini 2.0 Flash
+    // Step 3: Complex → prepare delegation context
+    const delegation = await prepareDelegation(request.messages);
+
+    // Step 4: Check if online
+    const online = await isOnline();
+    if (!online) {
+      // Offline: queue task for later dispatch
+      const taskId = enqueueOfflineTask({
+        userMessage,
+        contextSummary: delegation.contextSummary,
+        taskDescription: delegation.taskDescription,
+        strategy,
+      });
+
+      console.log(`[SLM] Offline — queued task ${taskId} for cloud dispatch`);
+
+      return {
+        success: true,
+        routingDecision,
+        delegation,
+        response: {
+          content:
+            `현재 인터넷에 연결되어 있지 않습니다.\n\n` +
+            `이 질문은 고급 AI(${cloud.model})가 필요합니다.\n` +
+            `인터넷 연결이 복구되면 자동으로 처리하겠습니다.\n\n` +
+            `대기 중인 작업: ${delegation.taskDescription}`,
+          model: SLM_CORE_MODEL.ollamaName,
+          isLocal: true,
+          usage: { promptTokens: 0, completionTokens: 0, totalTokens: 0 },
+          latencyMs: 0,
+        },
+        queuedOffline: true,
+      };
+    }
+
+    // Step 5: Online → route to cloud with delegation context
     return {
       success: false,
       routingDecision,
+      delegation,
       shouldRouteToCloud: true,
-      cloudModel: CLOUD_FALLBACK_MODEL,
-      cloudProvider: CLOUD_FALLBACK_PROVIDER,
+      cloudModel: cloud.model,
+      cloudProvider: cloud.provider,
     };
   } catch (error) {
     return {
       success: false,
       error: error instanceof Error ? error.message : "SLM 처리 실패",
       shouldRouteToCloud: true,
-      cloudModel: CLOUD_FALLBACK_MODEL,
-      cloudProvider: CLOUD_FALLBACK_PROVIDER,
+      cloudModel: cloud.model,
+      cloudProvider: cloud.provider,
     };
   }
 }
@@ -463,7 +722,9 @@ export async function routeSLM(
 export async function getSLMInfo(): Promise<{
   core: { model: string; status: "ready" | "not-installed" };
   cloudFallback: { model: string; provider: string };
+  cloudStrategies: Record<CloudStrategy, { model: string; provider: string }>;
   serverRunning: boolean;
+  offlineQueueSize: number;
 }> {
   const running = await isOllamaRunning();
   const status = running ? await checkCoreModelStatus() : { coreReady: false };
@@ -477,6 +738,8 @@ export async function getSLMInfo(): Promise<{
       model: CLOUD_FALLBACK_MODEL,
       provider: CLOUD_FALLBACK_PROVIDER,
     },
+    cloudStrategies: CLOUD_MODELS,
     serverRunning: running,
+    offlineQueueSize: getOfflineQueue().length,
   };
 }

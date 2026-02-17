@@ -9,7 +9,7 @@ Write-Host "================================"
 Write-Host ""
 Write-Host "Architecture:"
 Write-Host "  - Core: Qwen3-0.6B (local, ~400MB) - intent classification, routing, heartbeat"
-Write-Host "  - Cloud: Gemini 2.0 Flash - reasoning, generation, analysis"
+Write-Host "  - Cloud: Gemini 3.0 Flash (cost-effective) / Claude Opus 4.6 (max performance)"
 Write-Host ""
 
 # ============================================
@@ -114,9 +114,9 @@ function Download-CoreModel {
     }
 
     Write-Host ""
-    Write-Host "고급 작업은 Gemini 2.0 Flash (클라우드)가 처리합니다." -ForegroundColor Blue
+    Write-Host "고급 작업은 클라우드 AI가 처리합니다." -ForegroundColor Blue
     Write-Host "  - 로컬 Tier 2/3 모델은 설치하지 않습니다."
-    Write-Host "  - 추론, 생성, 분석, 번역 등 모든 고급 작업은 Gemini Flash 사용"
+    Write-Host "  - 가성비: Gemini 3.0 Flash / 최고성능: Claude Opus 4.6"
 }
 
 # ============================================
@@ -167,7 +167,7 @@ function Main {
     Write-Host ""
     Write-Host "설치 구성:"
     Write-Host "  - 코어 AI: qwen3:0.6b-q4_K_M (~400MB, 로컬) - 의도분류/라우팅/하트비트"
-    Write-Host "  - 클라우드 AI: Gemini 2.0 Flash - 추론/생성/분석"
+    Write-Host "  - 클라우드 AI: Gemini 3.0 Flash (가성비) / Claude Opus 4.6 (최고성능)"
     Write-Host ""
     Write-Host "수동 테스트:"
     Write-Host "  ollama run qwen3:0.6b-q4_K_M '안녕하세요'"

@@ -2,7 +2,7 @@
  * MoA SLM Auto-Installer (Simplified)
  *
  * One-click installation: Ollama + Qwen3-0.6B only (~400MB)
- * All advanced tasks use Gemini 2.0 Flash (cloud, no local download).
+ * All advanced tasks use cloud AI (Gemini 3.0 Flash or Claude Opus 4.6).
  */
 
 import { spawn, exec } from "child_process";
@@ -305,7 +305,7 @@ async function isModelInstalled(modelName: string): Promise<boolean> {
  * MoA SLM one-click install
  *
  * Installs only core model (~400MB).
- * Advanced tasks use Gemini 2.0 Flash (no local download needed).
+ * Advanced tasks use cloud AI (no local download needed).
  */
 export async function autoInstallSLM(
   config: AutoInstallConfig = {},

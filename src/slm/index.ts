@@ -4,8 +4,9 @@
  * Single-tier architecture:
  * - Qwen3-0.6B (local, ~400MB): always-on gatekeeper
  *   -> intent classification, routing, heartbeat checks, privacy detection
- * - Gemini 2.0 Flash (cloud): all substantive processing
- *   -> reasoning, generation, analysis, translation, coding, etc.
+ * - Cloud strategy:
+ *   -> 가성비: Gemini 3.0 Flash (cost-effective)
+ *   -> 최고성능: Claude Opus 4.6 (max performance)
  *
  * This is the app-wide SLM module. Extensions (e.g., kakao) should
  * import from here for core SLM functionality.
@@ -17,9 +18,11 @@ export {
   type InstallProgress,
   type ProgressCallback,
   type OllamaStatus,
+  type CloudStrategy,
   SLM_CORE_MODEL,
   CLOUD_FALLBACK_MODEL,
   CLOUD_FALLBACK_PROVIDER,
+  CLOUD_MODELS,
   OLLAMA_API,
   isOllamaInstalled,
   getOllamaVersion,
@@ -43,10 +46,19 @@ export {
   type SLMRequest,
   type SLMResponse,
   type RoutingDecision,
+  type CloudDelegation,
   type SLMRouterResult,
+  type QueuedCloudTask,
   classifyIntent,
+  prepareDelegation,
   checkHeartbeatStatus,
   checkUserFollowUp,
+  checkOfflineRecovery,
+  resolveCloudModel,
+  enqueueOfflineTask,
+  dequeueOfflineTask,
+  getOfflineQueue,
+  clearOfflineQueue,
   routeSLM,
   getSLMInfo,
 } from "./slm-router.js";

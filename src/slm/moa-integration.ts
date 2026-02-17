@@ -1,12 +1,14 @@
 /**
  * MoA SLM Integration - Core Agent Integration Layer
  *
- * Connects the SLM (Qwen3-0.6B) + Gemini Flash architecture
+ * Connects the SLM (Qwen3-0.6B) + cloud AI architecture
  * to the MoA agent lifecycle: init, health check, processing.
  *
  * Architecture:
  * - Qwen3-0.6B: always-on gatekeeper (classification, routing, heartbeat)
- * - Gemini 2.0 Flash: all substantive processing (reasoning, generation, etc.)
+ * - Cloud strategy:
+ *   - 가성비: Gemini 3.0 Flash (cost-effective)
+ *   - 최고성능: Claude Opus 4.6 (max performance)
  */
 
 import {
@@ -16,6 +18,8 @@ import {
   autoRecover,
   CLOUD_FALLBACK_MODEL,
   CLOUD_FALLBACK_PROVIDER,
+  CLOUD_MODELS,
+  type CloudStrategy,
   type InstallProgress,
   type ProgressCallback,
 } from "./ollama-installer.js";
@@ -24,6 +28,8 @@ import {
   getSLMInfo,
   checkHeartbeatStatus,
   checkUserFollowUp,
+  checkOfflineRecovery,
+  resolveCloudModel,
   type SLMRequest,
   type SLMRouterResult,
 } from "./slm-router.js";
@@ -36,6 +42,8 @@ export interface MoAAgentConfig {
   userId: string;
   enableOfflineMode: boolean;
   enablePrivacyMode: boolean;
+  /** Cloud strategy: 가성비 (cost_effective) or 최고성능 (max_performance) */
+  strategy?: CloudStrategy;
 }
 
 export interface MoAAgentStatus {
@@ -44,6 +52,7 @@ export interface MoAAgentStatus {
   coreAvailable: boolean;
   cloudFallbackModel: string;
   cloudFallbackProvider: string;
+  strategy: CloudStrategy;
   offlineModeEnabled: boolean;
   lastHealthCheck?: Date;
   error?: string;
@@ -65,6 +74,7 @@ let agentStatus: MoAAgentStatus = {
   coreAvailable: false,
   cloudFallbackModel: CLOUD_FALLBACK_MODEL,
   cloudFallbackProvider: CLOUD_FALLBACK_PROVIDER,
+  strategy: "cost_effective",
   offlineModeEnabled: false,
 };
 
@@ -78,7 +88,9 @@ let initializationPromise: Promise<MoAInitResult> | null = null;
  * Initialize MoA Agent with core SLM
  *
  * Installs only Qwen3-0.6B (~400MB).
- * All advanced tasks route to Gemini 2.0 Flash.
+ * Advanced tasks route to cloud based on strategy:
+ * - 가성비: Gemini 3.0 Flash
+ * - 최고성능: Claude Opus 4.6
  */
 export async function initializeMoAAgent(
   config: MoAAgentConfig,
@@ -98,6 +110,9 @@ async function doInitialize(
   config: MoAAgentConfig,
   onProgress?: ProgressCallback,
 ): Promise<MoAInitResult> {
+  const strategy = config.strategy ?? "cost_effective";
+  const cloud = resolveCloudModel(strategy);
+
   try {
     onProgress?.({ phase: "checking", message: "MoA 에이전트 초기화 중..." });
 
@@ -109,8 +124,9 @@ async function doInitialize(
         initialized: true,
         slmReady: false,
         coreAvailable: false,
-        cloudFallbackModel: CLOUD_FALLBACK_MODEL,
-        cloudFallbackProvider: CLOUD_FALLBACK_PROVIDER,
+        cloudFallbackModel: cloud.model,
+        cloudFallbackProvider: cloud.provider,
+        strategy,
         offlineModeEnabled: false,
         error: "로컬 AI 설치 실패",
       };
@@ -118,7 +134,7 @@ async function doInitialize(
       return {
         success: false,
         status: agentStatus,
-        message: "로컬 AI 설치에 실패했습니다. Gemini Flash로 전체 처리합니다.",
+        message: `로컬 AI 설치에 실패했습니다. ${cloud.model}로 전체 처리합니다.`,
       };
     }
 
@@ -128,8 +144,9 @@ async function doInitialize(
       initialized: true,
       slmReady: slmStatus.coreReady,
       coreAvailable: slmStatus.coreReady,
-      cloudFallbackModel: CLOUD_FALLBACK_MODEL,
-      cloudFallbackProvider: CLOUD_FALLBACK_PROVIDER,
+      cloudFallbackModel: cloud.model,
+      cloudFallbackProvider: cloud.provider,
+      strategy,
       offlineModeEnabled: config.enableOfflineMode,
       lastHealthCheck: new Date(),
     };
@@ -139,15 +156,16 @@ async function doInitialize(
     return {
       success: true,
       status: agentStatus,
-      message: `MoA 에이전트가 준비되었습니다. (코어: Qwen3-0.6B + 클라우드: ${CLOUD_FALLBACK_MODEL})`,
+      message: `MoA 에이전트가 준비되었습니다. (코어: Qwen3-0.6B + 클라우드: ${cloud.model})`,
     };
   } catch (error) {
     agentStatus = {
       initialized: true,
       slmReady: false,
       coreAvailable: false,
-      cloudFallbackModel: CLOUD_FALLBACK_MODEL,
-      cloudFallbackProvider: CLOUD_FALLBACK_PROVIDER,
+      cloudFallbackModel: cloud.model,
+      cloudFallbackProvider: cloud.provider,
+      strategy,
       offlineModeEnabled: false,
       error: error instanceof Error ? error.message : "초기화 실패",
     };
@@ -168,6 +186,9 @@ export function initializeMoAAgentBackground(
   onProgress?: ProgressCallback,
   onComplete?: (result: MoAInitResult) => void,
 ): void {
+  const strategy = config.strategy ?? "cost_effective";
+  const cloud = resolveCloudModel(strategy);
+
   initializeMoAAgent(config, onProgress)
     .then((result) => onComplete?.(result))
     .catch((error) => {
@@ -177,8 +198,9 @@ export function initializeMoAAgentBackground(
           initialized: false,
           slmReady: false,
           coreAvailable: false,
-          cloudFallbackModel: CLOUD_FALLBACK_MODEL,
-          cloudFallbackProvider: CLOUD_FALLBACK_PROVIDER,
+          cloudFallbackModel: cloud.model,
+          cloudFallbackProvider: cloud.provider,
+          strategy,
           offlineModeEnabled: false,
           error: error instanceof Error ? error.message : "Unknown error",
         },
@@ -225,22 +247,26 @@ export async function attemptRecovery(): Promise<boolean> {
  *
  * 1. Qwen3-0.6B classifies intent
  * 2. Simple → local response
- * 3. Everything else → shouldRouteToCloud=true (caller uses Gemini Flash)
+ * 3. Everything else → shouldRouteToCloud=true (caller uses cloud based on strategy)
  */
 export async function processThroughSLM(
   userMessage: string,
   request: SLMRequest,
   options?: {
     forceLocal?: boolean;
+    strategy?: CloudStrategy;
   },
 ): Promise<SLMRouterResult> {
+  const strategy = options?.strategy ?? agentStatus.strategy;
+  const cloud = resolveCloudModel(strategy);
+
   if (!agentStatus.initialized) {
     return {
       success: false,
       error: "MoA 에이전트가 초기화되지 않았습니다",
       shouldRouteToCloud: true,
-      cloudModel: CLOUD_FALLBACK_MODEL,
-      cloudProvider: CLOUD_FALLBACK_PROVIDER,
+      cloudModel: cloud.model,
+      cloudProvider: cloud.provider,
     };
   }
 
@@ -251,14 +277,15 @@ export async function processThroughSLM(
         success: false,
         error: "로컬 AI를 사용할 수 없습니다",
         shouldRouteToCloud: true,
-        cloudModel: CLOUD_FALLBACK_MODEL,
-        cloudProvider: CLOUD_FALLBACK_PROVIDER,
+        cloudModel: cloud.model,
+        cloudProvider: cloud.provider,
       };
     }
   }
 
   return routeSLM(userMessage, request, {
     forceLocal: options?.forceLocal ?? agentStatus.offlineModeEnabled,
+    strategy,
   });
 }
 
@@ -266,27 +293,37 @@ export async function processThroughSLM(
  * Heartbeat processing via Qwen3-0.6B
  *
  * Reads task status and decides:
- * - No tasks → HEARTBEAT_OK (no cloud call needed)
- * - Has tasks → shouldCallCloud=true (Gemini Flash handles action)
+ * - No pending tasks → HEARTBEAT_OK (no cloud call needed)
+ * - Has tasks + online → shouldCallCloud=true (cloud handles action)
+ * - Has tasks + offline → queue for later, notify user
+ *
+ * Also checks for offline recovery (queued tasks + back online).
  */
 export async function processHeartbeat(taskContent: string): Promise<{
   shouldCallCloud: boolean;
   summary: string;
   needsAttention: boolean;
+  offlineRecovery?: { recovered: boolean; pendingCount: number };
 }> {
+  // Check for offline recovery first (queued tasks + back online)
+  const recovery = await checkOfflineRecovery();
+  const offlineRecovery = recovery.pendingTasks.length > 0
+    ? { recovered: recovery.recovered, pendingCount: recovery.pendingTasks.length }
+    : undefined;
+
   if (!agentStatus.slmReady) {
-    // If local SLM unavailable, let cloud handle everything
-    return { shouldCallCloud: true, summary: "SLM unavailable", needsAttention: false };
+    return { shouldCallCloud: true, summary: "SLM unavailable", needsAttention: false, offlineRecovery };
   }
 
-  return checkHeartbeatStatus(taskContent);
+  const result = await checkHeartbeatStatus(taskContent);
+  return { ...result, offlineRecovery };
 }
 
 /**
  * User follow-up check via Qwen3-0.6B
  *
  * After interval, checks if user needs prompting.
- * If yes → Gemini Flash generates the follow-up message.
+ * If yes → cloud model generates the follow-up message.
  */
 export async function processFollowUpCheck(lastContext: string): Promise<{
   shouldCallCloud: boolean;
@@ -311,6 +348,8 @@ export async function getDisplayInfo(): Promise<{
   status: string;
   core: string;
   cloudFallback: string;
+  strategy: string;
+  offlineQueue: string;
   recommendation: string;
 }> {
   const info = await getSLMInfo();
@@ -319,13 +358,23 @@ export async function getDisplayInfo(): Promise<{
   const coreEmoji = info.core.status === "ready" ? "✅" : "❌";
   const coreLabel = info.core.status === "ready" ? "준비됨" : "미설치";
 
+  const strategyLabel = agentStatus.strategy === "max_performance"
+    ? "최고성능 (Claude Opus 4.6)"
+    : "가성비 (Gemini 3.0 Flash)";
+
+  const queueLabel = info.offlineQueueSize > 0
+    ? `📋 대기 중인 작업: ${info.offlineQueueSize}건`
+    : "없음";
+
   return {
     status: `${statusEmoji} ${info.serverRunning ? "실행 중" : "정지됨"}`,
     core: `${coreEmoji} ${info.core.model} (${coreLabel}) - 의도분류/라우팅/하트비트`,
     cloudFallback: `☁️ ${info.cloudFallback.model} (${info.cloudFallback.provider}) - 추론/생성/분석`,
+    strategy: `🎯 ${strategyLabel}`,
+    offlineQueue: queueLabel,
     recommendation:
       info.core.status === "ready"
-        ? "로컬 게이트키퍼 + Gemini Flash 연동 모드로 동작 중입니다."
+        ? `로컬 게이트키퍼 + 클라우드 AI 연동 모드로 동작 중입니다. (${strategyLabel})`
         : "로컬 AI를 설치하면 빠른 의도분류와 프라이버시 보호가 가능합니다.",
   };
 }
