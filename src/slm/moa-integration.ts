@@ -33,6 +33,19 @@ import {
   type SLMRequest,
   type SLMRouterResult,
 } from "./slm-router.js";
+import {
+  processAllPendingDelegations,
+  dispatchRecoveredTasks,
+  cleanupDelegationFiles,
+  type CloudDispatcherConfig,
+} from "./cloud-dispatcher.js";
+import {
+  startOfflineMonitor,
+  stopOfflineMonitor,
+  getOfflineMonitorStatus,
+  notifyOfflineTaskQueued,
+  type OfflineMonitorConfig,
+} from "./offline-monitor.js";
 
 // ============================================
 // Types
@@ -44,6 +57,10 @@ export interface MoAAgentConfig {
   enablePrivacyMode: boolean;
   /** Cloud strategy: 가성비 (cost_effective) or 최고성능 (max_performance) */
   strategy?: CloudStrategy;
+  /** API keys for cloud model dispatch */
+  apiKeys?: { google?: string; anthropic?: string };
+  /** Offline monitor configuration (popup/push/chat callbacks) */
+  offlineMonitorConfig?: OfflineMonitorConfig;
 }
 
 export interface MoAAgentStatus {
@@ -113,6 +130,11 @@ async function doInitialize(
   const strategy = config.strategy ?? "cost_effective";
   const cloud = resolveCloudModel(strategy);
 
+  // Save API keys for heartbeat dispatch
+  if (config.apiKeys) {
+    savedApiKeys = config.apiKeys;
+  }
+
   try {
     onProgress?.({ phase: "checking", message: "MoA 에이전트 초기화 중..." });
 
@@ -152,6 +174,16 @@ async function doInitialize(
     };
 
     onProgress?.({ phase: "ready", message: "MoA 에이전트 준비 완료" });
+
+    // Start offline monitor for network detection + auto-recovery
+    if (config.offlineMonitorConfig || config.apiKeys) {
+      startOfflineMonitor({
+        checkIntervalMs: 30_000,
+        ...config.offlineMonitorConfig,
+        apiKeys: config.apiKeys,
+      });
+      console.log("[MoA] Offline monitor started (30s interval)");
+    }
 
     return {
       success: true,
@@ -297,27 +329,80 @@ export async function processThroughSLM(
  * - Has tasks + online → shouldCallCloud=true (cloud handles action)
  * - Has tasks + offline → queue for later, notify user
  *
- * Also checks for offline recovery (queued tasks + back online).
+ * Also:
+ * - Checks for offline recovery (queued tasks + back online → auto-dispatch)
+ * - Dispatches pending delegation files to cloud API
+ * - Cleans up old delegation files (24h+)
  */
-export async function processHeartbeat(taskContent: string): Promise<{
+export async function processHeartbeat(
+  taskContent: string,
+  apiKeys?: { google?: string; anthropic?: string },
+  dispatchConfig?: CloudDispatcherConfig,
+): Promise<{
   shouldCallCloud: boolean;
   summary: string;
   needsAttention: boolean;
   offlineRecovery?: { recovered: boolean; pendingCount: number };
+  cloudDispatched?: { processed: number; failed: number };
 }> {
-  // Check for offline recovery first (queued tasks + back online)
+  const keys = apiKeys ?? savedApiKeys;
+
+  // Check for offline recovery (queued tasks + back online)
   const recovery = await checkOfflineRecovery();
   const offlineRecovery = recovery.pendingTasks.length > 0
     ? { recovered: recovery.recovered, pendingCount: recovery.pendingTasks.length }
     : undefined;
 
+  // If recovered from offline, dispatch queued tasks
+  if (recovery.recovered && recovery.pendingTasks.length > 0 && keys) {
+    try {
+      const dispatched = await dispatchRecoveredTasks(
+        recovery.pendingTasks,
+        keys,
+        dispatchConfig,
+      );
+      console.log(
+        `[MoA] Heartbeat: dispatched ${dispatched.dispatched} recovered tasks`,
+      );
+    } catch (error) {
+      console.warn("[MoA] Heartbeat: failed to dispatch recovered tasks:", error);
+    }
+  }
+
+  // Dispatch any pending delegation files (from routeSLM)
+  let cloudDispatched: { processed: number; failed: number } | undefined;
+  if (keys) {
+    try {
+      cloudDispatched = await processAllPendingDelegations(keys, dispatchConfig);
+      if (cloudDispatched.processed > 0) {
+        console.log(
+          `[MoA] Heartbeat: dispatched ${cloudDispatched.processed} delegation(s)`,
+        );
+      }
+    } catch (error) {
+      console.warn("[MoA] Heartbeat: delegation dispatch failed:", error);
+    }
+  }
+
+  // Periodic cleanup of old delegation files
+  cleanupDelegationFiles();
+
   if (!agentStatus.slmReady) {
-    return { shouldCallCloud: true, summary: "SLM unavailable", needsAttention: false, offlineRecovery };
+    return {
+      shouldCallCloud: true,
+      summary: "SLM unavailable",
+      needsAttention: false,
+      offlineRecovery,
+      cloudDispatched,
+    };
   }
 
   const result = await checkHeartbeatStatus(taskContent);
-  return { ...result, offlineRecovery };
+  return { ...result, offlineRecovery, cloudDispatched };
 }
+
+// Store API keys from initialization for use in heartbeat
+let savedApiKeys: { google?: string; anthropic?: string } | null = null;
 
 /**
  * User follow-up check via Qwen3-0.6B
@@ -350,9 +435,11 @@ export async function getDisplayInfo(): Promise<{
   cloudFallback: string;
   strategy: string;
   offlineQueue: string;
+  networkMonitor: string;
   recommendation: string;
 }> {
   const info = await getSLMInfo();
+  const monitorStatus = getOfflineMonitorStatus();
 
   const statusEmoji = info.serverRunning ? "🟢" : "🔴";
   const coreEmoji = info.core.status === "ready" ? "✅" : "❌";
@@ -366,12 +453,17 @@ export async function getDisplayInfo(): Promise<{
     ? `📋 대기 중인 작업: ${info.offlineQueueSize}건`
     : "없음";
 
+  const networkLabel = monitorStatus.isMonitoring
+    ? `${monitorStatus.isOnline ? "🌐 온라인" : "📴 오프라인"} (${monitorStatus.checkIntervalMs / 1000}초 간격 모니터링)`
+    : "모니터 비활성";
+
   return {
     status: `${statusEmoji} ${info.serverRunning ? "실행 중" : "정지됨"}`,
     core: `${coreEmoji} ${info.core.model} (${coreLabel}) - 의도분류/라우팅/하트비트`,
     cloudFallback: `☁️ ${info.cloudFallback.model} (${info.cloudFallback.provider}) - 추론/생성/분석`,
     strategy: `🎯 ${strategyLabel}`,
     offlineQueue: queueLabel,
+    networkMonitor: networkLabel,
     recommendation:
       info.core.status === "ready"
         ? `로컬 게이트키퍼 + 클라우드 AI 연동 모드로 동작 중입니다. (${strategyLabel})`

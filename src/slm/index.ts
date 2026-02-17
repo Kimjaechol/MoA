@@ -92,3 +92,33 @@ export {
   formatInstallStatus,
   formatInstallResult,
 } from "./auto-installer.js";
+
+// Cloud dispatcher (SLM → JSON → Cloud API pipeline)
+export {
+  type DelegationFile,
+  type CloudDispatchResult,
+  type CloudDispatcherConfig,
+  writeDelegationFile,
+  readDelegationFile,
+  getPendingDelegations,
+  cleanupDelegationFiles,
+  dispatchToCloud,
+  processCloudDelegation,
+  processAllPendingDelegations,
+  dispatchRecoveredTasks,
+} from "./cloud-dispatcher.js";
+
+// Offline monitor (network detection + notifications + auto-recovery)
+export {
+  type NotificationChannel,
+  type OfflineNotification,
+  type OfflineMonitorConfig,
+  type OfflineMonitorStatus,
+  checkNetworkStatus,
+  getNetworkInterfaces,
+  startOfflineMonitor,
+  stopOfflineMonitor,
+  getOfflineMonitorStatus,
+  notifyOfflineTaskQueued,
+  forceNetworkCheck,
+} from "./offline-monitor.js";

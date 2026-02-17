@@ -94,6 +94,30 @@ export {
   formatInstallResult,
 } from "../../../../src/slm/auto-installer.js";
 
+// Cloud dispatcher
+export {
+  type DelegationFile,
+  type CloudDispatchResult,
+  type CloudDispatcherConfig,
+  writeDelegationFile,
+  processCloudDelegation,
+  processAllPendingDelegations,
+  dispatchRecoveredTasks,
+} from "../../../../src/slm/cloud-dispatcher.js";
+
+// Offline monitor
+export {
+  type OfflineNotification,
+  type OfflineMonitorConfig,
+  type OfflineMonitorStatus,
+  checkNetworkStatus,
+  startOfflineMonitor,
+  stopOfflineMonitor,
+  getOfflineMonitorStatus,
+  notifyOfflineTaskQueued,
+  forceNetworkCheck,
+} from "../../../../src/slm/offline-monitor.js";
+
 // ============================================
 // KakaoTalk-specific handler (local to extension)
 // ============================================

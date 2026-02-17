@@ -13,6 +13,7 @@ import {
   isOllamaRunning,
   healthCheck,
   getSLMInfo,
+  getOfflineMonitorStatus,
   CLOUD_FALLBACK_MODEL,
   type InstallStatus,
   type InstallResult,
@@ -183,6 +184,12 @@ export async function handleStatusCommand(_kakaoUserId: string): Promise<string>
   if (info.offlineQueueSize > 0) {
     message += `\n📋 오프라인 대기 작업: ${info.offlineQueueSize}건\n`;
   }
+
+  // 네트워크 모니터 상태
+  const monitor = getOfflineMonitorStatus();
+  message += `\n🌐 네트워크 모니터\n`;
+  message += `  상태: ${monitor.isOnline ? "온라인" : "오프라인"}\n`;
+  message += `  모니터링: ${monitor.isMonitoring ? `활성 (${monitor.checkIntervalMs / 1000}초 간격)` : "비활성"}\n`;
 
   message += `\n📱 디바이스\n`;
   message += `  타입: ${getDeviceTypeKorean(device.type)}\n`;

@@ -35,6 +35,7 @@ import {
   autoRecover,
   type CloudStrategy,
 } from "./ollama-installer.js";
+import { writeDelegationFile } from "./cloud-dispatcher.js";
 
 // ============================================
 // Types
@@ -661,6 +662,8 @@ export async function routeSLM(
     }
 
     // Step 3: Complex → prepare delegation context
+    // SLM summarizes the conversation into a JSON structure that the
+    // cloud model can use to understand what the user needs.
     const delegation = await prepareDelegation(request.messages);
 
     // Step 4: Check if online
@@ -675,6 +678,7 @@ export async function routeSLM(
       });
 
       console.log(`[SLM] Offline — queued task ${taskId} for cloud dispatch`);
+      console.log(`[SLM] Task will be auto-dispatched when network recovers`);
 
       return {
         success: true,
@@ -683,9 +687,12 @@ export async function routeSLM(
         response: {
           content:
             `현재 인터넷에 연결되어 있지 않습니다.\n\n` +
-            `이 질문은 고급 AI(${cloud.model})가 필요합니다.\n` +
-            `인터넷 연결이 복구되면 자동으로 처리하겠습니다.\n\n` +
-            `대기 중인 작업: ${delegation.taskDescription}`,
+            `📋 작업: ${delegation.taskDescription}\n` +
+            `🤖 필요한 AI: ${cloud.model}\n\n` +
+            `이 작업은 고급 AI(${cloud.model})가 필요하지만, ` +
+            `현재 오프라인 상태입니다.\n\n` +
+            `✅ 인터넷 연결이 복구되면 자동으로 처리하겠습니다.\n` +
+            `📌 대기열에 등록되었습니다. (ID: ${taskId})`,
           model: SLM_CORE_MODEL.ollamaName,
           isLocal: true,
           usage: { promptTokens: 0, completionTokens: 0, totalTokens: 0 },
@@ -695,7 +702,12 @@ export async function routeSLM(
       };
     }
 
-    // Step 5: Online → route to cloud with delegation context
+    // Step 5: Online → write delegation JSON file for MoA system to dispatch
+    // The delegation file contains context_summary + task_description +
+    // cloud_instruction that tells the cloud model what to do.
+    const delegationId = writeDelegationFile(delegation, userMessage, strategy);
+    console.log(`[SLM] Delegation file written: ${delegationId} → ${cloud.model}`);
+
     return {
       success: false,
       routingDecision,
