@@ -48,6 +48,21 @@
 35. [명령 안전 가드 (Command Safety Guard)](#35-명령-안전-가드-command-safety-guard)
 36. [속도 제한 (3-Strike 시스템)](#36-속도-제한-3-strike-시스템)
 37. [보안 감사 시스템](#37-보안-감사-시스템)
+38. [멀티 채널 플러그인 아키텍처](#38-멀티-채널-플러그인-아키텍처)
+39. [25+ 메시징 채널 통합](#39-25-메시징-채널-통합)
+40. [게이트웨이 어댑터 인프라](#40-게이트웨이-어댑터-인프라)
+41. [3-Tier 푸시 알림 시스템](#41-3-tier-푸시-알림-시스템)
+42. [채널 라우팅 시스템](#42-채널-라우팅-시스템)
+43. [알림톡 템플릿 시스템](#43-알림톡-템플릿-시스템)
+44. [멀티 채널 브릿지](#44-멀티-채널-브릿지)
+
+**부록**
+- [부록 A: 전체 모델 가격표](#부록-a-전체-모델-가격표)
+- [부록 B: 보안 패턴 목록](#부록-b-보안-패턴-목록)
+- [부록 C: 메모리 엔진 상세](#부록-c-메모리-엔진-상세)
+- [부록 D: 디바이스 아이덴티티 프로토콜](#부록-d-디바이스-아이덴티티-프로토콜)
+- [부록 E: 특허 출원 정보](#부록-e-특허-출원-정보)
+- [부록 F: 채널 역량 매트릭스](#부록-f-채널-역량-매트릭스)
 
 ---
 
@@ -2448,3 +2463,740 @@ struct DeviceIdentity {
 3. **순서 보장**: 시퀀스 넘버 + 순서 버퍼로 올바른 델타 적용 순서 보장
 4. **데이터 손실 방지**: 30일 저널 보관 + Tier 3 전체 동기화
 5. **완전 E2E**: 모든 암호화는 클라이언트 측에서 수행; 서버는 암호문만 확인
+
+---
+
+## 38. 멀티 채널 플러그인 아키텍처
+
+### 38.1 개요
+
+MoA는 OpenClaw의 `ChannelPlugin` 인터페이스를 활용하여 25개 이상의 메시징 채널을 지원한다. 핵심 채널 7개는 코어에 내장되고, 18개 이상은 확장 플러그인으로 제공된다.
+
+### 38.2 ChannelPlugin 인터페이스
+
+```typescript
+type ChannelPlugin<ResolvedAccount = any> = {
+  id: ChannelId;                    // 고유 채널 식별자
+  meta: ChannelMeta;                // 표시명, 설명, 문서 경로
+  capabilities: ChannelCapabilities; // 지원 기능 선언
+
+  defaults?: { queue?: { debounceMs?: number } };
+  reload?: { configPrefixes: string[]; noopPrefixes?: string[] };
+
+  // 24개 어댑터 슬롯
+  onboarding?: ChannelOnboardingAdapter;   // CLI 온보딩 마법사
+  config: ChannelConfigAdapter;            // 설정 관리 (필수)
+  configSchema?: ChannelConfigSchema;      // 설정 스키마
+  setup?: ChannelSetupAdapter;             // 계정 설정/검증
+  pairing?: ChannelPairingAdapter;         // 페어링 승인 흐름
+  security?: ChannelSecurityAdapter;       // DM 정책, 보안 경고
+  groups?: ChannelGroupAdapter;            // 그룹 동작 (멘션 필요 등)
+  mentions?: ChannelMentionAdapter;        // 멘션 패턴 제거
+  outbound?: ChannelOutboundAdapter;       // 메시지 전송 (텍스트/미디어/투표)
+  status?: ChannelStatusAdapter;           // 상태 프로빙, 감사
+  gateway?: ChannelGatewayAdapter;         // 게이트웨이 라이프사이클
+  auth?: ChannelAuthAdapter;               // 로그인 흐름
+  elevated?: ChannelElevatedAdapter;       // 권한 상승
+  commands?: ChannelCommandAdapter;        // 채널 전용 명령
+  streaming?: ChannelStreamingAdapter;     // 블록 스트리밍 설정
+  threading?: ChannelThreadingAdapter;     // 스레드/리플라이 모드
+  messaging?: ChannelMessagingAdapter;     // 타겟 정규화/파싱
+  agentPrompt?: ChannelAgentPromptAdapter; // 에이전트 프롬프트 커스텀
+  directory?: ChannelDirectoryAdapter;     // 피어/그룹 목록, 검색
+  resolver?: ChannelResolverAdapter;       // 채널 해석기
+  actions?: ChannelMessageActionAdapter;   // 리액션, 편집, 삭제
+  heartbeat?: ChannelHeartbeatAdapter;     // 수신자 확인, 준비 체크
+  agentTools?: ChannelAgentToolFactory | ChannelAgentTool[];  // 에이전트 도구
+};
+```
+
+### 38.3 플러그인 등록 패턴
+
+```typescript
+// extensions/<channel>/index.ts
+import type { OpenClawPluginApi } from "openclaw/plugin-sdk";
+
+const plugin = {
+  id: "line",
+  name: "LINE",
+  description: "LINE Messaging API channel plugin",
+  configSchema: emptyPluginConfigSchema(),
+  register(api: OpenClawPluginApi) {
+    setLineRuntime(api.runtime);          // 런타임 참조 주입
+    api.registerChannel({ plugin: linePlugin }); // 채널 등록
+    registerLineCardCommand(api);          // 채널 전용 명령 등록
+  },
+};
+
+export default plugin;
+```
+
+### 38.4 플러그인 매니페스트
+
+`package.json`의 `openclaw` 키로 메타데이터 선언:
+
+```json
+{
+  "name": "@openclaw/line",
+  "openclaw": {
+    "extensions": ["./index.ts"],
+    "channel": {
+      "id": "line",
+      "label": "LINE",
+      "selectionLabel": "LINE (Messaging API)",
+      "docsPath": "/channels/line",
+      "blurb": "Japan/Taiwan/Thailand focused messaging with Flex messages.",
+      "aliases": ["ln"],
+      "order": 75,
+      "quickstartAllowFrom": true
+    },
+    "install": {
+      "npmSpec": "@openclaw/line",
+      "localPath": "extensions/line",
+      "defaultChoice": "npm"
+    }
+  }
+}
+```
+
+### 38.5 플러그인 라이프사이클
+
+| 단계 | 설명 |
+|------|------|
+| **Discovery** | `extensions/*/index.ts` 스캔 + npm 패키지 탐색 |
+| **Loading** | 매니페스트 검증, 의존성 확인 |
+| **Registration** | `api.registerChannel()` 호출로 레지스트리에 등록 |
+| **Configuration** | `configSchema` 기반 설정 바인딩 |
+| **Runtime** | `gateway.startAccount()` 호출로 활성화 |
+| **Teardown** | `gateway.stopAccount()` 호출로 정리 |
+
+### 38.6 ZeroClaw 구현 가이드
+
+```rust
+// Rust trait 정의
+trait ChannelPlugin: Send + Sync {
+    fn id(&self) -> &str;
+    fn meta(&self) -> &ChannelMeta;
+    fn capabilities(&self) -> &ChannelCapabilities;
+
+    // 선택적 어댑터
+    fn outbound(&self) -> Option<&dyn OutboundAdapter>;
+    fn gateway(&self) -> Option<&dyn GatewayAdapter>;
+    fn security(&self) -> Option<&dyn SecurityAdapter>;
+    fn status(&self) -> Option<&dyn StatusAdapter>;
+    // ... 24개 어댑터 trait object
+}
+
+// 플러그인 레지스트리
+struct ChannelRegistry {
+    plugins: HashMap<String, Box<dyn ChannelPlugin>>,
+}
+
+impl ChannelRegistry {
+    fn register(&mut self, plugin: Box<dyn ChannelPlugin>);
+    fn get(&self, id: &str) -> Option<&dyn ChannelPlugin>;
+    fn list_sorted(&self) -> Vec<&dyn ChannelPlugin>;
+}
+```
+
+- 동적 로딩: `libloading` crate 또는 WASM 플러그인
+- 설정 스키마: `serde_json::Value` + `jsonschema` crate
+- 핫 리로드: 설정 파일 변경 시 `notify` crate로 감시
+
+---
+
+## 39. 25+ 메시징 채널 통합
+
+### 39.1 코어 채널 (7개)
+
+| 채널 | 라이브러리 | 주요 기능 |
+|------|-----------|-----------|
+| **Telegram** | grammY (Bot API) | 그룹 멘션, 인라인 버튼, 리액션, 미디어, 웹훅, 보이스, 멀티 계정 |
+| **WhatsApp** | Baileys (Web 프로토콜) | QR 페어링, 미디어/GIF, 마크다운 테이블 변환, 브로드캐스트, 프로액티브 메시징 |
+| **Discord** | Discord.js (Gateway) | 서버/길드, 스레드, 이모지, 리액션, PluralKit, 투표, 슬래시 명령 |
+| **Slack** | Bolt SDK (Socket Mode) | 워크스페이스, 스레드(`thread_ts`), mrkdwn, 파일 업로드(V2), 슬래시 명령 |
+| **Signal** | signal-cli REST | 프라이버시 중심, 링크드 디바이스, 메시지 전달 추적 |
+| **Google Chat** | Chat API + HTTP 웹훅 | 스페이스, 스레드, Google Workspace 통합 |
+| **iMessage** | 네이티브 macOS | BlueBubbles 확장 권장 (더 완전한 기능) |
+
+### 39.2 확장 채널 (18개+)
+
+| 채널 | 패키지 | 지역/특성 | 주요 기능 |
+|------|--------|-----------|-----------|
+| **LINE** | `@openclaw/line` | 일본/대만/태국 | Flex 메시지, 리치 메뉴, 템플릿 메시지, 캐러셀, 퀵 리플라이 |
+| **KakaoTalk** | `@moa-ai/kakao` | 한국 | Kakao i Open Builder, Friend Talk, 3-Tier 푸시, 빌링, 보이스 |
+| **MS Teams** | `@openclaw/msteams` | 기업 | Bot Framework, Adaptive Cards, 스레딩 |
+| **Matrix** | `@openclaw/matrix` | 분산형 | E2E 암호화(`matrix-sdk-crypto-nodejs`), 룸 관리 |
+| **Zalo** | `@openclaw/zalo` | 베트남 | Bot API, DM 전용 (그룹 준비 중) |
+| **Zalo User** | `@openclaw/zalouser` | 베트남 | QR 로그인, 개인 계정, 멀티턴 대화 |
+| **Mattermost** | `@openclaw/mattermost` | 셀프호스팅 | Bot API + WebSocket, Slack 대안 |
+| **Nextcloud Talk** | `@openclaw/nextcloud-talk` | 셀프호스팅 | 웹훅 봇 |
+| **BlueBubbles** | `@openclaw/bluebubbles` | Apple | REST API, 편집/삭제/이펙트/리액션/그룹 관리 |
+| **Nostr** | `@openclaw/nostr` | 분산형 | NIP-04 암호화 DM, `nostr-tools` |
+| **Tlon/Urbit** | `@openclaw/tlon` | 분산형 | Urbit aura (아이덴티티) 지원 |
+| **Twitch** | `@openclaw/twitch` | 스트리밍 | IRC 기반 (`@twurple/chat`), 채팅 통합 |
+| **Voice Call** | `@openclaw/voice-call` | 전화 | Twilio/Telnyx, SIP/WebRTC, DTMF, TTS (OpenAI/ElevenLabs) |
+| **WebChat** | `apps/web` | 브라우저 | Next.js, WebSocket Gateway 연결 |
+
+### 39.3 비채널 확장 (12개+)
+
+| 확장 | 용도 |
+|------|------|
+| `copilot-proxy` | Copilot 프록시 |
+| `diagnostics-otel` | OpenTelemetry 진단 |
+| `google-antigravity-auth` | Google 인증 |
+| `llm-task` | LLM 작업 실행 |
+| `lobster` | UI 테마 |
+| `memory-core` | 메모리 코어 |
+| `memory-lancedb` | LanceDB 벡터 메모리 |
+| `moa-gemini-free` | Gemini 무료 모델 |
+| `open-prose` | 산문 생성 |
+
+### 39.4 채널별 인바운드/아웃바운드 패턴
+
+```
+인바운드 (Monitor):
+  [웹훅/폴링/WebSocket] → 서명 검증 → 메시지 파싱 → 에이전트 라우팅 → 응답
+
+아웃바운드 (Deliver):
+  [에이전트 응답] → 채널 아웃바운드 어댑터 → 청킹 → 전송
+                    │
+               deliveryMode:
+               - "direct": 직접 API 호출
+               - "gateway": 게이트웨이 경유
+               - "hybrid": 혼합
+```
+
+### 39.5 ZeroClaw 구현 가이드
+
+- 채널별 Rust crate 매핑:
+  - Telegram: `teloxide` 또는 `grammers`
+  - Discord: `serenity` 또는 `twilight`
+  - Slack: `slack-morphism`
+  - Signal: HTTP 클라이언트 (`reqwest`) + signal-cli REST
+  - Matrix: `matrix-sdk`
+  - WebSocket 채널: `tokio-tungstenite`
+- 각 채널을 독립 Rust crate로 구현 (`zeroclaw-channel-telegram` 등)
+- `ChannelPlugin` trait을 구현하고 레지스트리에 등록
+
+---
+
+## 40. 게이트웨이 어댑터 인프라
+
+### 40.1 개요
+
+게이트웨이는 모든 채널 어댑터를 관리하며, 시작 시 `registerAllAdapters()`로 초기화한다.
+
+### 40.2 프로토콜별 어댑터 (7개)
+
+| 어댑터 | 프로토콜 | 특징 |
+|--------|---------|------|
+| **SignalAdapter** | signal-cli REST | 링크드 디바이스 세션 관리 |
+| **MatrixAdapter** | Matrix SDK | E2E 암호화, 룸 관리, 미디어 핸들링 |
+| **MSTeamsAdapter** | Bot Framework | 기업 인증 흐름 |
+| **GoogleChatAdapter** | Chat API | Google Workspace HTTP 웹훅 + 인증 |
+| **MattermostAdapter** | Bot API + WebSocket | 셀프호스팅 채팅 |
+| **NextcloudTalkAdapter** | 웹훅 봇 | 셀프호스팅 통합 |
+| **ZaloAdapter** | Zalo Bot API | 베트남 메시징 |
+
+### 40.3 제네릭 웹훅 어댑터 (5개)
+
+`createGenericAdapter()` 팩토리로 생성되며, 환경변수 존재 시 활성화:
+
+| 채널 | 활성화 조건 |
+|------|------------|
+| **Twitch** | `TWITCH_WEBHOOK_SECRET` |
+| **Nostr** | `NOSTR_RELAY_URL` |
+| **BlueBubbles** | `BLUEBUBBLES_URL` |
+| **Tlon/Urbit** | `TLON_SHIP_URL` |
+| **iMessage** | `IMESSAGE_BRIDGE_URL` |
+
+### 40.4 게이트웨이 컨텍스트
+
+```typescript
+type ChannelGatewayContext<ResolvedAccount> = {
+  cfg: OpenClawConfig;
+  accountId: string;
+  account: ResolvedAccount;
+  runtime: RuntimeEnv;
+  abortSignal: AbortSignal;        // 종료 신호
+  log?: ChannelLogSink;
+  getStatus: () => ChannelAccountSnapshot;
+  setStatus: (next: ChannelAccountSnapshot) => void;
+};
+```
+
+### 40.5 게이트웨이 RPC 메서드
+
+| 메서드 | 설명 |
+|--------|------|
+| `channels.status` | 채널 계정 스냅샷 조회 (프로빙 옵션) |
+| `channels.logout` | 채널 계정 로그아웃 |
+
+스냅샷 필드: `enabled`, `configured`, `linked`, `running`, `connected`, `lastConnectedAt`, `errors`
+
+### 40.6 ZeroClaw 구현 가이드
+
+```rust
+#[async_trait]
+trait GatewayAdapter: Send + Sync {
+    async fn start(&self, ctx: &GatewayContext) -> Result<()>;
+    async fn stop(&self, ctx: &GatewayContext) -> Result<()>;
+    fn status(&self) -> AdapterStatus;
+}
+
+// 제네릭 웹훅 어댑터 팩토리
+fn create_generic_adapter(config: GenericAdapterConfig) -> Box<dyn GatewayAdapter>;
+
+// 어댑터 레지스트리
+struct AdapterRegistry {
+    adapters: Vec<Box<dyn GatewayAdapter>>,
+}
+
+impl AdapterRegistry {
+    fn register_all(&mut self, cfg: &Config);  // 환경변수 기반 조건부 등록
+}
+```
+
+---
+
+## 41. 3-Tier 푸시 알림 시스템
+
+### 41.1 개요
+
+MoA는 비용 최적화를 위해 무료 채널 우선 발송 전략을 사용한다:
+
+```
+사용자에게 알림 필요
+    │
+    ▼
+[Tier 1] Gateway WebSocket 직접 전송 (무료, 즉시)
+    │ 실패
+    ▼
+[Tier 2] FCM/APNs 푸시 (무료, 백그라운드)
+    │ 실패
+    ▼
+[Tier 3] 알림톡/친구톡 (유료, 최후 수단)
+    │ allowPaidFallback=false면 스킵
+    ▼
+[모두 실패] 에러 로그 + 시도 이력 반환
+```
+
+### 41.2 Tier 1: Gateway Direct Push
+
+```typescript
+// 게이트웨이 연결 매니저 인터페이스
+interface GatewayConnectionManager {
+  getConnectedDeviceIds(userId: string): string[];
+  sendEvent(deviceId: string, event: string, payload: unknown): boolean;
+}
+
+// 이벤트 타입: "moa.notification"
+// 페이로드: { title, body, data, timestamp }
+```
+
+- 비용: 무료 (자체 WebSocket 서버)
+- 조건: 앱이 게이트웨이에 WebSocket 연결 중
+- 프로토콜: Gateway Protocol v3 event 프레임
+- 모든 연결된 디바이스에 브로드캐스트
+
+### 41.3 Tier 2: FCM/APNs Push
+
+```typescript
+// FCM HTTP v1 API (Firebase Admin SDK 없이 직접 구현)
+interface FcmMessage {
+  title: string;
+  body: string;
+  data?: Record<string, string>;
+}
+
+// OAuth2 인증: 서비스 계정 JWT → 액세스 토큰 교환
+// 토큰 캐시: 50분 유효 (1시간 만료 전 갱신)
+```
+
+- 비용: 무료 (FCM 무제한)
+- Android: 높은 우선순위, `moa_messages` 알림 채널
+- iOS (APNs): `apns-priority: 10`, 사운드/뱃지/알럿
+- 토큰 만료 자동 감지: `UNREGISTERED`/`INVALID_ARGUMENT` → 토큰 삭제
+- 환경변수: `FIREBASE_PROJECT_ID`, `FIREBASE_CLIENT_EMAIL`, `FIREBASE_PRIVATE_KEY`
+
+### 41.4 Tier 3: 알림톡/친구톡 (유료)
+
+- 기본 비활성 (`allowPaidFallback: false`)
+- 알림톡 우선, 실패 시 친구톡 폴백
+- NHN Cloud Toast API 사용
+- 환경변수: `TOAST_APP_KEY`, `TOAST_SECRET_KEY`, `KAKAO_SENDER_KEY`
+
+### 41.5 메시지 라우터
+
+```typescript
+interface RouteResult {
+  success: boolean;
+  method: "gateway" | "fcm" | "apns" | "alimtalk" | "friendtalk" | "failed";
+  tier: 1 | 2 | 3 | 0;    // 0 = 모두 실패
+  error?: string;
+  attempts: Array<{         // 모든 시도 이력
+    tier: number;
+    method: string;
+    success: boolean;
+    error?: string;
+    durationMs: number;     // 소요 시간
+  }>;
+}
+```
+
+편의 함수:
+- `routeMessage(opts)` — 전체 3계층 라우팅
+- `routeMessageFreeOnly(userId, message)` — 무료 채널만 (Tier 1+2)
+
+### 41.6 푸시 토큰 관리
+
+- 게이트웨이 인메모리: `Map<nodeId, PushTokenEntry>` (연결 중일 때)
+- 영속 저장: Supabase `relay_devices` 테이블
+  - 컬럼: `push_token`, `push_platform` ("fcm" | "apns"), `push_token_updated_at`
+- 함수: `savePushToken()`, `getUserPushTokens()`, `getDevicePushToken()`, `removePushToken()`
+
+### 41.7 ZeroClaw 구현 가이드
+
+```rust
+// 3-Tier 라우터
+enum DeliveryMethod { Gateway, Fcm, Apns, Alimtalk, Friendtalk, Failed }
+
+struct RouteResult {
+    success: bool,
+    method: DeliveryMethod,
+    tier: u8,           // 1, 2, 3, or 0
+    error: Option<String>,
+    attempts: Vec<DeliveryAttempt>,
+}
+
+async fn route_message(opts: &RouteOptions) -> RouteResult {
+    // Tier 1: WebSocket 직접 전송
+    if let Some(result) = try_gateway_push(&opts.user_id, &opts.message).await {
+        if result.success { return result; }
+    }
+    // Tier 2: FCM/APNs
+    if let Some(result) = try_fcm_push(&opts.user_id, &opts.message).await {
+        if result.success { return result; }
+    }
+    // Tier 3: 유료 (선택적)
+    if opts.allow_paid_fallback {
+        if let Some(result) = try_paid_push(&opts.user_id, &opts.message).await {
+            return result;
+        }
+    }
+    RouteResult::failed()
+}
+```
+
+Rust crate 매핑:
+- FCM HTTP v1: `reqwest` + `jsonwebtoken` (JWT 생성)
+- APNs: `a2` crate 또는 직접 HTTP/2
+- WebSocket: `tokio-tungstenite`
+- 토큰 캐시: `tokio::sync::RwLock<Option<CachedToken>>`
+
+---
+
+## 42. 채널 라우팅 시스템
+
+### 42.1 개요
+
+인바운드 메시지를 적절한 에이전트로 라우팅하는 시스템. 바인딩 우선순위에 따라 매칭한다.
+
+### 42.2 라우팅 입력/출력
+
+```typescript
+// 입력
+type ResolveAgentRouteInput = {
+  cfg: OpenClawConfig;
+  channel: string;           // "telegram", "kakao" 등
+  accountId?: string | null;
+  peer?: RoutePeer | null;   // { kind: "dm"|"group"|"channel", id: string }
+  parentPeer?: RoutePeer | null;  // 스레드 상속
+  guildId?: string | null;   // Discord 길드
+  teamId?: string | null;    // Teams 팀
+};
+
+// 출력
+type ResolvedAgentRoute = {
+  agentId: string;
+  channel: string;
+  accountId: string;
+  sessionKey: string;        // 영속성 + 동시성 키
+  mainSessionKey: string;    // DM 축소용
+  matchedBy: "binding.peer" | "binding.peer.parent" | "binding.guild"
+           | "binding.team" | "binding.account" | "binding.channel" | "default";
+};
+```
+
+### 42.3 매칭 우선순위
+
+| 순위 | 매칭 기준 | 설명 |
+|------|----------|------|
+| 1 | `binding.peer` | 피어 직접 매칭 |
+| 2 | `binding.peer.parent` | 부모 피어 (스레드 상속) |
+| 3 | `binding.guild` | Discord 길드별 |
+| 4 | `binding.team` | Teams 팀별 |
+| 5 | `binding.account` | 계정별 |
+| 6 | `binding.channel` | 채널별 |
+| 7 | `default` | 기본 에이전트 |
+
+### 42.4 세션 키 생성
+
+세션 키는 에이전트 상태 영속성과 동시성 제어에 사용:
+
+```
+형식: {agentId}:{mainKey}:{channel}:{accountId}:{peerKind}:{peerId}
+
+예시:
+  default:main:telegram:bot1:dm:user123
+  default:main:discord:bot1:group:guild456#channel789
+```
+
+DM 축소 (`dmScope` 옵션):
+- `"main"`: 모든 DM이 하나의 세션
+- `"per-peer"`: 피어별 분리
+- `"per-channel-peer"`: 채널+피어별 분리
+- `"per-account-channel-peer"`: 계정+채널+피어별 분리
+
+### 42.5 ZeroClaw 구현 가이드
+
+```rust
+struct RouteResolver {
+    bindings: Vec<ChannelBinding>,
+    default_agent_id: String,
+}
+
+impl RouteResolver {
+    fn resolve(&self, input: &RouteInput) -> ResolvedRoute {
+        // 1. peer 직접 매칭
+        // 2. parent peer 매칭
+        // 3. guild/team 매칭
+        // 4. account 매칭
+        // 5. channel 매칭
+        // 6. default fallback
+    }
+}
+
+fn build_session_key(params: &SessionKeyParams) -> String {
+    format!("{}:{}:{}:{}:{}:{}",
+        params.agent_id, params.main_key,
+        params.channel, params.account_id,
+        params.peer_kind, params.peer_id)
+}
+```
+
+---
+
+## 43. 알림톡 템플릿 시스템
+
+### 43.1 개요
+
+NHN Cloud Toast API를 통한 Kakao 알림톡 발송. 템플릿은 NHN Cloud 콘솔에서 사전 등록 및 카카오 심사 필요 (영업일 2일).
+
+### 43.2 등록된 템플릿
+
+| 템플릿 코드 | 용도 | 필수 파라미터 | 버튼 |
+|------------|------|-------------|------|
+| `moa_device_paired` | 기기 연결 완료 | `deviceName` | "MoA 사용법 보기" (WL) |
+| `moa_command_result` | 원격 명령 결과 | `deviceName`, `commandText`, `status`, `resultSummary`, `commandId` | - |
+| `moa_device_offline` | 기기 오프라인 | `deviceName`, `lastSeenAt` | - |
+| `moa_security_alert` | 보안 알림 | `alertType`, `alertMessage`, `timestamp` | "확인하기" (WL) |
+| `moa_backup_complete` | 백업 완료 | `backupType`, `backupSize`, `timestamp` | "백업 관리" (WL) |
+| `moa_welcome` | 가입 환영 | `username` | "MoA 설치하기" (WL) |
+| `moa_subscription_change` | 구독 변경 | `planName`, `status`, `nextBillingDate` | - |
+| `moa_channel_join` | 채널 가입 유도 | `username`, `channelName` | "채널 추가하기" (AC) |
+| `moa_daily_greeting` | 일일 인사 | `date`, `weather`, `temp`, `advice` | - |
+| `moa_referral_invite` | 친구 추천 | `referrerName` | "MoA 시작하기" (WL) |
+
+### 43.3 템플릿 인터페이스
+
+```typescript
+interface AlimTalkTemplate {
+  code: string;                    // NHN Cloud 템플릿 ID
+  name: string;
+  description: string;
+  requiredParams: string[];
+  optionalParams?: string[];
+  messagePreview: string;          // 템플릿 미리보기 텍스트
+  buttons?: Array<{
+    ordering: number;
+    type: "WL" | "AL" | "DS" | "BK" | "MD" | "AC";  // 웹링크/앱링크/배송/봇키워드/메시지전달/채널추가
+    name: string;
+    linkMo?: string;
+    linkPc?: string;
+  }>;
+}
+```
+
+### 43.4 발송 흐름
+
+```
+알림톡 발송 요청
+    │
+    ├─ 템플릿 파라미터 검증 (validateTemplateParams)
+    │
+    ├─ 알림톡 발송 시도 (NHN Cloud Toast API)
+    │   ├─ 성공 → 완료
+    │   └─ 실패 ─┐
+    │            ▼
+    └─ 친구톡 폴백 (템플릿 미리보기 텍스트로 자유 형식 발송)
+        ├─ #{param} 플레이스홀더를 실제 값으로 치환
+        ├─ 성공 → 완료
+        └─ 실패 → 에러 반환
+```
+
+### 43.5 알림 서비스 인터페이스
+
+```typescript
+interface NotificationService {
+  isConfigured(): boolean;
+  notifyDevicePaired(recipientNo, deviceName): Promise<NotificationResult>;
+  notifyCommandResult(recipientNo, params): Promise<NotificationResult>;
+  notifyDeviceOffline(recipientNo, deviceName, lastSeenAt): Promise<NotificationResult>;
+  notifySecurityAlert(recipientNo, alertType, alertMessage): Promise<NotificationResult>;
+  notifyBackupComplete(recipientNo, backupType, backupSize): Promise<NotificationResult>;
+  notifyWelcome(recipientNo, username): Promise<NotificationResult>;
+  sendAlimTalk(recipientNo, templateCode, params): Promise<NotificationResult>;
+  sendFriendTalk(recipientNo, content): Promise<NotificationResult>;
+  notifyByUserId(userId, message, options?): Promise<NotificationResult>;  // 3-Tier 라우터
+  notifyFreeOnly(userId, message): Promise<NotificationResult>;            // 무료만
+}
+```
+
+### 43.6 ZeroClaw 구현 가이드
+
+```rust
+struct AlimTalkTemplate {
+    code: String,
+    name: String,
+    required_params: Vec<String>,
+    message_preview: String,
+    buttons: Vec<TemplateButton>,
+}
+
+struct NotificationService {
+    toast_app_key: String,
+    toast_secret_key: String,
+    sender_key: String,
+    templates: HashMap<String, AlimTalkTemplate>,
+}
+
+impl NotificationService {
+    async fn send_alimtalk(&self, recipient: &str, template_code: &str,
+                           params: &HashMap<String, String>) -> Result<NotificationResult> {
+        // 1. 템플릿 파라미터 검증
+        // 2. NHN Cloud API 호출
+        // 3. 실패 시 친구톡 폴백
+    }
+}
+```
+
+---
+
+## 44. 멀티 채널 브릿지
+
+### 44.1 개요
+
+KakaoTalk 확장은 다른 채널과의 브릿지를 제공하여, 카카오톡 사용자가 다른 메시징 플랫폼의 대화에 참여할 수 있게 한다.
+
+### 44.2 브릿지 채널
+
+`extensions/kakao/src/channels/` 디렉터리에 구현:
+
+| 브릿지 | 설명 |
+|--------|------|
+| **Discord 브릿지** | 카카오톡 ↔ Discord 채널 메시지 중계 |
+| **Slack 브릿지** | 카카오톡 ↔ Slack 워크스페이스 메시지 중계 |
+| **Telegram 브릿지** | 카카오톡 ↔ Telegram 채팅 중계 |
+| **LINE 브릿지** | 카카오톡 ↔ LINE 메시지 중계 |
+| **WhatsApp 브릿지** | 카카오톡 ↔ WhatsApp 메시지 중계 |
+
+### 44.3 브릿지 동작
+
+```
+카카오톡 사용자 → MoA KakaoTalk 웹훅
+    │
+    ├─ 메시지에 @discord 또는 @slack 접두사
+    │
+    ▼
+[채널 브릿지]
+    │
+    ├─ 대상 채널의 outbound adapter로 전달
+    ├─ 응답을 카카오톡으로 릴레이
+    └─ 양방향 동기화 (대상 채널 → 카카오톡)
+```
+
+### 44.4 ZeroClaw 구현 가이드
+
+```rust
+struct ChannelBridge {
+    source_channel: String,
+    target_channel: String,
+    bidirectional: bool,
+}
+
+impl ChannelBridge {
+    async fn relay_message(&self, msg: &InboundMessage,
+                           registry: &ChannelRegistry) -> Result<()> {
+        let target_plugin = registry.get(&self.target_channel)?;
+        let outbound = target_plugin.outbound()?;
+        outbound.send_text(msg.text.clone()).await
+    }
+}
+```
+
+---
+
+## 부록 F: 채널 역량 매트릭스
+
+### F.1 기능 지원 현황
+
+| 기능 | Telegram | WhatsApp | Discord | Slack | Signal | LINE | Kakao | Matrix |
+|------|----------|----------|---------|-------|--------|------|-------|--------|
+| DM | O | O | O | O | O | O | O | O |
+| 그룹 | O | O | O | O | O | O | - | O |
+| 스레딩 | O(토픽) | - | O | O | - | - | - | - |
+| 리액션 | O | O | O | O | - | - | - | - |
+| 투표 | O | O | O | - | - | - | - | - |
+| 편집 | O | - | O | O | O | - | - | - |
+| 삭제 | O | O | O | O | O | - | - | - |
+| 미디어 | O | O | O | O | O | O | O | O |
+| 슬래시 명령 | O | - | O | O | - | - | - | - |
+| 블록 스트리밍 | O | O | O | O | O | O | X | O |
+| 네이티브 명령 | O | - | O | - | - | - | - | - |
+
+**범례:** O = 지원, X = 미지원 (전체 응답만), - = 해당 없음 또는 미구현
+
+### F.2 채널별 아웃바운드 제한
+
+| 채널 | 텍스트 청크 제한 | 청커 모드 |
+|------|----------------|----------|
+| Telegram | 4096자 | markdown |
+| WhatsApp | 65536자 | text |
+| Discord | 2000자 | markdown |
+| Slack | 4000자 | text (mrkdwn) |
+| Signal | 무제한 | text |
+| LINE | 5000자 | text |
+| KakaoTalk | 1000자 | text |
+
+### F.3 ZeroClaw 구현 가이드
+
+```rust
+#[derive(Debug)]
+struct ChannelCapabilities {
+    dm: bool,
+    group: bool,
+    threading: bool,
+    reactions: bool,
+    polls: bool,
+    edit: bool,
+    unsend: bool,
+    media: bool,
+    native_commands: bool,
+    block_streaming: bool,
+    text_chunk_limit: usize,
+}
+
+// 각 채널 플러그인이 capabilities() 메서드로 반환
+```
