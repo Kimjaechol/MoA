@@ -453,12 +453,19 @@ export async function resolveImplicitProviders(params: {
     providers.xiaomi = { ...buildXiaomiProvider(), apiKey: xiaomiKey };
   }
 
-  // Ollama provider - only add if explicitly configured
+  // Ollama provider - add if explicitly configured OR if MoA core SLM is running.
+  // MoA bundles Qwen3-0.6B as a local gatekeeper; auto-discover it when Ollama is live.
   const ollamaKey =
     resolveEnvApiKeyVarName("ollama") ??
     resolveApiKeyFromProfiles({ provider: "ollama", store: authStore });
   if (ollamaKey) {
     providers.ollama = { ...(await buildOllamaProvider()), apiKey: ollamaKey };
+  } else {
+    // Auto-discover MoA's bundled SLM (no API key required for local Ollama)
+    const ollamaProvider = await buildOllamaProvider();
+    if (ollamaProvider.models.length > 0) {
+      providers.ollama = { ...ollamaProvider, apiKey: "ollama-local" };
+    }
   }
 
   return providers;

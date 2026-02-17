@@ -31,8 +31,10 @@ import {
 import {
   processThroughSLM,
   getMoAAgentStatus,
+  CLOUD_FALLBACK_MODEL,
+  CLOUD_FALLBACK_PROVIDER,
   type SLMRequest,
-} from "./slm/index.js";
+} from "../../../src/slm/index.js";
 
 // ============================================
 // Types

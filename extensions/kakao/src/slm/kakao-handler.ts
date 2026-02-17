@@ -7,16 +7,17 @@
 
 import {
   autoInstallSLM,
-  formatInstallStatusForKakao,
+  formatInstallStatus,
   formatInstallResult,
   detectDevice,
   isOllamaRunning,
+  healthCheck,
+  getSLMInfo,
+  CLOUD_FALLBACK_MODEL,
   type InstallStatus,
   type InstallResult,
   type DeviceProfile,
-} from "./auto-installer.js";
-import { checkMoaSLMStatus, healthCheck } from "./ollama-installer.js";
-import { getSLMInfo } from "./slm-router.js";
+} from "../../../../src/slm/index.js";
 
 // ============================================
 // Types
@@ -49,9 +50,9 @@ export async function handleInstallCommand(
 ): Promise<{ message: string; needsFollowUp: boolean }> {
   // 이미 설치 중인지 확인
   const existingSession = installSessions.get(kakaoUserId);
-  if (existingSession?.status === "installing") {
+  if (existingSession?.status === "installing" && existingSession.lastUpdate) {
     return {
-      message: formatInstallStatusForKakao(existingSession.lastUpdate!),
+      message: formatInstallStatus(existingSession.lastUpdate),
       needsFollowUp: true,
     };
   }
@@ -63,9 +64,9 @@ export async function handleInstallCommand(
     return {
       message:
         `✅ MoA AI가 이미 설치되어 있습니다!\n\n` +
-        `📦 설치된 모델:\n` +
-        `  • 기본 AI: ${info.tier1.model} ${info.tier1.status === "ready" ? "✅" : "❌"}\n` +
-        `  • 고급 AI: ${info.tier2.model} ${info.tier2.status === "ready" ? "✅" : info.tier2.status === "skipped" ? "⏭️" : "❌"}\n\n` +
+        `📦 설치 구성:\n` +
+        `  • 코어 AI: ${info.core.model} ${info.core.status === "ready" ? "✅" : "❌"}\n` +
+        `  • 클라우드 AI: ${info.cloudFallback.model} (${info.cloudFallback.provider}) ☁️\n\n` +
         `💡 "AI 상태" 라고 말하면 상세 정보를 볼 수 있어요.`,
       needsFollowUp: false,
     };
@@ -74,17 +75,16 @@ export async function handleInstallCommand(
   // 디바이스 정보 확인
   const device = detectDevice();
 
-  // 설치 시작 안내
-  const estimatedTime = device.canRunTier2 ? "3-5분" : "1-2분";
-
   return {
     message:
       `🚀 MoA AI 설치를 시작합니다!\n\n` +
       `📱 디바이스 정보:\n` +
       `  • 타입: ${getDeviceTypeKorean(device.type)}\n` +
-      `  • 메모리: ${device.totalMemoryGB}GB\n` +
-      `  • 고급 AI: ${device.canRunTier2 ? "설치 가능" : "메모리 부족으로 건너뜀"}\n\n` +
-      `⏱️ 예상 소요 시간: ${estimatedTime}\n\n` +
+      `  • 메모리: ${device.totalMemoryGB}GB\n\n` +
+      `📦 설치 내용:\n` +
+      `  • 코어 AI (Qwen3-0.6B, ~400MB) - 의도분류/라우팅\n` +
+      `  • 클라우드 AI (${CLOUD_FALLBACK_MODEL}) - 추론/생성\n\n` +
+      `⏱️ 예상 소요 시간: 1-2분\n\n` +
       `설치를 시작하시겠습니까?\n` +
       `"설치 시작" 이라고 말해주세요.`,
     needsFollowUp: true,
@@ -112,7 +112,6 @@ export async function handleInstallStart(
     const notifyThrottle = 3000; // 3초마다 알림
 
     const result = await autoInstallSLM({
-      mode: "auto",
       onProgress: async (status) => {
         session.lastUpdate = status;
 
@@ -120,7 +119,7 @@ export async function handleInstallStart(
         const now = Date.now();
         if (onProgress && now - lastNotifyTime > notifyThrottle) {
           lastNotifyTime = now;
-          await onProgress(formatInstallStatusForKakao(status));
+          await onProgress(formatInstallStatus(status));
         }
       },
     });
@@ -160,34 +159,28 @@ export async function handleStatusCommand(_kakaoUserId: string): Promise<string>
     );
   }
 
-  const _status = await checkMoaSLMStatus();
   const info = await getSLMInfo();
   const device = detectDevice();
 
   let message = `🟢 MoA AI 상태: 정상\n\n`;
 
-  // 기본 AI 상태
-  message += `📦 기본 AI (항시 실행)\n`;
-  message += `  모델: ${info.tier1.model}\n`;
-  message += `  상태: ${info.tier1.status === "ready" ? "✅ 준비됨" : "❌ 미설치"}\n\n`;
+  // 코어 AI 상태
+  message += `📦 코어 AI (항시 실행 - 의도분류/라우팅/하트비트)\n`;
+  message += `  모델: ${info.core.model}\n`;
+  message += `  상태: ${info.core.status === "ready" ? "✅ 준비됨" : "❌ 미설치"}\n\n`;
 
-  // 고급 AI 상태
-  message += `🎓 고급 AI (필요시 실행)\n`;
-  message += `  모델: ${info.tier2.model}\n`;
-  if (info.tier2.status === "skipped") {
-    message += `  상태: ⏭️ 건너뜀 (메모리 부족)\n`;
-  } else {
-    message += `  상태: ${info.tier2.status === "ready" ? "✅ 준비됨" : "❌ 미설치"}\n`;
-  }
+  // 클라우드 AI
+  message += `☁️ 클라우드 AI (추론/생성/분석)\n`;
+  message += `  모델: ${info.cloudFallback.model} (${info.cloudFallback.provider})\n`;
+  message += `  상태: ✅ 온라인\n`;
 
   message += `\n📱 디바이스\n`;
   message += `  타입: ${getDeviceTypeKorean(device.type)}\n`;
   message += `  메모리: ${device.availableMemoryGB}GB / ${device.totalMemoryGB}GB\n`;
 
-  // 사용 팁
   message += `\n💡 사용 팁\n`;
   message += `  • 개인정보가 포함된 질문은 자동으로 로컬 AI가 처리해요\n`;
-  message += `  • 복잡한 질문은 클라우드 AI를 사용하면 더 좋은 답변을 받을 수 있어요`;
+  message += `  • 복잡한 질문은 Gemini Flash가 빠르고 정확하게 답변해요`;
 
   return message;
 }
@@ -312,21 +305,21 @@ export async function handleSLMCommand(
 
 function getSLMHelpMessage(): string {
   return (
-    `🤖 MoA 로컬 AI 안내\n\n` +
-    `MoA는 개인정보 보호를 위해 로컬 AI를 지원합니다.\n` +
-    `민감한 정보가 포함된 질문은 외부 서버로 전송되지 않고\n` +
-    `여러분의 기기에서 직접 처리됩니다.\n\n` +
+    `🤖 MoA AI 안내\n\n` +
+    `MoA는 로컬 AI + 클라우드 AI 하이브리드 구조입니다.\n\n` +
+    `📦 코어 AI (Qwen3-0.6B, 로컬)\n` +
+    `  의도분류, 라우팅, 하트비트, 프라이버시 감지\n` +
+    `  민감한 정보가 외부로 전송되지 않도록 보호\n\n` +
+    `☁️ 클라우드 AI (Gemini Flash)\n` +
+    `  추론, 생성, 분석, 번역 등 모든 고급 작업\n\n` +
     `📋 사용 가능한 명령어\n` +
-    `  • "AI 설치" - 로컬 AI 설치\n` +
+    `  • "AI 설치" - 로컬 AI 설치 (~400MB)\n` +
     `  • "AI 상태" - 설치 상태 확인\n` +
     `  • "AI 삭제" - 로컬 AI 삭제\n\n` +
     `💡 로컬 AI가 처리하는 경우\n` +
     `  • 주민등록번호, 카드번호 등 개인정보\n` +
     `  • 비밀번호, 인증 정보\n` +
-    `  • 의료, 금융 관련 민감 정보\n\n` +
-    `📱 시스템 요구사항\n` +
-    `  • 기본 AI: 4GB 이상의 RAM\n` +
-    `  • 고급 AI: 6GB 이상의 RAM`
+    `  • 의료, 금융 관련 민감 정보`
   );
 }
 
@@ -379,11 +372,10 @@ export async function checkAndInstallOnStartup(
     onStatusChange?.("🔄 MoA 로컬 AI 설정 중...");
 
     const result = await autoInstallSLM({
-      mode: "auto",
       background: true,
       onProgress: (status) => {
         // 주요 단계만 알림
-        if (["model-tier1", "complete", "error"].includes(status.step)) {
+        if (["model-core", "complete", "error"].includes(status.step)) {
           onStatusChange?.(status.message);
         }
       },
