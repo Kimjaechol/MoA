@@ -35,6 +35,14 @@
 22. [결제 시스템 (Kakao Pay)](#22-결제-시스템)
 23. [Supabase 통합](#23-supabase-통합)
 24. [데이터베이스 스키마](#24-데이터베이스-스키마)
+25. [디바이스 보안 시스템](#25-디바이스-보안-시스템)
+26. [원격 잠금/삭제 (Remote Wipe)](#26-원격-잠금삭제-remote-wipe)
+27. [분실 기기 위치 추적](#27-분실-기기-위치-추적)
+28. [대화 기록 보호 (Chat History Guard)](#28-대화-기록-보호-chat-history-guard)
+29. [암호화 백업 볼트 (Encrypted Vault)](#29-암호화-백업-볼트-encrypted-vault)
+30. [명령 안전 가드 (Command Safety Guard)](#30-명령-안전-가드-command-safety-guard)
+31. [속도 제한 (3-Strike 시스템)](#31-속도-제한-3-strike-시스템)
+32. [보안 감사 시스템](#32-보안-감사-시스템)
 
 ---
 
@@ -1587,5 +1595,465 @@ LAWCALL_DEFAULT_URL=       # 법률 상담 서비스 URL
 
 ---
 
+## 25. 디바이스 보안 시스템
+
+**파일:** `extensions/kakao/src/security/device-security.ts`
+**목적:** 기기별 데이터베이스 암호화 및 기기 바인딩
+
+### 25.1 디바이스 바인딩 암호화
+
+기기에 물리적으로 묶인 암호화 키를 생성하여, DB 파일을 다른 기기로 복사해도 열 수 없게 함:
+
+```rust
+struct DeviceFingerprint {
+    device_id: String,       // Android ID / iOS identifierForVendor
+    os_info: String,         // iOS/Android 버전
+    model_hash: String,      // 기기 모델 식별자 해시
+    installation_id: String, // 앱 재설치 시 변경 (추가 보호)
+}
+
+// 키 유도: PBKDF2(device_fingerprint + user_passphrase, salt, 200,000 iterations)
+// → AES-256-GCM 키
+```
+
+| 항목 | 값 |
+|------|-----|
+| 알고리즘 | AES-256-GCM |
+| PBKDF2 이터레이션 | **200,000** (일반 동기화의 2배) |
+| 2팩터 키 유도 | 디바이스 지문 + 사용자 패스프레이즈 |
+| 파일 형식 | `[4B IV길이][IV][ciphertext][auth_tag]` |
+| 파일 확장자 | `.moa-encrypted` |
+
+### 25.2 보안 삭제 (Secure Overwrite)
+
+파일 삭제 시 3-pass 덮어쓰기 후 unlink:
+
+```rust
+fn secure_delete(path: &Path) -> Result<()> {
+    let size = fs::metadata(path)?.len();
+    let mut file = File::open(path)?;
+    // Pass 1: 모든 0x00
+    file.write_all(&vec![0x00; size as usize])?;
+    file.sync_all()?;
+    // Pass 2: 모든 0xFF
+    file.seek(SeekFrom::Start(0))?;
+    file.write_all(&vec![0xFF; size as usize])?;
+    file.sync_all()?;
+    // Pass 3: 랜덤 데이터
+    file.seek(SeekFrom::Start(0))?;
+    file.write_all(&random_bytes(size as usize))?;
+    file.sync_all()?;
+    // 파일 삭제
+    fs::remove_file(path)?;
+    Ok(())
+}
+```
+
+---
+
+## 26. 원격 잠금/삭제 (Remote Wipe)
+
+**파일:** `extensions/kakao/src/security/remote-wipe.ts`
+**목적:** 기기 분실/도난 시 원격으로 데이터 삭제
+
+### 26.1 삭제 전략
+
+```rust
+enum WipeStrategy {
+    Immediate,        // 백업이 최신이면 → 즉시 삭제
+    BackupThenWipe,   // 백업 없거나 오래됨 → 긴급 백업 후 삭제
+}
+
+// 자동 판단:
+// - 최근 백업 존재 + 최신 → Immediate
+// - 백업 없거나 오래됨 → BackupThenWipe (최대 3회 재시도, 2초 간격)
+```
+
+### 26.2 삭제 범위
+
+```rust
+enum WipeScope {
+    All,           // 모든 데이터
+    MemoryDb,      // 메모리 DB만
+    ChatHistory,   // 대화 기록만
+    Credentials,   // 인증 정보만
+}
+```
+
+### 26.3 토큰 즉시 무효화
+
+삭제 요청 시 해당 기기의 디바이스 토큰을 즉시 무효화:
+- 기존 토큰 → 내부 전용 "wipe-only" 토큰 (7일 TTL)으로 교체
+- 도난자가 릴레이에 접근하는 것을 즉시 차단
+
+### 26.4 실행 흐름
+
+```
+사용자: /분실신고 (다른 기기에서)
+  → DB에서 백업 상태 확인
+  → 전략 결정 (Immediate or BackupThenWipe)
+  → 토큰 즉시 무효화
+  → 분실 기기의 Heartbeat에서 wipe 명령 감지
+  → 전략에 따라 실행 (백업 → 3-pass 삭제)
+  → 토큰 정리
+```
+
+---
+
+## 27. 분실 기기 위치 추적
+
+**파일:** `extensions/kakao/src/security/device-location-tracker.ts`
+**목적:** 분실/도난 기기의 GPS 위치를 추적
+
+### 27.1 추적 설정
+
+| 항목 | 값 |
+|------|-----|
+| 기본 추적 간격 | 30초 (고정밀 모드) |
+| 배터리 절약 모드 | 60초 (2배) |
+| 기본 만료 | 72시간 (3일) |
+| 데이터 보관 | 30일 후 자동 삭제 |
+
+### 27.2 수집 데이터
+
+```rust
+struct LocationData {
+    latitude: f64,
+    longitude: f64,
+    accuracy: f64,           // 미터
+    altitude: Option<f64>,
+    speed: Option<f64>,
+    bearing: Option<f64>,
+    battery_level: Option<u8>,
+    network_type: NetworkType, // WiFi | Cellular | None
+    is_moving: bool,
+}
+```
+
+### 27.3 중요 설계 결정
+
+**삭제 후에도 GPS 추적 계속**: 원격 삭제가 MoA 데이터만 삭제하고, 기기의 다른 데이터(SMS, 카카오톡, 사진, 이메일 등)는 그대로 남아있으므로, 기기 회수를 위해 GPS 추적은 `/추적종료` 명령 또는 72시간 만료까지 계속됨.
+
+### 27.4 이동 거리 계산
+
+Haversine 공식으로 두 좌표 간 거리 계산:
+
+```rust
+fn haversine_distance(lat1: f64, lon1: f64, lat2: f64, lon2: f64) -> f64 {
+    let r = 6371000.0; // 지구 반지름 (미터)
+    let d_lat = (lat2 - lat1).to_radians();
+    let d_lon = (lon2 - lon1).to_radians();
+    let a = (d_lat/2.0).sin().powi(2) +
+            lat1.to_radians().cos() * lat2.to_radians().cos() * (d_lon/2.0).sin().powi(2);
+    let c = 2.0 * a.sqrt().atan2((1.0-a).sqrt());
+    r * c
+}
+```
+
+---
+
+## 28. 대화 기록 보호 (Chat History Guard)
+
+**파일:** `extensions/kakao/src/security/chat-history-guard.ts`
+**목적:** 대화 기록의 자동 삭제, 데이터 마스킹, 분실 잠금
+
+### 28.1 휘발성 메시지 (Ephemeral Messages)
+
+| 항목 | 값 |
+|------|-----|
+| 기본 TTL | 5분 (300초) |
+| 삭제 방법 | 채널별 API 사용 (Telegram: deleteMessage, Discord: bulkDelete) |
+| 스케줄링 | Supabase에 삭제 일정 저장 |
+
+### 28.2 자동 데이터 마스킹 (44+ 패턴)
+
+LLM에는 원문을 전달하지만, **저장/전송 시에는 마스킹** 적용:
+
+```rust
+// 마스킹 패턴 목록:
+// 신분증: 주민등록번호, 운전면허, 여권, 외국인등록번호
+// 금융: 신용카드 (****-****-****-****), 계좌 (***-****-****), CVV/CVC
+// 인증: 비밀번호 ([비밀번호 보호됨]), PIN, OTP, 공인인증서
+// API키: OpenAI (sk-*), AWS (AKIA*), Bearer 토큰
+// 연락처: 전화번호 (010-****-****), 이메일 (***@***.***), 주소
+
+struct MaskingResult {
+    original: String,     // LLM 전달용 (원문)
+    masked: String,       // 저장/전송용 (마스킹)
+    detected_types: Vec<SensitiveDataType>,
+}
+```
+
+### 28.3 분실 잠금 모드 (Lockdown)
+
+| 명령 | 동작 |
+|------|------|
+| `/분실신고` | 잠금 모드 활성화 → 모든 MoA 응답 차단 |
+| 응답 | "이 기기는 분실 신고되었습니다" |
+| `/분실취소` | 재인증 후 잠금 해제 |
+
+---
+
+## 29. 암호화 백업 볼트 (Encrypted Vault)
+
+**파일:** `extensions/kakao/src/safety/encrypted-vault.ts`
+**목적:** Time Machine 방식의 자동 회전 암호화 백업
+
+### 29.1 백업 보관 정책
+
+| 기간 | 보관 수 |
+|------|--------|
+| 일별 | 최근 7일 |
+| 주별 | 최근 4주 |
+| 월별 | 최근 12개월 |
+| **최대** | **23개 백업 파일** |
+
+### 29.2 복구 키 (Recovery Key)
+
+```rust
+// 12단어 한국어 니모닉 (256개 단어 사전에서 선택)
+// 자연 테마: 나무, 동물, 꽃 + 추상 개념
+// 예: "소나무 호랑이 벚꽃 하늘 바다 구름 ..."
+
+fn generate_recovery_key() -> Vec<String> {
+    // 256개 한국어 단어 사전에서 12개 비중복 무작위 선택
+    // 복구 키의 해시만 vault-meta에 저장 (키 자체는 저장 안 함)
+}
+```
+
+### 29.3 생체 인증 연동
+
+- FaceID/TouchID로 로컬 키 잠금 해제 (Secure Enclave)
+- 서버는 암호화된 데이터만 저장 (제로 지식)
+- 기기별 공개 키 등록으로 기기 특정 암호화
+
+### 29.4 저장 구조
+
+```
+~/.moa-data/vault/
+  ├── daily/      # 일별 백업
+  ├── weekly/     # 주별 백업
+  └── monthly/    # 월별 백업
+```
+
+---
+
+## 30. 명령 안전 가드 (Command Safety Guard)
+
+**파일:** `extensions/kakao/src/relay/safety-guard.ts`
+**목적:** 쉘 명령 실행 전 위험도 분석 및 차단
+
+### 30.1 위험도 등급
+
+| 등급 | 동작 | 예시 |
+|------|------|------|
+| **Critical** | 즉시 차단 | `rm -rf /`, `mkfs.`, fork bomb, `shutdown` |
+| **High** | `/확인` 승인 필요 | `rm`, `sudo`, `chmod`, `git reset`, SSH/SCP |
+| **Medium** | 경고 표시 | `mkdir`, `touch`, `echo >`, `git add/commit` |
+| **Low** | 자동 실행 | `ls`, `cat`, `pwd`, 클립보드, 스크린샷 |
+
+### 30.2 민감 경로 감지 (160+ 패턴)
+
+```rust
+fn is_sensitive_path(path: &str) -> bool {
+    // .ssh/, .env, credentials, token, .pem, .key, .cert 등
+    // 160개 이상의 패턴 매칭
+}
+```
+
+### 30.3 입력 위생 처리
+
+```rust
+fn sanitize_input(input: &str) -> String {
+    // 제어 문자 (0x00-0x1F, 0x7F) 제거
+    input.chars()
+        .filter(|c| !c.is_control() || *c == '\n' || *c == '\t')
+        .collect()
+}
+```
+
+---
+
+## 31. 속도 제한 (3-Strike 시스템)
+
+**파일:** `apps/gateway/src/security/rate-limiter.ts`
+**목적:** 무차별 대입 공격 방지를 위한 에스컬레이션 속도 제한
+
+### 31.1 에스컬레이션 규칙
+
+| Strike | 벌칙 | 조건 |
+|--------|------|------|
+| 1차 | 30분 쿨다운 + 경고 | 1분간 30회 초과 |
+| 2차 | 1시간 쿨다운 + 최종 경고 | 쿨다운 중 재시도 |
+| 3차 | **영구 차단** (관리자 해제 필요) | 2차 이후 재시도 |
+
+### 31.2 구현 사양
+
+```rust
+struct RateLimiter {
+    limit: u32,              // 30 (기본)
+    window_ms: u64,          // 60,000 (1분)
+    stale_cleanup_ms: u64,   // 7,200,000 (2시간)
+}
+
+// 키: "{channel}:{userId}"
+// 알고리즘: 슬라이딩 윈도우 (인메모리)
+// 관리자 기능: reset(), unban()
+```
+
+---
+
+## 32. 보안 감사 시스템
+
+**파일:** `src/security/audit.ts`, `apps/web/src/lib/security.ts`
+**목적:** 시스템 전반의 보안 상태 점검 및 이벤트 로깅
+
+### 32.1 감사 점검 항목
+
+| 카테고리 | 점검 항목 |
+|----------|----------|
+| 파일시스템 | 상태 디렉터리 권한, 설정 파일 world-readable 여부 |
+| 게이트웨이 | bind 주소, 인증 토큰 길이, Tailscale 모드 |
+| 브라우저 | CDP 보안 (HTTP vs HTTPS) |
+| 로깅 | 리다크션 활성화 여부 |
+| 실행 권한 | 와일드카드 감지 |
+| 채널 보안 | DM 정책, 허용 목록, 슬래시 명령 제한 |
+| 설정 비밀 | 설정에 시크릿 노출 여부 |
+| 플러그인 | 신뢰 여부 |
+
+### 32.2 보안 이벤트 로깅
+
+```rust
+struct SecurityEvent {
+    user_id: String,  // SHA-256 해시 (첫 16자만)
+    event_type: SecurityEventType,
+    details: serde_json::Value,
+    severity: Severity,  // info | warning | critical
+    created_at: DateTime,
+}
+
+enum SecurityEventType {
+    RateLimitHit,
+    SensitiveDataDetected,
+    SuspiciousInput,
+    AuthFailure,
+    BruteForceAttempt,
+    InjectionAttempt,
+    SessionCreated,
+    SessionExpired,
+    ChannelAccess,
+    ApiKeyUsed,
+}
+```
+
+### 32.3 로그 리다크션
+
+API 키, 토큰 등이 로그에 노출되지 않도록 자동 리다크션:
+
+```rust
+// 마스킹 대상 토큰 프리픽스:
+// sk-*, ghp_*, github_pat_*, xox*, xapp-*, gsk_*, AIza*, pplx-*, npm_*
+// ENV 변수: KEY=, SECRET=, TOKEN=, PASSWORD=
+// Bearer 토큰, PEM 블록
+
+// 출력 형식: "sk-abc...wxyz" (앞 6자 + 뒤 4자)
+```
+
+---
+
+## 부록 A: ZeroClaw 마이그레이션 체크리스트 (업데이트)
+
+### 필수 구현 순서 (의존성 기반)
+
+```
+Phase 1 - 기반:
+  [ ] E2E 암호화 모듈 (AES-256-GCM, PBKDF2)
+  [ ] Supabase 클라이언트
+  [ ] 데이터베이스 스키마 생성
+  [ ] 사용자 설정 관리 (해시, 암호화)
+
+Phase 2 - 보안 (확장):
+  [ ] 보안 가드 (위협 감지, 패턴 매칭)
+  [ ] 보안 미들웨어 (선차단 후 동의)
+  [ ] 행동 권한 시스템
+  [ ] 속도 제한 (3-Strike 에스컬레이션)
+  [ ] 세션 관리
+  [ ] 디바이스 바인딩 암호화 (PBKDF2 200K)
+  [ ] 데이터 마스킹 (44+ 패턴)
+  [ ] 명령 안전 가드 (위험도 4등급)
+  [ ] 보안 감사 시스템
+  [ ] 로그 리다크션
+
+Phase 3 - 기기 보안:
+  [ ] 원격 잠금/삭제 (Remote Wipe)
+  [ ] 분실 기기 위치 추적 (GPS)
+  [ ] 분실 잠금 모드 (Lockdown)
+  [ ] 암호화 백업 볼트 (Time Machine)
+  [ ] 복구 키 (12단어 한국어 니모닉)
+  [ ] 3-pass 보안 삭제
+
+Phase 4 - AI 라우팅:
+  [ ] SLM 로컬 게이트키퍼 (Ollama + Qwen3)
+  [ ] 멀티 프로바이더 LLM 라우팅
+  [ ] 모델 전략 시스템
+  [ ] 클라우드 디스패처
+  [ ] 오프라인 큐
+
+Phase 5 - 빌링:
+  [ ] 크레딧/빌링 시스템
+  [ ] 모델별 가격표
+  [ ] 원자적 크레딧 차감
+  [ ] 결제 연동 (Kakao Pay)
+
+Phase 6 - 동기화:
+  [ ] 메모리 동기화 엔진
+  [ ] 동기화 재조정기 (Version Vector, Delta Journal)
+  [ ] 수동 전체 동기화
+  [ ] 상태 저장/복원
+
+Phase 7 - 채널:
+  [ ] KakaoTalk 웹훅 서버
+  [ ] 채널 플러그인
+  [ ] MoltBot 에이전트 브릿지
+
+Phase 8 - 도구:
+  [ ] 의도 분류기
+  [ ] 도구 디스패처
+  [ ] 각 도구 구현 (날씨, 검색, 일정, 스포츠, 창작 등)
+  [ ] Legal RAG
+
+Phase 9 - 음성:
+  [ ] 음성 프로바이더 (Gemini Live, OpenAI Realtime)
+  [ ] 실시간 통역 시스템
+  [ ] 음성 빌링
+```
+
+### Rust 특화 고려사항 (확장)
+
+| TypeScript 패턴 | Rust 대안 |
+|----------------|----------|
+| `Map<string, T>` | `HashMap<String, T>` |
+| `Promise<T>` | `async fn -> Result<T>` (tokio) |
+| `EventEmitter` | `tokio::sync::broadcast` 또는 `tokio::sync::mpsc` |
+| `setTimeout` | `tokio::time::sleep` |
+| `RegExp` | `regex` crate |
+| `fetch` | `reqwest` crate |
+| `crypto` (AES-GCM) | `aes-gcm` crate |
+| `crypto` (PBKDF2) | `pbkdf2` crate |
+| `crypto` (SHA-256) | `sha2` crate |
+| `crypto` (HMAC) | `hmac` crate |
+| `zlib` | `flate2` crate |
+| Supabase JS SDK | `postgrest-rs` + `realtime-rs` 또는 직접 HTTP |
+| JSON 직렬화 | `serde` + `serde_json` |
+| WebSocket | `tokio-tungstenite` |
+| 파일 시스템 권한 | `std::os::unix::fs::PermissionsExt` |
+| 생체 인증 | 플랫폼 네이티브 (iOS: LocalAuthentication, Android: BiometricPrompt) |
+| GPS | 플랫폼 네이티브 (iOS: CoreLocation, Android: FusedLocationProviderClient) |
+| Secure Enclave | iOS: `SecKeyCreateRandomKey` with kSecAttrTokenIDSecureEnclave |
+| `timingSafeEqual` | `subtle::ConstantTimeEq` crate |
+
+---
+
 *이 문서는 MoA 저장소의 OpenClaw 대비 모든 개선사항을 기반으로 작성되었습니다.*
 *ZeroClaw(Rust) 마이그레이션 시 이 명세서의 각 섹션을 순서대로 구현하면 됩니다.*
+*총 32개 섹션, 9단계 마이그레이션 체크리스트를 포함합니다.*
