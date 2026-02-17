@@ -40,6 +40,9 @@ rm -f "$DATA_DIR/.writetest" 2>/dev/null
 
 # Set state dir so OpenClaw reads config from the volume
 export OPENCLAW_STATE_DIR="$DATA_DIR"
+# Set data dir so MoA server (vault, auth, etc.) uses the same writable directory
+export MOA_DATA_DIR="$DATA_DIR/moa-data"
+mkdir -p "$MOA_DATA_DIR" 2>/dev/null || true
 
 GATEWAY_PORT=18789
 GATEWAY_BIND="127.0.0.1"
