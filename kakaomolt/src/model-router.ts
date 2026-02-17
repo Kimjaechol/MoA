@@ -464,7 +464,7 @@ async function tryFallbackProviders(
 
   // 1단계: 무료 모델 먼저 시도
   const freeFallbacks: Array<{ provider: LLMProvider; model: string }> = [
-    { provider: "google", model: "gemini-2.0-flash" },
+    { provider: "google", model: "gemini-3-flash" },
     { provider: "groq", model: "llama-3.3-70b-versatile" },
     { provider: "openrouter", model: "google/gemini-2.0-flash-exp:free" },
   ];
@@ -488,12 +488,14 @@ async function tryFallbackProviders(
 
   // 2단계: 유료 모델 가성비순 (사용자 키 우선, 없으면 플랫폼 키 + 크레딧)
   const paidFallbacks: Array<{ provider: LLMProvider; model: string }> = [
-    { provider: "google", model: "gemini-1.5-pro" },
+    { provider: "google", model: "gemini-3-flash" },
+    { provider: "google", model: "gemini-3-pro" },
     { provider: "openai", model: "gpt-4o-mini" },
-    { provider: "anthropic", model: "claude-3-5-haiku-latest" },
+    { provider: "anthropic", model: "claude-haiku-4-5" },
     { provider: "together", model: "meta-llama/Llama-3.3-70B-Instruct-Turbo" },
     { provider: "openai", model: "gpt-4o" },
     { provider: "anthropic", model: "claude-sonnet-4-20250514" },
+    { provider: "anthropic", model: "claude-opus-4-6" },
   ];
 
   for (const fallback of paidFallbacks) {

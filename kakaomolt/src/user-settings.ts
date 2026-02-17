@@ -76,10 +76,9 @@ export const PROVIDERS: Record<LLMProvider, ProviderInfo> = {
     keyPattern: /^sk-ant-[a-zA-Z0-9_-]{20,}$/,
     website: "https://console.anthropic.com",
     models: [
-      { id: "claude-3-5-haiku-20241022", name: "Claude 3.5 Haiku", provider: "anthropic", inputPrice: 800, outputPrice: 4000, contextWindow: 200000, recommended: true },
-      { id: "claude-3-5-sonnet-20241022", name: "Claude 3.5 Sonnet", provider: "anthropic", inputPrice: 3000, outputPrice: 15000, contextWindow: 200000 },
+      { id: "claude-haiku-4-5", name: "Claude Haiku 4.5", provider: "anthropic", inputPrice: 800, outputPrice: 4000, contextWindow: 200000, recommended: true },
       { id: "claude-sonnet-4-20250514", name: "Claude Sonnet 4", provider: "anthropic", inputPrice: 3000, outputPrice: 15000, contextWindow: 200000 },
-      { id: "claude-opus-4-5-20251101", name: "Claude Opus 4.5", provider: "anthropic", inputPrice: 15000, outputPrice: 75000, contextWindow: 200000 },
+      { id: "claude-opus-4-6", name: "Claude Opus 4.6", provider: "anthropic", inputPrice: 21750, outputPrice: 108750, contextWindow: 1000000 },
     ],
   },
   openai: {
@@ -92,7 +91,7 @@ export const PROVIDERS: Record<LLMProvider, ProviderInfo> = {
     models: [
       { id: "gpt-4o-mini", name: "GPT-4o Mini", provider: "openai", inputPrice: 150, outputPrice: 600, contextWindow: 128000, recommended: true },
       { id: "gpt-4o", name: "GPT-4o", provider: "openai", inputPrice: 2500, outputPrice: 10000, contextWindow: 128000 },
-      { id: "o1-mini", name: "o1 Mini", provider: "openai", inputPrice: 3000, outputPrice: 12000, contextWindow: 128000 },
+      { id: "gpt-5.2", name: "GPT-5.2", provider: "openai", inputPrice: 15000, outputPrice: 60000, contextWindow: 200000 },
       { id: "o1", name: "o1", provider: "openai", inputPrice: 15000, outputPrice: 60000, contextWindow: 200000 },
     ],
   },
@@ -106,8 +105,9 @@ export const PROVIDERS: Record<LLMProvider, ProviderInfo> = {
     freeCredits: "월 1,500회 무료 (Gemini Flash)",
     freeTier: true,
     models: [
-      { id: "gemini-2.0-flash", name: "Gemini 2.0 Flash", provider: "google", inputPrice: 0, outputPrice: 0, contextWindow: 1000000, recommended: true, free: true },
-      { id: "gemini-1.5-flash", name: "Gemini 1.5 Flash", provider: "google", inputPrice: 75, outputPrice: 300, contextWindow: 1000000, free: true },
+      { id: "gemini-3-flash", name: "Gemini 3.0 Flash", provider: "google", inputPrice: 218, outputPrice: 870, contextWindow: 1000000, recommended: true },
+      { id: "gemini-3-pro", name: "Gemini 3.0 Pro", provider: "google", inputPrice: 3625, outputPrice: 17400, contextWindow: 1000000 },
+      { id: "gemini-2.0-flash", name: "Gemini 2.0 Flash", provider: "google", inputPrice: 0, outputPrice: 0, contextWindow: 1000000, free: true },
       { id: "gemini-1.5-pro", name: "Gemini 1.5 Pro", provider: "google", inputPrice: 1250, outputPrice: 5000, contextWindow: 2000000 },
     ],
   },
@@ -174,7 +174,7 @@ export const FREE_MODELS: ModelInfo[] = ALL_MODELS.filter(m => m.free);
 
 /** 1~2단계: 무료 폴백 체인 */
 export const FREE_FALLBACK_CHAIN: { provider: LLMProvider; model: string; tier: string }[] = [
-  { provider: "google", model: "gemini-2.0-flash", tier: "무료 고성능" },
+  { provider: "google", model: "gemini-3-flash", tier: "무료 고성능" },
   { provider: "groq", model: "llama-3.3-70b-versatile", tier: "무료" },
   { provider: "openrouter", model: "google/gemini-2.0-flash-exp:free", tier: "무료" },
 ];
@@ -183,37 +183,39 @@ export const FREE_FALLBACK_CHAIN: { provider: LLMProvider; model: string; tier: 
  * 3단계: 유료 폴백 체인 (성능 대비 가격이 좋은 순서)
  *
  * 정렬 기준: 성능/가격 비율 (가성비)
- * - Gemini 1.5 Pro: 높은 성능, 매우 저렴 (입력 1,250원/1M)
+ * - Gemini 3.0 Flash: 서브 에이전트/요약용 최적 (입력 218원/1M)
+ * - Gemini 3.0 Pro: 메인 에이전트 가성비 최적 (입력 3,625원/1M)
  * - GPT-4o Mini: 괜찮은 성능, 매우 저렴 (입력 150원/1M)
- * - Claude 3.5 Haiku: 빠르고 저렴 (입력 800원/1M)
- * - Together Llama 3.3: 오픈소스, 저렴 (입력 88원/1M)
+ * - Claude Haiku 4.5: 빠르고 저렴 (입력 800원/1M)
  * - GPT-4o: 높은 성능, 중간 가격 (입력 2,500원/1M)
  * - Claude Sonnet 4: 높은 성능, 중간 가격 (입력 3,000원/1M)
- * - Claude Opus 4.5: 최고 성능, 고가 (입력 15,000원/1M)
+ * - Claude Opus 4.6: 최고 성능, 고가 (입력 21,750원/1M)
  */
 export const PAID_FALLBACK_CHAIN: { provider: LLMProvider; model: string; tier: string }[] = [
-  { provider: "google", model: "gemini-1.5-pro", tier: "유료 가성비" },
+  { provider: "google", model: "gemini-3-flash", tier: "유료 가성비 (서브)" },
+  { provider: "google", model: "gemini-3-pro", tier: "유료 가성비 (메인)" },
   { provider: "openai", model: "gpt-4o-mini", tier: "유료 저렴" },
-  { provider: "anthropic", model: "claude-3-5-haiku-latest", tier: "유료 저렴" },
+  { provider: "anthropic", model: "claude-haiku-4-5", tier: "유료 저렴" },
   { provider: "together", model: "meta-llama/Llama-3.3-70B-Instruct-Turbo", tier: "유료 저렴" },
   { provider: "openai", model: "gpt-4o", tier: "유료 고성능" },
   { provider: "anthropic", model: "claude-sonnet-4-20250514", tier: "유료 고성능" },
-  { provider: "anthropic", model: "claude-opus-4-5-20251101", tier: "유료 최고성능" },
+  { provider: "anthropic", model: "claude-opus-4-6", tier: "유료 최고성능" },
 ];
 
 /**
  * 최고 성능 우선 폴백 체인 ("최고 성능 AI 우선 적용" 모드)
  *
  * 성능이 가장 좋은 모델부터 시도, 비용은 부차적
- * Claude Opus 4.5 → GPT-4o → Claude Sonnet 4 → Gemini Pro → GPT-4o Mini → Haiku → Together
+ * Claude Opus 4.6 → GPT-5.2 → Gemini 3.0 Pro → Claude Sonnet 4 → GPT-4o → Haiku → Together
  */
 export const PERFORMANCE_FALLBACK_CHAIN: { provider: LLMProvider; model: string; tier: string }[] = [
-  { provider: "anthropic", model: "claude-opus-4-5-20251101", tier: "최고성능" },
-  { provider: "openai", model: "gpt-4o", tier: "고성능" },
+  { provider: "anthropic", model: "claude-opus-4-6", tier: "최고성능" },
+  { provider: "openai", model: "gpt-5.2", tier: "최고성능" },
+  { provider: "google", model: "gemini-3-pro", tier: "고성능" },
   { provider: "anthropic", model: "claude-sonnet-4-20250514", tier: "고성능" },
-  { provider: "google", model: "gemini-1.5-pro", tier: "고성능" },
-  { provider: "openai", model: "gpt-4o-mini", tier: "준수" },
-  { provider: "anthropic", model: "claude-3-5-haiku-latest", tier: "빠름" },
+  { provider: "openai", model: "gpt-4o", tier: "고성능" },
+  { provider: "anthropic", model: "claude-haiku-4-5", tier: "빠름" },
+  { provider: "google", model: "gemini-3-flash", tier: "가성비" },
   { provider: "together", model: "meta-llama/Llama-3.3-70B-Instruct-Turbo", tier: "오픈소스" },
 ];
 
